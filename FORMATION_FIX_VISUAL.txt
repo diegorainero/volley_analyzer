@@ -1,0 +1,213 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                  ║
+║                  🏐 FORMATION SETUP - VISUAL FIX SUMMARY 🏐                     ║
+║                                                                                  ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  PRIMA (BROKEN ❌)                                                              │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ app.py ──────────────────────────────────────────────────────────────────────┐
+│                                                                               │
+│  def _on_section_selected(self, section_id: str):                            │
+│      if section_id in section_map:                                           │
+│          self.content_stack.setCurrentIndex(section_map[section_id])          │
+│                                                                               │
+│          # DUPLICATO! Chiamata 1                                             │
+│          if section_id == "formation" and self.db and FormationPanel:        │
+│              self._refresh_formation_panel()  ←─── PRIMA CHIAMATA            │
+│                                                                               │
+│          # DUPLICATO! Chiamata 2                                             │
+│          if section_id == "formation" and self.db and FormationPanel:        │
+│              self._refresh_formation_panel()  ←─── DUPLICATA!                │
+│                                                                               │
+│  def _refresh_formation_panel(self):  ←─── METODO 1                          │
+│      """Ricarica il FormationPanel..."""                                    │
+│      try:                                                                    │
+│          teams = []                                                          │
+│          players_by_team = {}                                               │
+│          # ... carica dal DB ...                                             │
+│          self.formation_widget = FormationPanel(teams, players_by_team)      │
+│          self.content_stack.insertWidget(3, self.formation_widget)           │
+│      except Exception as e:                                                  │
+│          ...                                                                 │
+│                                                                               │
+│  def _refresh_formation_panel(self):  ←─── METODO 2 (DUPLICATO!)            │
+│      """Ricarica il FormationPanel..."""                                    │
+│      try:                                                                    │
+│          teams = []                                                          │
+│          players_by_team = {}                                               │
+│          # ... versione leggermente diversa ...                              │
+│          new_widget = FormationPanel(teams, players_by_team)                │
+│          old_widget = self.content_stack.widget(3)                          │
+│          if old_widget:                                                      │
+│              self.content_stack.removeWidget(old_widget)                    │
+│              old_widget.deleteLater()                                        │
+│          self.formation_widget = new_widget                                  │
+│          self.content_stack.insertWidget(3, self.formation_widget)           │
+│      except Exception as e:                                                  │
+│          ...                                                                 │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  PROBLEMI:
+  ❌ 2 metodi con lo stesso nome
+  ❌ 2 chiamate identiche
+  ❌ Logica inconsistente
+  ❌ Comportamento imprevedibile
+
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  DOPO (FIXED ✅)                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ app.py ──────────────────────────────────────────────────────────────────────┐
+│                                                                               │
+│  def _on_section_selected(self, section_id: str):                            │
+│      if section_id in section_map:                                           │
+│          self.content_stack.setCurrentIndex(section_map[section_id])          │
+│          self.nav_menu.highlight_section(section_id)                         │
+│                                                                               │
+│          if section_id == "dashboard" and self.db:                           │
+│              self.dashboard.refresh()                                        │
+│                                                                               │
+│          # ✅ UNA SOLA CHIAMATA                                              │
+│          if section_id == "formation" and self.db:  ←─ Check semplificato  │
+│              self._refresh_formation_panel()  ←─ Singola chiamata            │
+│                                                                               │
+│                                                                               │
+│  def _refresh_formation_panel(self):  ←─── UNICO METODO                      │
+│      """Ricarica il FormationPanel con i dati attuali dal database"""        │
+│      try:                                                                    │
+│          teams = []                                                          │
+│          players_by_team = {}                                               │
+│          with self.db.session_scope() as session:                            │
+│              from volleyball_scout.core.models import Player, Team           │
+│                                                                               │
+│              teams_data = session.query(Team).all()                          │
+│              for team in teams_data:                                         │
+│                  teams.append({"id": team.id, "name": team.name})            │
+│                  players_data = (                                            │
+│                      session.query(Player).filter_by(team_id=team.id).all()  │
+│                  )                                                           │
+│                  players_by_team[team.id] = [                                │
+│                      {                                                       │
+│                          "id": p.id,                                         │
+│                          "number": p.number,                                 │
+│                          "last_name": p.last_name,                           │
+│                          "role": p.role,                                     │
+│                      }                                                       │
+│                      for p in players_data                                   │
+│                  ]                                                           │
+│                                                                               │
+│          if teams:                                                           │
+│              new_widget = FormationPanel(teams, players_by_team)             │
+│          else:                                                               │
+│              new_widget = PlaceholderWidget(                                 │
+│                  "🏐 Formation Setup\n(No teams in database)"               │
+│              )                                                               │
+│                                                                               │
+│          old_widget = self.content_stack.widget(3)                           │
+│          if old_widget:                                                      │
+│              self.content_stack.removeWidget(old_widget)                    │
+│              old_widget.deleteLater()                                        │
+│                                                                               │
+│          self.formation_widget = new_widget                                  │
+│          self.content_stack.insertWidget(3, self.formation_widget)           │
+│                                                                               │
+│      except Exception as e:                                                  │
+│          print(f"⚠️ Error refreshing FormationPanel: {e}")                   │
+│                                                                               │
+│                                                                               │
+│  def closeEvent(self, event):                                               │
+│      """Cleanup quando si chiude l'app"""                                   │
+│      if self.db:                                                             │
+│          self.db.close()                                                     │
+│      event.accept()                                                          │
+│                                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  MIGLIORAMENTI:
+  ✅ 1 solo metodo consolidato
+  ✅ 1 sola chiamata
+  ✅ Logica coerente
+  ✅ Comportamento prevedibile
+  ✅ Gestione errori centralizzata
+
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  FLUSSO DI ESECUZIONE                                                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  USER INTERACTION:
+  ┌──────────────────────────────────────┐
+  │ Click "🏐 Formation Setup" in menu   │
+  └──────────────────┬───────────────────┘
+                     │
+                     ▼
+  ┌──────────────────────────────────────┐
+  │ _on_section_selected("formation")    │ ← Called once
+  └──────────────────┬───────────────────┘
+                     │
+                     ▼
+  ┌──────────────────────────────────────┐
+  │ Check: if section_id == "formation"  │
+  │         and self.db:                 │
+  └──────────────────┬───────────────────┘
+                     │
+                     ▼ YES
+  ┌──────────────────────────────────────┐
+  │ Call _refresh_formation_panel()      │ ← Once only
+  │                                      │
+  │ 1. Load teams from DB ───┐           │
+  │ 2. Load players from DB ─┤ once      │
+  │ 3. Create FormationPanel ─┴──────┐   │
+  │ 4. Replace widget ────────────────┘   │
+  └──────────────────────────────────────┘
+                     │
+                     ▼
+  ┌──────────────────────────────────────┐
+  │ Display FormationPanel with data     │
+  │ - Teams: Team A, Team B              │
+  │ - Players: Listed per team           │
+  │ - Ready for formation setup          │
+  └──────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  VERIFICA DELLA FIX                                                             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+  Test Eseguito:
+  ✅ grep -n "def _refresh_formation_panel" app.py
+     Result: 1 (was 2)
+
+  ✅ grep -n "_refresh_formation_panel()" app.py
+     Result: 1 (was 2)
+
+  ✅ python3 -m py_compile app.py
+     Result: ✅ Success
+
+  ✅ python3 test_formation_logic.py
+     Result: 🎉 TUTTI I TEST PASSATI!
+
+  ✅ Code Review:
+     - Single method definition ✓
+     - Single method call ✓
+     - Consistent logic ✓
+     - Proper error handling ✓
+     - Database integration ✓
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                  ║
+║                    ✅ FORMATION SETUP IS NOW FIXED ✅                          ║
+║                                                                                  ║
+║               When user clicks "🏐 Formation Setup" in menu:                   ║
+║               - FormationPanel loads once (not duplicated)                     ║
+║               - Data is fetched from database                                  ║
+║               - Teams and players are displayed                                ║
+║               - No errors or unexpected behavior                               ║
+║                                                                                  ║
+╚════════════════════════════════════════════════════════════════════════════════╝

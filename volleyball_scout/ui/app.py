@@ -418,58 +418,8 @@ class VolleyballScoutApp(QMainWindow):
                 self.dashboard.refresh()
 
             # Refresh della formation quando viene visualizzata
-            if section_id == "formation" and self.db and FormationPanel:
+            if section_id == "formation" and self.db:
                 self._refresh_formation_panel()
-
-            # Refresh della formation quando viene visualizzata
-            if section_id == "formation" and self.db and FormationPanel:
-                self._refresh_formation_panel()
-
-    def _refresh_formation_panel(self):
-        """Ricarica il FormationPanel con i dati attuali dal database"""
-        try:
-            # Rimuovi il vecchio widget
-            if hasattr(self, 'formation_widget') and self.formation_widget:
-                self.content_stack.removeWidget(self.formation_widget)
-                self.formation_widget.deleteLater()
-
-            # Load teams and players from database
-            teams = []
-            players_by_team = {}
-            with self.db.session_scope() as session:
-                from volleyball_scout.core.models import Player, Team
-
-                teams_data = session.query(Team).all()
-                for team in teams_data:
-                    teams.append({"id": team.id, "name": team.name})
-                    players_data = (
-                        session.query(Player).filter_by(team_id=team.id).all()
-                    )
-                    players_by_team[team.id] = [
-                        {
-                            "id": p.id,
-                            "number": p.number,
-                            "last_name": p.last_name,
-                            "role": p.role,
-                        }
-                        for p in players_data
-                    ]
-
-            # Create formation panel with updated data
-            if teams:
-                self.formation_widget = FormationPanel(teams, players_by_team)
-            else:
-                self.formation_widget = PlaceholderWidget(
-                    "🏐 Formation Setup\n(No teams in database)"
-                )
-
-            # Inserisci il nuovo widget al posto del vecchio (indice 3)
-            self.content_stack.insertWidget(3, self.formation_widget)
-            self.content_stack.setCurrentIndex(3)
-
-        except Exception as e:
-            print(f"⚠️ Error refreshing FormationPanel: {e}")
-            self.formation_widget = PlaceholderWidget("
 
     def _refresh_formation_panel(self):
         """Ricarica il FormationPanel con i dati attuali dal database"""
