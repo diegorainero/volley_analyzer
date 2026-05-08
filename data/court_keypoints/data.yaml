@@ -1,0 +1,11 @@
+path: data/court_keypoints
+train: images/train
+val: images/val
+
+# Modello YOLO pose con 4 keypoint:
+# 0 alto-sinistra, 1 alto-destra, 2 basso-destra, 3 basso-sinistra
+names:
+  0: volleyball_court
+
+kpt_shape: [4, 3]
+flip_idx: [1, 0, 3, 2]

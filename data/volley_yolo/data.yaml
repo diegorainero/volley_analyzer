@@ -1,0 +1,7 @@
+path: /home/diegorainero/Documenti/personalDev/volley_analizer/data/volley_yolo
+train: images/train
+val: images/val
+nc: 2
+names:
+  0: player
+  1: number

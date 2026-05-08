@@ -1,0 +1,185 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║           🏐 DATABASE CHECK TOOLS - QUICK REFERENCE GUIDE 🏐              ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 QUICK START (Choose One)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣  GUI (Graphical) - RECOMMENDED FOR MOST USERS
+   $ cd volley_analizer
+   $ python3 check_database_ui.py
+
+   ✅ Interfaccia intuitiva con tabelle
+   ✅ 3 tab: Squadre, Giocatori, Partite
+   ✅ Pulsante refresh in tempo reale
+
+2️⃣  CLI (Terminal) - FASTEST & LIGHTEST
+   $ cd volley_analizer
+   $ python3 check_database.py
+
+   ✅ Output nel terminale
+   ✅ Nessuna GUI
+   ✅ Perfetto per script
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 DOCUMENTATION GUIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+START HERE (Always read first):
+  📖 README_DATABASE_CHECK.md
+     • Quick start, examples, troubleshooting
+     • Read in: 5-10 minutes
+
+Then choose:
+  📙 DATABASE_CHECK_GUIDE.md
+     • Complete guide with all details
+     • For: Developers and power users
+
+  📘 DATABASE_CHECK_SUMMARY.md
+     • What was created and why
+     • Overview of all tools
+
+  📕 TOOLS_SUMMARY.md
+     • Complete project overview
+     • All tools and integrations
+
+  📑 DATABASE_TOOLS_INDEX.md
+     • Navigation guide to all docs
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚙️  SETUP (Only Once)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If first time:
+  $ pip install -r requirements.txt
+  $ alembic upgrade head
+  $ alembic upgrade 20260508_add_status_match_test  # Load test data
+
+Then run the tools above!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 COMMON USE CASES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"I want to check teams quickly"
+  → python3 check_database_ui.py
+
+"I want fast terminal output"
+  → python3 check_database.py
+
+"I got an error"
+  → Read README_DATABASE_CHECK.md "Troubleshooting" section
+
+"I want to add new teams"
+  → Run main app: python3 volleyball_scout/run_ui.py
+  → Go to: "👥 Team & Players" section
+
+"I want to understand everything"
+  → Read DATABASE_CHECK_SUMMARY.md (overview)
+  → Then read TOOLS_SUMMARY.md (details)
+
+"I want to integrate in my code"
+  → See TOOLS_SUMMARY.md "Database Management" section
+  → Copy example and adapt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛠️  TOOLS CREATED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Executable Scripts:
+  ✅ check_database.py           🖥️ CLI checker
+  ✅ check_database_ui.py        🎨 GUI checker
+  ✅ launch_database_check.py    🚀 Launcher
+
+Documentation:
+  ✅ README_DATABASE_CHECK.md         📖 Quick Start
+  ✅ DATABASE_CHECK_GUIDE.md          📙 Complete Guide
+  ✅ DATABASE_CHECK_SUMMARY.md        📘 Tools Overview
+  ✅ TOOLS_SUMMARY.md                 📕 Project Overview
+  ✅ DATABASE_TOOLS_INDEX.md          📑 Navigation Guide
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 WHAT YOU'LL SEE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GUI Mode (check_database_ui.py):
+  ┌─────────────────────────────────────┐
+  │ ✅ Database connected: SQLite       │
+  ├─────────────────────────────────────┤
+  │ [Squadre] [Giocatori] [Partite]     │
+  ├─────────────────────────────────────┤
+  │ ID | Nome    | Categoria | Players  │
+  │ 1  | Attacco | Test      | 7        │
+  │ 2  | Cihsosla| Test      | 14       │
+  └─────────────────────────────────────┘
+
+CLI Mode (check_database.py):
+  ✅ Connessione al database riuscita!
+     Database: SQLite (~/.volleyball_scout/data/scout.db)
+     Connesso: True
+
+  ID    Nome                    Giocatori
+  1     Attacco                 7
+  2     Cihsosla Volley         14
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 PRO TIPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Export output to file:
+  $ python3 check_database.py > teams.txt
+
+Use in your Python code:
+  from volleyball_scout.core.database import DatabaseManager
+  db = DatabaseManager()
+  with db.session_scope() as session:
+      teams = session.query(Team).all()
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🆘 TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Error: "No module named 'sqlalchemy'"
+  → pip install -r requirements.txt
+
+Error: "Cannot connect to database"
+  → alembic upgrade head
+
+No data visible?
+  → alembic upgrade 20260508_add_status_match_test
+  → Or add teams via UI: python3 volleyball_scout/run_ui.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 QUICK CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ☐ Read: README_DATABASE_CHECK.md (5 min)
+  ☐ Install: pip install -r requirements.txt
+  ☐ Init: alembic upgrade head
+  ☐ Run: python3 check_database_ui.py (or check_database.py)
+  ☐ Verify: See teams and players in output
+  ☐ Done! 🎉
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📞 NEED HELP?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Start here:
+  → DATABASE_TOOLS_INDEX.md (Navigation guide)
+  → README_DATABASE_CHECK.md (Quick start)
+  → DATABASE_CHECK_GUIDE.md (Detailed help)
+
+Code reference:
+  → volleyball_scout/core/models.py
+  → volleyball_scout/core/database.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Version: 1.0
+Last Updated: 2025-01-15
+Status: ✅ Complete
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                      ENJOY VOLLEYBALL SCOUT! 🏐                          ║
+╚═══════════════════════════════════════════════════════════════════════════╝

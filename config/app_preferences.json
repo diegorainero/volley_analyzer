@@ -1,0 +1,9 @@
+{
+  "detector": "yolo",
+  "model": "/home/diegorainero/Documenti/personalDev/volley_analizer/runs/detect/runs/volley/custom_yolo-3/weights/best.pt",
+  "segmentation": true,
+  "hw_accel": true,
+  "sample_every": 30,
+  "chunk_seconds": 60,
+  "jersey_classifier": ""
+}

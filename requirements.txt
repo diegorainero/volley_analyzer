@@ -1,0 +1,39 @@
+# Requirements unificati volley_analizer + volleyball_scout
+# Installa con: pip install -r requirements.txt
+
+# Core
+SQLAlchemy==2.0.36        # ORM database (SQLite locale + PostgreSQL cloud)
+alembic==1.14.0           # Migrazioni database
+
+# UI Desktop cross-platform
+PyQt6==6.7.1              # Framework UI (Windows / macOS / Linux)
+PyQt6-Qt6==6.7.1
+PyQt6-sip==13.8.0
+
+# Video
+python-vlc==3.0.21203     # Binding VLC media player (sync video)
+opencv-python==4.10.0.84  # Analisi frame video
+
+# Database cloud
+psycopg2-binary==2.9.10   # Driver PostgreSQL
+
+# Export / Import
+openpyxl==3.1.5           # Export statistiche Excel
+reportlab==4.2.5          # Export report PDF
+fpdf                      # Legacy PDF export (volley_analizer)
+
+# Utility
+# python-dotenv==1.0.1      # Legge .env per DATABASE_URL (non ancora compatibile con Python 3.14)
+pyinstaller                # Packaging eseguibile distribuibile
+
+# Deep learning / tracking
+ultralytics               # YOLO
+torch                     # PyTorch
+pandas                    # Data analysis
+numpy                     # Math
+
+deep_sort_realtime        # Tracking
+
+# Dev / Test
+pytest==8.3.4
+pytest-qt==4.4.0
