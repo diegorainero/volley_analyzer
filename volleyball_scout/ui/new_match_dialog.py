@@ -28,7 +28,7 @@ class NewMatchDialog(QDialog):
     Emette un signal 'match_created' quando viene creata una partita con successo.
     """
 
-    match_created = pyqtSignal(object)  # Emette il nuovo Match object
+    match_created = pyqtSignal(int)  # Emette l'ID della nuova partita
 
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
@@ -209,8 +209,8 @@ class NewMatchDialog(QDialog):
                     "status": new_match.status,
                 }
 
-                # Emetti il signal con i dati della nuova partita
-                self.match_created.emit(self.new_match)
+                # Emetti il signal con l'ID della nuova partita
+                self.match_created.emit(new_match.id)
 
                 QMessageBox.information(
                     self, "Successo", "Partita creata con successo! ✅"

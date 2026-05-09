@@ -6,8 +6,10 @@ Gestisce l'interfaccia per squadre e giocatori
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -19,6 +21,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +31,130 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from volleyball_scout.core.database import DatabaseManager
 from volleyball_scout.core.models import Player, Team
+
+
+class ModifyPlayerDialog(QDialog):
+    """Dialog per modificare i dettagli di un giocatore"""
+
+    ROLES = ["Palleggiatore", "Opposto", "Schiacciatore", "Centrale", "Libero"]
+
+    def __init__(self, player=None, parent=None):
+        super().__init__(parent)
+        self.player = player
+        self.photo_path = player.photo if player else None
+
+        self.setWindowTitle("Modifica Giocatore" if player else "Nuovo Giocatore")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._setup_ui()
+        self._load_player_data()
+
+    def _setup_ui(self):
+        """Crea l'interfaccia del dialog"""
+        layout = QVBoxLayout()
+
+        form_layout = QFormLayout()
+
+        # Nome
+        self.first_name_input = QLineEdit()
+        form_layout.addRow("Nome:", self.first_name_input)
+
+        # Cognome
+        self.last_name_input = QLineEdit()
+        form_layout.addRow("Cognome:", self.last_name_input)
+
+        # Numero maglia
+        self.number_input = QSpinBox()
+        self.number_input.setMinimum(0)
+        self.number_input.setMaximum(99)
+        form_layout.addRow("Numero Maglia:", self.number_input)
+
+        # Ruolo
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(self.ROLES)
+        form_layout.addRow("Ruolo:", self.role_combo)
+
+        # Foto
+        self.photo_label = QLabel("(Nessuna foto selezionata)")
+        btn_choose_photo = QPushButton("📷 Scegli Foto")
+        btn_choose_photo.clicked.connect(self._choose_photo)
+
+        photo_layout = QHBoxLayout()
+        photo_layout.addWidget(self.photo_label)
+        photo_layout.addWidget(btn_choose_photo)
+        form_layout.addRow("Foto:", photo_layout)
+
+        layout.addLayout(form_layout)
+        layout.addStretch()
+
+        # Pulsanti Salva/Annulla
+        buttons_layout = QHBoxLayout()
+
+        btn_save = QPushButton("✅ Salva")
+        btn_save.clicked.connect(self.accept)
+
+        btn_cancel = QPushButton("❌ Annulla")
+        btn_cancel.clicked.connect(self.reject)
+
+        buttons_layout.addWidget(btn_save)
+        buttons_layout.addWidget(btn_cancel)
+        layout.addLayout(buttons_layout)
+
+        self.setLayout(layout)
+
+    def _load_player_data(self):
+        """Carica i dati del giocatore nel form"""
+        if self.player:
+            self.first_name_input.setText(self.player.first_name or "")
+            self.last_name_input.setText(self.player.last_name or "")
+            self.number_input.setValue(self.player.number or 0)
+
+            if self.player.role and self.player.role in self.ROLES:
+                self.role_combo.setCurrentText(self.player.role)
+
+            if self.player.photo:
+                self.photo_label.setText(f"📷 {Path(self.player.photo).name}")
+
+    def _choose_photo(self):
+        """Apre il dialog per scegliere la foto"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Scegli Foto", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if file_path:
+            self.photo_path = file_path
+            self.photo_label.setText(f"📷 {Path(file_path).name}")
+
+    def get_player_data(self):
+        """Ritorna i dati modificati del giocatore"""
+        return {
+            "first_name": self.first_name_input.text().strip() or None,
+            "last_name": self.last_name_input.text().strip(),
+            "number": self.number_input.value(),
+            "role": self.role_combo.currentText(),
+            "photo": self.photo_path,
+        }
+
+    def validate(self):
+        """Valida i dati inseriti"""
+        last_name = self.last_name_input.text().strip()
+        number = self.number_input.value()
+
+        if not last_name:
+            QMessageBox.warning(self, "Errore", "Il cognome è obbligatorio.")
+            return False
+
+        if number < 0 or number > 99:
+            QMessageBox.warning(
+                self, "Errore", "Il numero maglia deve essere tra 0 e 99."
+            )
+            return False
+
+        if not self.role_combo.currentText():
+            QMessageBox.warning(self, "Errore", "Seleziona un ruolo.")
+            return False
+
+        return True
 
 
 class TeamManagementWidget(QWidget):
@@ -50,23 +177,36 @@ class TeamManagementWidget(QWidget):
 
         # Header con titolo e pulsante aggiungi squadra
         header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("<h2>👥 Team & Players</h2>"))
+        header_layout.addWidget(QLabel("<h2>👥 Squadre e Giocatori</h2>"))
         header_layout.addStretch()
         btn_add_team = QPushButton("➕ Aggiungi Squadra")
         btn_add_team.clicked.connect(self.enable_team_form)
         header_layout.addWidget(btn_add_team)
         main_layout.addLayout(header_layout)
 
-        # Team management section
-        team_section = QGroupBox("Squadre Disponibili")
-        team_layout = QHBoxLayout()
+        # Team management section con QSplitter
+        team_section = QGroupBox("Gestione Squadre")
+        team_layout = QVBoxLayout()
 
-        # Left side: Teams list
+        # QSplitter orizzontale
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # === LEFT SIDE: Teams list (25%) ===
+        teams_container = QWidget()
+        teams_container_layout = QVBoxLayout(teams_container)
+        teams_container_layout.setContentsMargins(0, 0, 0, 0)
+
         self.teams_list = QListWidget()
         self.teams_list.itemClicked.connect(self.on_team_selected)
-        team_layout.addWidget(self.teams_list, 1)
+        teams_container_layout.addWidget(self.teams_list)
 
-        # Right side: Team form
+        splitter.addWidget(teams_container)
+
+        # === RIGHT SIDE: Team form + Players (75%) ===
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
         self.team_form = QWidget()
         team_form_layout = QVBoxLayout(self.team_form)
 
@@ -78,7 +218,7 @@ class TeamManagementWidget(QWidget):
         self.team_category_input = QLineEdit()
         self.team_venue_input = QLineEdit()
         self.team_logo_label = QLabel("(Nessun logo selezionato)")
-        btn_choose_logo = QPushButton("Scegli Logo")
+        btn_choose_logo = QPushButton("🖼️ Scegli Logo")
         btn_choose_logo.clicked.connect(self.choose_team_logo)
 
         logo_layout = QHBoxLayout()
@@ -93,12 +233,12 @@ class TeamManagementWidget(QWidget):
         team_form_layout.addLayout(form_layout)
 
         # Players section
-        team_form_layout.addWidget(QLabel("<b>Giocatrici</b>"))
+        team_form_layout.addWidget(QLabel("<b>Giocatori</b>"))
 
         players_buttons = QHBoxLayout()
-        btn_add_player = QPushButton("➕ Aggiungi Giocatrice")
+        btn_add_player = QPushButton("➕ Aggiungi Giocatore")
         btn_add_player.clicked.connect(self.enable_player_form)
-        btn_remove_player = QPushButton("❌ Rimuovi Giocatrice")
+        btn_remove_player = QPushButton("❌ Rimuovi Giocatore")
         btn_remove_player.clicked.connect(self.delete_player)
         players_buttons.addWidget(btn_add_player)
         players_buttons.addWidget(btn_remove_player)
@@ -106,50 +246,8 @@ class TeamManagementWidget(QWidget):
 
         self.players_list = QListWidget()
         self.players_list.itemClicked.connect(self.on_player_selected)
+        self.players_list.itemDoubleClicked.connect(self.edit_player)
         team_form_layout.addWidget(self.players_list)
-
-        # Player form
-        self.player_form = QWidget()
-        player_form_layout = QVBoxLayout(self.player_form)
-
-        player_form_layout.addWidget(QLabel("<b>Nuova Giocatrice</b>"))
-
-        player_form_content = QFormLayout()
-        self.player_first_name_input = QLineEdit()
-        self.player_last_name_input = QLineEdit()
-        self.player_number_input = QSpinBox()
-        self.player_number_input.setMinimum(1)
-        self.player_number_input.setMaximum(99)
-        self.player_role_input = QLineEdit()
-        self.player_photo_label = QLabel("(Nessuna foto selezionata)")
-        btn_choose_photo = QPushButton("Scegli Foto")
-        btn_choose_photo.clicked.connect(self.choose_player_photo)
-
-        photo_layout = QHBoxLayout()
-        photo_layout.addWidget(self.player_photo_label)
-        photo_layout.addWidget(btn_choose_photo)
-
-        player_form_content.addRow("Nome:", self.player_first_name_input)
-        player_form_content.addRow("Cognome:", self.player_last_name_input)
-        player_form_content.addRow("Numero:", self.player_number_input)
-        player_form_content.addRow("Ruolo:", self.player_role_input)
-        player_form_content.addRow("Foto:", photo_layout)
-        player_form_layout.addLayout(player_form_content)
-
-        player_form_layout.addStretch()
-
-        # Save/Cancel buttons for player form
-        player_buttons = QHBoxLayout()
-        btn_save_player = QPushButton("✅ Salva Giocatrice")
-        btn_save_player.clicked.connect(self.save_player)
-        btn_cancel_player = QPushButton("❌ Annulla")
-        btn_cancel_player.clicked.connect(lambda: self.player_form.hide())
-        player_buttons.addWidget(btn_save_player)
-        player_buttons.addWidget(btn_cancel_player)
-        player_form_layout.addLayout(player_buttons)
-
-        team_form_layout.addWidget(self.player_form)
-        self.player_form.hide()
 
         team_form_layout.addStretch()
 
@@ -167,8 +265,16 @@ class TeamManagementWidget(QWidget):
         team_form_layout.addLayout(save_delete_layout)
 
         self.team_form.hide()
-        team_layout.addWidget(self.team_form, 1)
 
+        right_layout.addWidget(self.team_form)
+        splitter.addWidget(right_container)
+
+        # Imposta i rapporti di larghezza (25% e 75%)
+        splitter.setSizes([25, 75])
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+
+        team_layout.addWidget(splitter)
         team_section.setLayout(team_layout)
         main_layout.addWidget(team_section)
 
@@ -222,7 +328,7 @@ class TeamManagementWidget(QWidget):
                 self.team_venue_input.setText(team.venue or "")
 
                 if team.logo:
-                    self.team_logo_label.setText(f"Logo: {Path(team.logo).name}")
+                    self.team_logo_label.setText(f"🖼️ {Path(team.logo).name}")
                     self.current_team_logo = team.logo
                 else:
                     self.team_logo_label.setText("(Nessun logo selezionato)")
@@ -232,7 +338,7 @@ class TeamManagementWidget(QWidget):
                 self.players_list.clear()
                 for player in team.players:
                     full_name = f"{player.first_name or ''} {player.last_name}".strip()
-                    display_text = f"#{player.number} - {full_name}"
+                    display_text = f"#{player.number:02d} - {full_name}"
                     if player.role:
                         display_text += f" ({player.role})"
                     item = QListWidgetItem(display_text)
@@ -240,7 +346,6 @@ class TeamManagementWidget(QWidget):
                     self.players_list.addItem(item)
 
                 self.team_form.show()
-                self.player_form.hide()
 
             session.close()
         except Exception as e:
@@ -258,7 +363,6 @@ class TeamManagementWidget(QWidget):
         self.current_team_id = None
         self.players_list.clear()
         self.team_form.show()
-        self.player_form.hide()
 
     def save_team(self):
         """Salva la squadra nel database"""
@@ -331,7 +435,7 @@ class TeamManagementWidget(QWidget):
         )
         if file_path:
             self.current_team_logo = file_path
-            self.team_logo_label.setText(f"Logo: {Path(file_path).name}")
+            self.team_logo_label.setText(f"🖼️ {Path(file_path).name}")
 
     def enable_player_form(self):
         """Abilita il form per aggiungere un nuovo giocatore"""
@@ -341,14 +445,43 @@ class TeamManagementWidget(QWidget):
             )
             return
 
-        self.player_first_name_input.clear()
-        self.player_last_name_input.clear()
-        self.player_number_input.setValue(1)
-        self.player_role_input.clear()
-        self.player_photo_label.setText("(Nessuna foto selezionata)")
-        self.current_player_photo = None
-        self.current_player_id = None
-        self.player_form.show()
+        dialog = ModifyPlayerDialog(None, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_player_data()
+
+            if not dialog.validate():
+                return
+
+            try:
+                session = self.db.get_session()
+                player = Player(team_id=self.current_team_id)
+
+                player.first_name = data["first_name"]
+                player.last_name = data["last_name"]
+                player.number = data["number"]
+                player.role = data["role"]
+                if data["photo"]:
+                    player.photo = data["photo"]
+
+                session.add(player)
+                session.commit()
+
+                QMessageBox.information(
+                    self, "Successo", "Giocatore aggiunto con successo!"
+                )
+
+                # Ricarica i giocatori della squadra
+                if self.current_team_id:
+                    for i in range(self.teams_list.count()):
+                        item = self.teams_list.item(i)
+                        if item.data(Qt.ItemDataRole.UserRole) == self.current_team_id:
+                            self.on_team_selected(item)
+                            break
+
+                session.close()
+            except Exception as e:
+                print(f"❌ Errore aggiunta giocatore: {e}")
+                QMessageBox.critical(self, "Errore", f"Errore aggiunta: {e}")
 
     def on_player_selected(self, item: QListWidgetItem):
         """Quando viene selezionato un giocatore"""
@@ -359,93 +492,65 @@ class TeamManagementWidget(QWidget):
 
         try:
             session = self.db.get_session()
-            player = session.query(Player).filter_by(id=player_id).first()
-
-            if player:
-                self.current_player_id = player.id
-                self.player_first_name_input.setText(player.first_name or "")
-                self.player_last_name_input.setText(player.last_name or "")
-                self.player_number_input.setValue(player.number or 1)
-                self.player_role_input.setText(player.role or "")
-
-                if player.photo:
-                    self.player_photo_label.setText(f"Foto: {Path(player.photo).name}")
-                    self.current_player_photo = player.photo
-                else:
-                    self.player_photo_label.setText("(Nessuna foto selezionata)")
-                    self.current_player_photo = None
-
+            self.current_player_id = player_id
             session.close()
         except Exception as e:
             print(f"❌ Errore selezione giocatore: {e}")
 
-    def save_player(self):
-        """Salva il giocatore nel database"""
-        first_name = self.player_first_name_input.text().strip()
-        last_name = self.player_last_name_input.text().strip()
+    def edit_player(self, item: QListWidgetItem):
+        """Apre il dialog di modifica quando doppio-click su un giocatore"""
+        player_id = item.data(Qt.ItemDataRole.UserRole)
 
-        if not last_name:
-            QMessageBox.warning(
-                self, "Errore", "Inserisci almeno il cognome della giocatrice."
-            )
-            return
-
-        if not self.current_team_id:
-            QMessageBox.warning(self, "Errore", "Nessuna squadra selezionata.")
+        if player_id is None:
             return
 
         try:
             session = self.db.get_session()
+            player = session.query(Player).filter_by(id=player_id).first()
 
-            if self.current_player_id:
-                player = (
-                    session.query(Player).filter_by(id=self.current_player_id).first()
-                )
-            else:
-                player = Player(team_id=self.current_team_id)
+            if player:
+                dialog = ModifyPlayerDialog(player, self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    if not dialog.validate():
+                        return
 
-            player.first_name = first_name or None
-            player.last_name = last_name
-            player.number = self.player_number_input.value()
-            player.role = self.player_role_input.text().strip() or None
-            if self.current_player_photo:
-                player.photo = self.current_player_photo
+                    data = dialog.get_player_data()
 
-            session.add(player)
-            session.commit()
+                    player.first_name = data["first_name"]
+                    player.last_name = data["last_name"]
+                    player.number = data["number"]
+                    player.role = data["role"]
+                    if data["photo"]:
+                        player.photo = data["photo"]
 
-            QMessageBox.information(
-                self, "Successo", "Giocatrice salvata con successo!"
-            )
+                    session.add(player)
+                    session.commit()
 
-            # Ricarica i giocatori della squadra
-            if self.current_team_id:
-                session_refresh = self.db.get_session()
-                team_item = None
-                for i in range(self.teams_list.count()):
-                    item = self.teams_list.item(i)
-                    if item.data(Qt.ItemDataRole.UserRole) == self.current_team_id:
-                        team_item = item
-                        break
+                    QMessageBox.information(
+                        self, "Successo", "Giocatore modificato con successo!"
+                    )
 
-                if team_item:
-                    self.on_team_selected(team_item)
+                    # Ricarica i giocatori della squadra
+                    if self.current_team_id:
+                        for i in range(self.teams_list.count()):
+                            team_item = self.teams_list.item(i)
+                            if (
+                                team_item.data(Qt.ItemDataRole.UserRole)
+                                == self.current_team_id
+                            ):
+                                self.on_team_selected(team_item)
+                                break
 
-                session_refresh.close()
-
-            self.player_form.hide()
             session.close()
         except Exception as e:
-            print(f"❌ Errore salvataggio giocatore: {e}")
-            QMessageBox.critical(self, "Errore", f"Errore salvataggio: {e}")
+            print(f"❌ Errore modifica giocatore: {e}")
+            QMessageBox.critical(self, "Errore", f"Errore modifica: {e}")
 
     def delete_player(self):
         """Elimina il giocatore dal database"""
         current_item = self.players_list.currentItem()
         if not current_item:
-            QMessageBox.warning(
-                self, "Errore", "Seleziona una giocatrice da eliminare."
-            )
+            QMessageBox.warning(self, "Errore", "Seleziona un giocatore da eliminare.")
             return
 
         player_id = current_item.data(Qt.ItemDataRole.UserRole)
@@ -453,7 +558,7 @@ class TeamManagementWidget(QWidget):
         reply = QMessageBox.question(
             self,
             "Conferma Eliminazione",
-            "Sei sicuro di voler eliminare questa giocatrice?",
+            "Sei sicuro di voler eliminare questo giocatore?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -466,7 +571,7 @@ class TeamManagementWidget(QWidget):
                     session.commit()
 
                 QMessageBox.information(
-                    self, "Successo", "Giocatrice eliminata con successo!"
+                    self, "Successo", "Giocatore eliminato con successo!"
                 )
 
                 # Ricarica i giocatori della squadra
@@ -485,12 +590,3 @@ class TeamManagementWidget(QWidget):
             except Exception as e:
                 print(f"❌ Errore eliminazione giocatore: {e}")
                 QMessageBox.critical(self, "Errore", f"Errore eliminazione: {e}")
-
-    def choose_player_photo(self):
-        """Sceglie la foto del giocatore"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Scegli Foto", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
-        )
-        if file_path:
-            self.current_player_photo = file_path
-            self.player_photo_label.setText(f"Foto: {Path(file_path).name}")

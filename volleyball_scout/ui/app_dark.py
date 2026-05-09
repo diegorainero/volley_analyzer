@@ -125,7 +125,7 @@ except ImportError:
         get_logo_icon = None
 
 
-# DARK THEME STYLESHEET - UNCHANGED
+# DARK THEME STYLESHEET
 DARK_STYLESHEET = """
 QMainWindow, QWidget, QDialog {
     background-color: #1e1e1e;
@@ -252,6 +252,136 @@ QLineEdit:focus {
 QDialog {
     background-color: #1e1e1e;
     color: #e0e0e0;
+}
+"""
+
+# LIGHT THEME STYLESHEET
+LIGHT_STYLESHEET = """
+QMainWindow, QWidget, QDialog {
+    background-color: #ffffff;
+    color: #1e1e1e;
+}
+
+QMenuBar {
+    background-color: #f5f5f5;
+    color: #1e1e1e;
+    border-bottom: 1px solid #cccccc;
+}
+
+QMenuBar::item:selected {
+    background-color: #e8e8e8;
+}
+
+QMenu {
+    background-color: #f5f5f5;
+    color: #1e1e1e;
+}
+
+QMenu::item:selected {
+    background-color: #0066cc;
+    color: #ffffff;
+}
+
+QLabel {
+    color: #1e1e1e;
+}
+
+QPushButton {
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #0052a3;
+}
+
+QPushButton:pressed {
+    background-color: #003d7a;
+}
+
+QTableWidget {
+    background-color: #ffffff;
+    alternate-background-color: #f9f9f9;
+    gridline-color: #cccccc;
+    color: #1e1e1e;
+}
+
+QTableWidget::item {
+    padding: 4px;
+    border: none;
+}
+
+QTableWidget::item:selected {
+    background-color: #0066cc;
+    color: white;
+}
+
+QHeaderView::section {
+    background-color: #f0f0f0;
+    color: #1e1e1e;
+    padding: 4px;
+    border: 1px solid #cccccc;
+}
+
+QScrollBar:vertical {
+    background-color: #ffffff;
+    width: 12px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+QStackedWidget {
+    background-color: #ffffff;
+}
+
+QRadioButton {
+    color: #1e1e1e;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+}
+
+QRadioButton::indicator:unchecked {
+    background-color: #ffffff;
+    border: 2px solid #cccccc;
+    border-radius: 8px;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #0066cc;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+}
+
+QLineEdit {
+    background-color: #ffffff;
+    color: #1e1e1e;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 6px;
+    selection-background-color: #0066cc;
+}
+
+QLineEdit:focus {
+    border: 2px solid #0066cc;
+}
+
+QDialog {
+    background-color: #ffffff;
+    color: #1e1e1e;
 }
 """
 
@@ -388,7 +518,7 @@ class DashboardView(QWidget):
         # Define cards
         cards = [
             {
-                "title": "👥 Teams & Players",
+                "title": "👥 Squadre e Giocatori",
                 "description": "Gestisci squadre e giocatori",
                 "icon": "🏐" if get_icon is None else None,
             },
@@ -493,11 +623,15 @@ class VolleyballScoutApp(QMainWindow):
             except Exception as e:
                 print(f"⚠️ Could not set window icon: {e}")
 
-        # Applica tema scuro
+        # Applica tema scuro di default
         app = QApplication.instance()
         if app:
             app.setStyle("Fusion")
             app.setStyleSheet(DARK_STYLESHEET)
+
+        # Stato del tema (True = dark, False = light)
+        self.is_dark_theme = True
+        self.theme_actions = {}  # Salva i QAction per i menu
 
         # Initialize Database
         try:
@@ -573,7 +707,7 @@ class VolleyballScoutApp(QMainWindow):
         action_dashboard.triggered.connect(lambda: self._show_section("dashboard"))
         view_menu.addAction(action_dashboard)
 
-        action_teams = QAction("👥 Teams & Players", self)
+        action_teams = QAction("👥 Squadre e Giocatori", self)
         action_teams.triggered.connect(lambda: self._show_section("teams"))
         view_menu.addAction(action_teams)
 
@@ -592,6 +726,26 @@ class VolleyballScoutApp(QMainWindow):
         action_stats = QAction("📈 Statistics", self)
         action_stats.triggered.connect(lambda: self._show_section("stats"))
         view_menu.addAction(action_stats)
+
+        # Menu Preferenze
+        preferences_menu = menubar.addMenu("⚙️ Preferenze")
+
+        # Submenu Tema
+        theme_menu = preferences_menu.addMenu("🎨 Tema")
+
+        # Azione Modalità Scura
+        action_dark_mode = QAction("🌙 Modalità Scura", self, checkable=True)
+        action_dark_mode.setChecked(True)  # Default
+        action_dark_mode.triggered.connect(lambda: self._toggle_theme(True))
+        theme_menu.addAction(action_dark_mode)
+        self.theme_actions["dark"] = action_dark_mode
+
+        # Azione Modalità Chiara
+        action_light_mode = QAction("☀️ Modalità Chiara", self, checkable=True)
+        action_light_mode.setChecked(False)  # Default
+        action_light_mode.triggered.connect(lambda: self._toggle_theme(False))
+        theme_menu.addAction(action_light_mode)
+        self.theme_actions["light"] = action_light_mode
 
         # Menu Aiuto
         help_menu = menubar.addMenu("❓ Aiuto")
@@ -613,9 +767,9 @@ class VolleyballScoutApp(QMainWindow):
                 self.teams_widget.load_teams()
             except Exception as e:
                 print(f"⚠️ Error creating TeamManagementWidget: {e}")
-                self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+                self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         else:
-            self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+            self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         self.content_stack.addWidget(self.teams_widget)
 
         # 3. Roster Setup
@@ -675,6 +829,24 @@ class VolleyballScoutApp(QMainWindow):
 
         if section_id in section_map:
             self.content_stack.setCurrentIndex(section_map[section_id])
+
+    def _toggle_theme(self, is_dark: bool):
+        """Cambia il tema dell'applicazione"""
+        self.is_dark_theme = is_dark
+        app = QApplication.instance()
+
+        if is_dark:
+            # Applica tema scuro
+            app.setStyleSheet(DARK_STYLESHEET)
+            print("🌙 Tema scuro attivato")
+        else:
+            # Applica tema chiaro
+            app.setStyleSheet(LIGHT_STYLESHEET)
+            print("☀️ Tema chiaro attivato")
+
+        # Aggiorna i checkmark dei menu items
+        self.theme_actions["dark"].setChecked(is_dark)
+        self.theme_actions["light"].setChecked(not is_dark)
 
     def _show_about(self):
         """Mostra finestra About"""

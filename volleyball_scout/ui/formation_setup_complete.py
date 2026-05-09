@@ -6,6 +6,7 @@ Gestisce la navigazione tra lista di partite e dettagli della formazione
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QDialog,
     QLabel,
     QPushButton,
     QStackedWidget,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
 
 from .formation_panel import FormationPanel
 from .new_match_dialog import NewMatchDialog
+from .roster_setup import RosterSetupWidget
 
 
 class FormationSetupMatches(QWidget):
@@ -32,6 +34,7 @@ class FormationSetupMatches(QWidget):
         super().__init__(parent)
         self.db = db_manager
         self.matches = []
+        self.parent_formation = parent  # Riferimento al FormationSetupComplete
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -142,7 +145,7 @@ class FormationSetupMatches(QWidget):
         current_row = self.matches_table.currentRow()
         if current_row >= 0 and current_row < len(self.matches):
             match = self.matches[current_row]
-            self.match_selected.emit(match)
+            self._on_match_selected(match)
 
     def _on_new_match_clicked(self):
         """Apri il dialog per creare una nuova partita"""
@@ -150,18 +153,10 @@ class FormationSetupMatches(QWidget):
         dialog.match_created.connect(self._on_new_match_created)
         dialog.exec()
 
-    def _on_new_match_created(self, new_match):
-        """Quando una nuova partita è stata creata, aggiorna la lista e selezionala"""
-        self._load_matches()
-        # Seleziona il nuovo match nella tabella (dovrebbe essere il primo se ordinato)
-        if len(self.matches) > 0:
-            # Trova l'indice del nuovo match
-            for idx, match in enumerate(self.matches):
-                if match["id"] == new_match["id"]:
-                    self.matches_table.selectRow(idx)
-                    # Emetti il signal per caricare la formazione
-                    self.match_selected.emit(match)
-                    break
+    def _on_new_match_created(self, match_id: int):
+        """Quando una nuova partita è stata creata, apri il RosterSetup"""
+        if self.parent_formation:
+            self.parent_formation._open_roster_setup(match_id)
 
 
 class FormationSetupComplete(QWidget):
@@ -187,7 +182,7 @@ class FormationSetupComplete(QWidget):
         self.stacked_widget = QStackedWidget()
 
         # Index 0: Lista di match
-        self.matches_widget = FormationSetupMatches(self.db)
+        self.matches_widget = FormationSetupMatches(self.db, parent=self)
         self.matches_widget.match_selected.connect(self._on_match_selected)
         self.stacked_widget.addWidget(self.matches_widget)
 
@@ -299,3 +294,34 @@ class FormationSetupComplete(QWidget):
         self.stacked_widget.setCurrentIndex(0)
         # Aggiorna la lista
         self.matches_widget._load_matches()
+
+    def _open_roster_setup(self, match_id: int):
+        """
+        Apri il dialog RosterSetup per il match_id specificato.
+        Dopo il completamento del roster, caricherà automaticamente la formazione.
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🏐 Setup Roster Partita")
+        dialog.setModal(True)
+        dialog.setMinimumSize(1000, 600)
+
+        layout = QVBoxLayout(dialog)
+        roster_widget = RosterSetupWidget(self.db, match_id=match_id, parent=dialog)
+
+        layout.addWidget(roster_widget)
+        dialog.setLayout(layout)
+
+        # Quando il roster è completato, carica la formazione
+        def on_roster_completed():
+            # Ricarica i match
+            self.matches_widget._load_matches()
+            # Trova il match e carica la formazione
+            for match in self.matches_widget.matches:
+                if match["id"] == match_id:
+                    self._on_match_selected(match)  # Chiama direttamente il metodo
+                    break
+
+        roster_widget.roster_completed.connect(on_roster_completed)
+
+        # Mostra il dialog
+        dialog.exec()
