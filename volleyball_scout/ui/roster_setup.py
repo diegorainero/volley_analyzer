@@ -470,25 +470,32 @@ class RosterSetupWidget(QWidget):
                     }
 
                 # Popola la lista disponibili
-                self.list_available_players.clear()
-
-                for player in players:
-                    # Formato: "Nome Cognome (Numero, Ruolo)"
-                    display_text = (
-                        f"{player.first_name} {player.last_name} "
-                        f"(#{player.number}, {player.role or 'N/A'})"
-                    )
-                    item = QListWidgetItem(display_text)
-                    item.setData(Qt.ItemDataRole.UserRole, player.id)
-
-                    # Se è già nel roster, evidenzia
-                    if player.id in self.selected_players:
-                        item.setBackground(item.background())
-
-                    self.list_available_players.addItem(item)
+                self._update_available_players_list()
 
         except Exception as e:
             print(f"❌ Errore caricamento giocatori: {e}")
+
+    def _update_available_players_list(self):
+        """Aggiorna la lista dei giocatori disponibili"""
+        self.list_available_players.clear()
+
+        for player_id, player_data in self.players_cache.items():
+            # Formato: "Nome Cognome (Numero, Ruolo)"
+            display_text = (
+                f"{player_data['first_name']} {player_data['last_name']} "
+                f"(#{player_data['number']}, {player_data['role'] or 'N/A'})"
+            )
+            item = QListWidgetItem(display_text)
+            item.setData(Qt.ItemDataRole.UserRole, player_id)
+
+            # Se è già nel roster, evidenzia
+            if player_id in self.selected_players:
+                item.setBackground(item.background())
+
+            self.list_available_players.addItem(item)
+
+        # Aggiorna la tabella del roster
+        self._update_roster_table()
 
     def _on_available_player_selected(self):
         """Quando viene selezionato un giocatore nella lista disponibili"""
@@ -508,6 +515,8 @@ class RosterSetupWidget(QWidget):
             player_id = current_item.data(Qt.ItemDataRole.UserRole)
             if player_id:
                 self._add_player_to_roster(player_id)
+                self._update_roster_table()
+                self._update_available_players_list()
         else:
             QMessageBox.warning(self, "Attenzione", "Seleziona un giocatore")
 
@@ -526,6 +535,9 @@ class RosterSetupWidget(QWidget):
             QMessageBox.information(
                 self, "Info", "Tutti i giocatori sono già nel roster"
             )
+        else:
+            self._update_roster_table()
+            self._update_available_players_list()
 
     def _add_player_to_roster(self, player_id: int):
         """Aggiunge un giocatore al roster"""
@@ -557,6 +569,7 @@ class RosterSetupWidget(QWidget):
         )
         if player_id:
             self._remove_player_from_roster(player_id)
+            self._update_available_players_list()
 
     def _on_remove_all_players(self):
         """Pulsante ➖ Tutti: Rimuovi tutti i giocatori dal roster"""
@@ -707,7 +720,7 @@ class RosterSetupWidget(QWidget):
         self.stacked.setCurrentIndex(0)
 
     def _save_roster(self):
-        """Salva il roster nel database e chiude il dialog"""
+        """Salva il roster nel database e passa alla squadra successiva o alla formation_panel"""
         if not self.current_match:
             QMessageBox.warning(self, "Errore", "Nessuna partita selezionata")
             return
@@ -740,8 +753,27 @@ class RosterSetupWidget(QWidget):
 
             QMessageBox.information(self, "Successo", "Roster salvato con successo! ✅")
 
-            # Emetti il signal e chiudi
+            # Emetti il signal
             self.roster_completed.emit()
+
+            # Passa alla squadra successiva o alla formation_panel
+            if self.current_team_id == self.current_match["home_team_id"]:
+                # Passa alla squadra away
+                self.current_team_id = self.current_match["away_team_id"]
+                self._load_team_players(self.current_team_id)
+                self._update_roster_table()
+            else:
+                # Passa alla formation_panel
+                from volleyball_scout.ui.formation_panel import FormationPanel
+
+                self.formation_panel = FormationPanel(
+                    db=self.db,
+                    match_id=self.current_match["id"],
+                    home_team_id=self.current_match["home_team_id"],
+                    away_team_id=self.current_match["away_team_id"],
+                    parent=self,
+                )
+                self.formation_panel.show()
 
             # Se parent è un dialog, chiudilo
             parent = self.parent()
