@@ -571,22 +571,6 @@ class RosterSetupWidget(QWidget):
             self._remove_player_from_roster(player_id)
             self._update_available_players_list()
 
-    def _on_remove_all_players(self):
-        """Pulsante ➖ Tutti: Rimuovi tutti i giocatori dal roster"""
-        if len(self.selected_players) == 0:
-            QMessageBox.information(self, "Info", "Il roster è già vuoto")
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Conferma",
-            "Rimuovere tutti i giocatori dal roster?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.selected_players.clear()
-            self._update_roster_table()
-
     def _remove_player_from_roster(self, player_id: int):
         """Rimuove un giocatore dal roster"""
         if player_id in self.selected_players:
