@@ -5,10 +5,11 @@ Con sistema di frecce per trasferimento giocatori tra disponibili e roster
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -59,9 +60,20 @@ class RosterSetupWidget(QWidget):
         self.match_id = match_id
         self.current_match = None
         self.current_team_id = None
+        self.current_team_index = 0
         self.teams = []
+        # Stato roster corrente (solo team attivo)
         # {player_id: {"number": int, "role": str, "team_id": int}}
         self.selected_players = {}
+        # Stato roster per team
+        # {team_id: {player_id: {"number": int, "role": str, "team_id": int}}}
+        self.team_selected_players = {}
+        # Snapshot iniziale per mostrare "Aggiunto" vs "Presente"
+        # {team_id: set(player_id)}
+        self.initial_team_players = {}
+        # Log eventi aggiunta/rimozione per team
+        # {team_id: [{"action": "added|removed", "player_id": int, "text": str}]}
+        self.team_change_events = {}
         # Cache dei dati dei giocatori per evitare query ripetute
         self.players_cache = {}
 
@@ -155,7 +167,14 @@ class RosterSetupWidget(QWidget):
         team_layout.addWidget(QLabel("Squadra:"))
         self.combo_teams = QComboBox()
         self.combo_teams.currentIndexChanged.connect(self._on_team_changed)
+        # Nel nuovo flusso la squadra è guidata a step (prima home, poi away)
+        self.combo_teams.setEnabled(False)
         team_layout.addWidget(self.combo_teams)
+
+        self.label_team_step = QLabel("Step roster: -")
+        self.label_team_step.setStyleSheet("color: #777777; font-size: 11px;")
+        team_layout.addWidget(self.label_team_step)
+
         team_layout.addStretch()
         layout.addLayout(team_layout)
 
@@ -181,10 +200,10 @@ class RosterSetupWidget(QWidget):
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
 
-        btn_save = QPushButton("✅ Continua")
-        btn_save.setMinimumWidth(150)
-        btn_save.clicked.connect(self._save_roster)
-        footer_layout.addWidget(btn_save)
+        self.btn_continue = QPushButton("✅ Continua")
+        self.btn_continue.setMinimumWidth(180)
+        self.btn_continue.clicked.connect(self._save_roster)
+        footer_layout.addWidget(self.btn_continue)
 
         if not self.match_id:
             btn_cancel = QPushButton("❌ Annulla")
@@ -307,8 +326,10 @@ class RosterSetupWidget(QWidget):
         # Tabella con giocatori selezionati
         # Colonne: Nome, Cognome, Ruolo, Azioni (delete)
         self.table_roster = QTableWidget()
-        self.table_roster.setColumnCount(4)
-        self.table_roster.setHorizontalHeaderLabels(["Nome", "Cognome", "Ruolo", "❌"])
+        self.table_roster.setColumnCount(5)
+        self.table_roster.setHorizontalHeaderLabels(
+            ["Nome", "Cognome", "Ruolo", "Stato", "❌"]
+        )
         self.table_roster.verticalHeader().setVisible(False)  # nasconde numeri di riga
 
         header = self.table_roster.horizontalHeader()
@@ -324,10 +345,22 @@ class RosterSetupWidget(QWidget):
         header.setSectionResizeMode(0, stretch)  # Nome
         header.setSectionResizeMode(1, stretch)  # Cognome
         header.setSectionResizeMode(2, resize_to_contents)  # Ruolo
-        header.setSectionResizeMode(3, resize_to_contents)  # ❌
+        header.setSectionResizeMode(3, resize_to_contents)  # Stato
+        header.setSectionResizeMode(4, resize_to_contents)  # ❌
 
         self.table_roster.itemDoubleClicked.connect(self._on_roster_item_double_clicked)
         layout.addWidget(self.table_roster)
+
+        # Log eventi di modifica roster per il team corrente
+        events_title = QLabel("<b>Eventi roster (aggiunti/rimossi)</b>")
+        events_title.setStyleSheet("font-size: 12px;")
+        layout.addWidget(events_title)
+
+        self.list_roster_events = QListWidget()
+        self.list_roster_events.setMaximumHeight(130)
+        self.list_roster_events.setStyleSheet("font-size: 11px;")
+        layout.addWidget(self.list_roster_events)
+
         return widget
 
     def load_matches(self):
@@ -336,11 +369,8 @@ class RosterSetupWidget(QWidget):
 
         try:
             with self.db.session_scope() as session:
-                matches = (
-                    session.query(Match)
-                    .filter(Match.status.in_(["draft", "in_progress"]))
-                    .all()
-                )
+                # Nuovo flusso: solo match ancora da iniziare
+                matches = session.query(Match).filter(Match.status == "draft").all()
 
                 if not matches:
                     item = QListWidgetItem("(Nessuna partita)")
@@ -405,31 +435,37 @@ class RosterSetupWidget(QWidget):
                         {"id": match.away_team_id, "name": match.away_team.name}
                     )
 
+                # Inizializza stato roster per team
+                self.team_selected_players = {team["id"]: {} for team in self.teams}
+                self.initial_team_players = {team["id"]: set() for team in self.teams}
+                self.team_change_events = {team["id"]: [] for team in self.teams}
+
+                # Carica roster esistente raggruppato per team
+                for mp in match.roster:
+                    if mp.team_id not in self.team_selected_players:
+                        continue
+                    self.team_selected_players[mp.team_id][mp.player_id] = {
+                        "number": mp.number,
+                        "role": mp.role,
+                        "team_id": mp.team_id,
+                    }
+                    self.initial_team_players[mp.team_id].add(mp.player_id)
+
                 # Popola dropdown squadre
                 self.combo_teams.blockSignals(True)
                 self.combo_teams.clear()
                 for team in self.teams:
                     self.combo_teams.addItem(team["name"], team["id"])
                 self.combo_teams.blockSignals(False)
-                self.combo_teams.setCurrentIndex(0)
-
-                # Carica il roster esistente della partita
-                self.selected_players = {}
-                for mp in match.roster:
-                    self.selected_players[mp.player_id] = {
-                        "number": mp.number,
-                        "role": mp.role,
-                        "team_id": mp.team_id,
-                    }
 
                 # Mostra la pagina di setup
                 self.stacked.setCurrentIndex(1)
 
-                # Carica i giocatori della prima squadra
-                self._on_team_changed(0)
-
-                # Aggiorna la tabella del roster
-                self._update_roster_table()
+                # Nuovo flusso guidato: sempre dalla prima squadra
+                self.current_team_index = 0
+                self.current_team_id = None
+                self.selected_players = {}
+                self._set_active_team(0, preserve_current=False)
 
         except Exception as e:
             print(f"❌ Errore caricamento partita: {e}")
@@ -437,14 +473,122 @@ class RosterSetupWidget(QWidget):
 
             traceback.print_exc()
 
-    def _on_team_changed(self, index: int):
-        """Quando cambia la squadra nel dropdown"""
+    def _persist_current_team_selection(self):
+        """Persisti lo stato del team corrente nella struttura per-team."""
+        if self.current_team_id is None:
+            return
+        self.team_selected_players[self.current_team_id] = {
+            player_id: data.copy() for player_id, data in self.selected_players.items()
+        }
+
+    def _set_active_team(self, index: int, preserve_current: bool = True):
+        """Imposta il team attivo nel flusso guidato roster."""
         if index < 0 or index >= len(self.teams):
             return
 
-        team_id = self.combo_teams.itemData(index)
-        self.current_team_id = team_id
-        self._load_team_players(team_id)
+        if preserve_current:
+            self._persist_current_team_selection()
+
+        self.current_team_index = index
+        team = self.teams[index]
+        self.current_team_id = team["id"]
+
+        # Mostra il team corrente nel combo (read-only)
+        self.combo_teams.blockSignals(True)
+        self.combo_teams.setCurrentIndex(index)
+        self.combo_teams.blockSignals(False)
+
+        # Carica selezione team corrente
+        self.selected_players = {
+            player_id: data.copy()
+            for player_id, data in self.team_selected_players.get(
+                self.current_team_id, {}
+            ).items()
+        }
+
+        self._update_team_step_ui()
+        self._load_team_players(self.current_team_id)
+        self._update_roster_events_list()
+
+    def _update_team_step_ui(self):
+        """Aggiorna etichette e pulsante in base allo step corrente."""
+        if not self.teams:
+            self.label_team_step.setText("Step roster: -")
+            self.btn_continue.setText("✅ Continua")
+            return
+
+        current_team_name = self.teams[self.current_team_index]["name"]
+        total = len(self.teams)
+        step = self.current_team_index + 1
+        self.label_team_step.setText(
+            f"Step {step}/{total} - Configura roster: {current_team_name}"
+        )
+
+        if self.current_team_index < total - 1:
+            next_team_name = self.teams[self.current_team_index + 1]["name"]
+            self.btn_continue.setText(f"✅ Continua → {next_team_name}")
+        else:
+            self.btn_continue.setText("✅ Salva roster e apri formation")
+
+    def _build_player_event_text(self, player_id: int, action: str) -> str:
+        """Costruisce la stringa evento per la timeline roster."""
+        player_data = self.players_cache.get(player_id)
+        if player_data:
+            label = (
+                f"#{player_data['number']} {player_data['first_name']} "
+                f"{player_data['last_name']}"
+            ).strip()
+        else:
+            label = f"Giocatore ID {player_id}"
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        if action == "added":
+            return f"[{timestamp}] ➕ Aggiunto: {label}"
+        return f"[{timestamp}] ➖ Rimosso: {label}"
+
+    def _log_roster_event(self, action: str, player_id: int):
+        """Registra un evento di aggiunta/rimozione per il team corrente."""
+        if self.current_team_id is None:
+            return
+
+        team_events = self.team_change_events.setdefault(self.current_team_id, [])
+        team_events.append(
+            {
+                "action": action,
+                "player_id": player_id,
+                "text": self._build_player_event_text(player_id, action),
+            }
+        )
+        self._update_roster_events_list()
+
+    def _update_roster_events_list(self):
+        """Aggiorna la lista eventi roster del team corrente."""
+        self.list_roster_events.clear()
+
+        if self.current_team_id is None:
+            return
+
+        events = self.team_change_events.get(self.current_team_id, [])
+        if not events:
+            info_item = QListWidgetItem("Nessuna modifica registrata")
+            info_item.setForeground(QColor("#7f8c8d"))
+            self.list_roster_events.addItem(info_item)
+            return
+
+        for event in events:
+            item = QListWidgetItem(event["text"])
+            if event.get("action") == "added":
+                item.setForeground(QColor("#27ae60"))
+            elif event.get("action") == "removed":
+                item.setForeground(QColor("#e74c3c"))
+            else:
+                item.setForeground(QColor("#ecf0f1"))
+            self.list_roster_events.addItem(item)
+
+    def _on_team_changed(self, index: int):
+        """Quando cambia la squadra nel dropdown."""
+        # Il cambio è guidato dal pulsante "Continua"; qui gestiamo solo casi programmatici.
+        self._set_active_team(index)
 
     def _load_team_players(self, team_id: int):
         """Carica i giocatori di una squadra nella lista sinistra"""
@@ -484,14 +628,13 @@ class RosterSetupWidget(QWidget):
             display_text = (
                 f"{player_data['first_name']} {player_data['last_name']} "
                 f"(#{player_data['number']}, {player_data['role'] or 'N/A'})"
-            )
+            ).strip()
+
+            if player_id in self.selected_players:
+                display_text = f"✅ {display_text}"
+
             item = QListWidgetItem(display_text)
             item.setData(Qt.ItemDataRole.UserRole, player_id)
-
-            # Se è già nel roster, evidenzia
-            if player_id in self.selected_players:
-                item.setBackground(item.background())
-
             self.list_available_players.addItem(item)
 
         # Aggiorna la tabella del roster
@@ -515,8 +658,6 @@ class RosterSetupWidget(QWidget):
             player_id = current_item.data(Qt.ItemDataRole.UserRole)
             if player_id:
                 self._add_player_to_roster(player_id)
-                self._update_roster_table()
-                self._update_available_players_list()
         else:
             QMessageBox.warning(self, "Attenzione", "Seleziona un giocatore")
 
@@ -535,9 +676,6 @@ class RosterSetupWidget(QWidget):
             QMessageBox.information(
                 self, "Info", "Tutti i giocatori sono già nel roster"
             )
-        else:
-            self._update_roster_table()
-            self._update_available_players_list()
 
     def _add_player_to_roster(self, player_id: int):
         """Aggiunge un giocatore al roster"""
@@ -553,7 +691,9 @@ class RosterSetupWidget(QWidget):
                 "role": player_data["role"],
                 "team_id": player_data["team_id"],
             }
-            self._update_roster_table()
+            self._persist_current_team_selection()
+            self._log_roster_event("added", player_id)
+            self._update_available_players_list()
         else:
             QMessageBox.critical(self, "Errore", "Giocatore non trovato")
 
@@ -569,42 +709,46 @@ class RosterSetupWidget(QWidget):
         )
         if player_id:
             self._remove_player_from_roster(player_id)
-            self._update_available_players_list()
 
     def _remove_player_from_roster(self, player_id: int):
         """Rimuove un giocatore dal roster"""
         if player_id in self.selected_players:
             del self.selected_players[player_id]
-            self._update_roster_table()
+            self._persist_current_team_selection()
+            self._log_roster_event("removed", player_id)
+            self._update_available_players_list()
 
     def _on_roster_item_double_clicked(self, item: QTableWidgetItem):
         """
         Double-click su un elemento della tabella del roster.
-        Se è nella colonna Numero (2) o Ruolo (3), apri il dialog di modifica.
+        Se è nella colonna Ruolo (2), apri il dialog di modifica.
         """
         row = item.row()
         col = item.column()
 
-        # Numero (col 2) o Ruolo (col 3)
-        if col in [2, 3]:
+        # Ruolo (colonna 2)
+        if col == 2:
             player_id = self.table_roster.item(row, 0).data(Qt.ItemDataRole.UserRole)
             if player_id:
                 self._edit_player(player_id)
 
     def _update_roster_table(self):
         """Aggiorna la tabella del roster in base ai giocatori selezionati"""
-        print(f"Aggiornamento tabella roster: {len(self.selected_players)} giocatori")
         self.table_roster.setRowCount(len(self.selected_players))
 
+        initial_players = self.initial_team_players.get(self.current_team_id, set())
+        sorted_players = sorted(
+            self.selected_players.items(),
+            key=lambda item: (item[1].get("number", 0), item[0]),
+        )
+
         row = 0
-        for player_id, data in self.selected_players.items():
+        for player_id, data in sorted_players:
             if player_id in self.players_cache:
                 player_data = self.players_cache[player_id]
                 first_name = player_data["first_name"]
                 last_name = player_data["last_name"]
                 role = data["role"]
-
-                print(f"Aggiunta riga {row}: {first_name} {last_name} - {role}")
 
                 # Colonna Nome
                 item_first = QTableWidgetItem(first_name if first_name else "")
@@ -622,6 +766,17 @@ class RosterSetupWidget(QWidget):
                 item_role.setFlags(item_role.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table_roster.setItem(row, 2, item_role)
 
+                # Colonna Stato
+                is_present = player_id in initial_players
+                status_text = "✓ Presente" if is_present else "➕ Aggiunto"
+                item_status = QTableWidgetItem(status_text)
+                item_status.setFlags(item_status.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if is_present:
+                    item_status.setForeground(QColor("#3498db"))
+                else:
+                    item_status.setForeground(QColor("#27ae60"))
+                self.table_roster.setItem(row, 3, item_status)
+
                 # Colonna Azioni (bottone delete)
                 btn_delete = QPushButton("❌")
                 btn_delete.setMaximumWidth(40)
@@ -629,7 +784,7 @@ class RosterSetupWidget(QWidget):
                 btn_delete.clicked.connect(
                     lambda checked, pid=player_id: self._remove_player_from_roster(pid)
                 )
-                self.table_roster.setCellWidget(row, 3, btn_delete)
+                self.table_roster.setCellWidget(row, 4, btn_delete)
 
                 row += 1
 
@@ -686,7 +841,8 @@ class RosterSetupWidget(QWidget):
         def on_ok():
             self.selected_players[player_id]["number"] = spin_number.value()
             self.selected_players[player_id]["role"] = combo_role.currentText()
-            self._update_roster_table()
+            self._persist_current_team_selection()
+            self._update_available_players_list()
             dialog.accept()
 
         btn_ok.clicked.connect(on_ok)
@@ -697,67 +853,118 @@ class RosterSetupWidget(QWidget):
     def _go_back_to_selection(self):
         """Torna alla pagina di selezione partita"""
         self.selected_players = {}
+        self.team_selected_players = {}
+        self.initial_team_players = {}
+        self.team_change_events = {}
         self.current_match = None
         self.current_team_id = None
+        self.current_team_index = 0
         self.match_id = None
         self.players_cache = {}
+        self.list_roster_events.clear()
         self.stacked.setCurrentIndex(0)
 
-    def _save_roster(self):
-        """Salva il roster nel database e passa alla squadra successiva o alla formation_panel"""
+    def _save_all_teams_to_db(self):
+        """Salva nel DB il roster completo di tutte le squadre del match."""
+        self._persist_current_team_selection()
+
         if not self.current_match:
-            QMessageBox.warning(self, "Errore", "Nessuna partita selezionata")
-            return
+            raise ValueError("Nessun match caricato")
 
-        if not self.selected_players:
-            QMessageBox.warning(self, "Errore", "Seleziona almeno un giocatore")
-            return
+        match_id = self.current_match["id"]
 
-        try:
-            with self.db.session_scope() as session:
-                # Elimina il vecchio roster
-                session.query(MatchPlayer).filter_by(
-                    match_id=self.current_match["id"]
-                ).delete()
+        with self.db.session_scope() as session:
+            # Elimina il vecchio roster
+            session.query(MatchPlayer).filter_by(match_id=match_id).delete()
 
-                # Aggiungi i nuovi giocatori
-                for player_id, data in self.selected_players.items():
+            # Aggiungi i giocatori di tutte le squadre
+            for team in self.teams:
+                team_id = team["id"]
+                team_roster = self.team_selected_players.get(team_id, {})
+
+                for player_id, data in team_roster.items():
+                    role = data.get("role") or ""
                     mp = MatchPlayer(
-                        match_id=self.current_match["id"],
+                        match_id=match_id,
                         player_id=player_id,
-                        team_id=data["team_id"],
-                        number=data["number"],
-                        role=data["role"],
-                        is_libero=False,
+                        team_id=team_id,
+                        number=data.get("number", 0),
+                        role=role,
+                        is_libero=(role.lower() == "libero"),
                         is_starter=False,
                     )
                     session.add(mp)
 
-                session.flush()
+            session.flush()
 
-            QMessageBox.information(self, "Successo", "Roster salvato con successo! ✅")
+    def _save_roster(self):
+        """Salva il roster per step: prima squadra → seconda squadra → formation panel."""
+        if not self.current_match:
+            QMessageBox.warning(self, "Errore", "Nessuna partita selezionata")
+            return
 
-            # Emetti il signal
-            self.roster_completed.emit()
+        current_team_name = (
+            self.teams[self.current_team_index]["name"]
+            if self.teams and self.current_team_index < len(self.teams)
+            else "Squadra"
+        )
 
-            # Passa alla squadra successiva o alla formation_panel
-            if self.current_team_id == self.current_match["home_team_id"]:
-                # Passa alla squadra away
-                self.current_team_id = self.current_match["away_team_id"]
-                self._load_team_players(self.current_team_id)
-                self._update_roster_table()
-            else:
-                # Passa alla formation_panel
-                from volleyball_scout.ui.formation_panel import FormationPanel
+        if not self.selected_players:
+            QMessageBox.warning(
+                self,
+                "Errore",
+                f"Seleziona almeno un giocatore per {current_team_name}",
+            )
+            return
 
-                self.formation_panel = FormationPanel(
-                    db=self.db,
-                    match_id=self.current_match["id"],
-                    home_team_id=self.current_match["home_team_id"],
-                    away_team_id=self.current_match["away_team_id"],
-                    parent=self,
+        self._persist_current_team_selection()
+
+        # STEP INTERMEDIO: salva e passa alla squadra successiva
+        if self.current_team_index < len(self.teams) - 1:
+            try:
+                self._save_all_teams_to_db()
+            except Exception as e:
+                print(f"❌ Errore salvataggio roster: {e}")
+                import traceback
+
+                traceback.print_exc()
+                QMessageBox.critical(self, "Errore", f"Errore salvataggio: {e}")
+                return
+
+            next_index = self.current_team_index + 1
+            next_team_name = self.teams[next_index]["name"]
+            self._set_active_team(next_index, preserve_current=False)
+            QMessageBox.information(
+                self,
+                "Roster salvato",
+                f"Roster di {current_team_name} salvato.\n"
+                f"Ora configura {next_team_name}.",
+            )
+            return
+
+        # STEP FINALE: validazione completa (entrambe le squadre)
+        for idx, team in enumerate(self.teams):
+            team_roster = self.team_selected_players.get(team["id"], {})
+            if not team_roster:
+                self._set_active_team(idx, preserve_current=False)
+                QMessageBox.warning(
+                    self,
+                    "Errore",
+                    f"Completa il roster per {team['name']} prima di continuare.",
                 )
-                self.formation_panel.show()
+                return
+
+        try:
+            self._save_all_teams_to_db()
+            QMessageBox.information(
+                self,
+                "Successo",
+                "Roster completo salvato con successo! ✅\n"
+                "Apro la pagina Formation Panel...",
+            )
+
+            # Emetti il signal solo quando tutto il flusso roster è completato
+            self.roster_completed.emit()
 
             # Se parent è un dialog, chiudilo
             parent = self.parent()

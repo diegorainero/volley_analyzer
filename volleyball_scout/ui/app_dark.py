@@ -757,11 +757,14 @@ class VolleyballScoutApp(QMainWindow):
     def _setup_sections(self):
         """Setup di tutte le sezioni disponibili"""
         # 1. Dashboard
-        self.dashboard = DashboardView(self.db)
+        if self.db is not None:
+            self.dashboard = DashboardView(self.db)
+        else:
+            self.dashboard = PlaceholderWidget("📊 Dashboard")
         self.content_stack.addWidget(self.dashboard)
 
         # 2. Teams & Players Management
-        if TeamManagementWidget:
+        if TeamManagementWidget and self.db is not None:
             try:
                 self.teams_widget = TeamManagementWidget(self.db)
                 self.teams_widget.load_teams()
@@ -773,14 +776,18 @@ class VolleyballScoutApp(QMainWindow):
         self.content_stack.addWidget(self.teams_widget)
 
         # 3. Roster Setup
-        if RosterSetupWidget:
+        if RosterSetupWidget and self.db is not None:
             self.roster_widget = RosterSetupWidget(self.db)
+            if hasattr(self.roster_widget, "roster_completed"):
+                self.roster_widget.roster_completed.connect(
+                    self._on_roster_setup_completed
+                )
         else:
             self.roster_widget = PlaceholderWidget("📋 Roster Setup")
         self.content_stack.addWidget(self.roster_widget)
 
         # 4. Formation Setup Complete (con match selector e navigazione)
-        if FormationSetupComplete:
+        if FormationSetupComplete and self.db is not None:
             try:
                 self.formation_widget = FormationSetupComplete(self.db)
             except Exception as e:
@@ -829,6 +836,29 @@ class VolleyballScoutApp(QMainWindow):
 
         if section_id in section_map:
             self.content_stack.setCurrentIndex(section_map[section_id])
+
+    def _on_roster_setup_completed(self):
+        """Dopo il roster completo, naviga automaticamente alla formation del match corrente."""
+        match_id = None
+
+        if hasattr(self, "roster_widget"):
+            current_match = getattr(self.roster_widget, "current_match", None)
+            if isinstance(current_match, dict):
+                match_id = current_match.get("id")
+
+        # Vai sempre alla sezione formation
+        self._show_section("formation")
+
+        if (
+            match_id is not None
+            and hasattr(self, "formation_widget")
+            and hasattr(self.formation_widget, "open_match_by_id")
+        ):
+            opened = self.formation_widget.open_match_by_id(match_id)
+            if not opened:
+                print(
+                    f"⚠️ Impossibile aprire automaticamente la formation per match {match_id}"
+                )
 
     def _toggle_theme(self, is_dark: bool):
         """Cambia il tema dell'applicazione"""
@@ -935,8 +965,9 @@ class VolleyballScoutApp(QMainWindow):
 
     def closeEvent(self, event):
         """Cleanup quando si chiude l'app"""
-        if self.db:
-            self.db.close()
+        close_fn = getattr(self.db, "close", None)
+        if callable(close_fn):
+            close_fn()
         event.accept()
 
 

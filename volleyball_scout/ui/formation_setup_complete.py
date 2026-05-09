@@ -145,7 +145,7 @@ class FormationSetupMatches(QWidget):
         current_row = self.matches_table.currentRow()
         if current_row >= 0 and current_row < len(self.matches):
             match = self.matches[current_row]
-            self._on_match_selected(match)
+            self.match_selected.emit(match)
 
     def _on_new_match_clicked(self):
         """Apri il dialog per creare una nuova partita"""
@@ -211,7 +211,27 @@ class FormationSetupComplete(QWidget):
             players_by_team = {}
 
             with self.db.session_scope() as session:
-                from volleyball_scout.core.models import Player, Team
+                from volleyball_scout.core.models import MatchPlayer, Player, Team
+
+                # Carica tutti i giocatori del roster match (fonte primaria)
+                roster_entries = (
+                    session.query(MatchPlayer)
+                    .filter(MatchPlayer.match_id == match["id"])
+                    .all()
+                )
+
+                roster_by_team = {}
+                for entry in roster_entries:
+                    team_id = entry.team_id
+                    roster_by_team.setdefault(team_id, []).append(
+                        {
+                            "id": entry.player_id,
+                            "number": entry.number,
+                            "last_name": entry.player.last_name if entry.player else "",
+                            "role": entry.role
+                            or (entry.player.role if entry.player else ""),
+                        }
+                    )
 
                 # Carica home team
                 if match["home_team_id"]:
@@ -220,18 +240,28 @@ class FormationSetupComplete(QWidget):
                     )
                     if home_team:
                         teams.append({"id": home_team.id, "name": home_team.name})
-                        players = (
-                            session.query(Player).filter_by(team_id=home_team.id).all()
-                        )
-                        players_by_team[home_team.id] = [
-                            {
-                                "id": p.id,
-                                "number": p.number,
-                                "last_name": p.last_name,
-                                "role": p.role,
-                            }
-                            for p in players
-                        ]
+
+                        # Usa roster match se presente, altrimenti fallback ai player della squadra
+                        if (
+                            home_team.id in roster_by_team
+                            and roster_by_team[home_team.id]
+                        ):
+                            players_by_team[home_team.id] = roster_by_team[home_team.id]
+                        else:
+                            players = (
+                                session.query(Player)
+                                .filter_by(team_id=home_team.id)
+                                .all()
+                            )
+                            players_by_team[home_team.id] = [
+                                {
+                                    "id": p.id,
+                                    "number": p.number,
+                                    "last_name": p.last_name,
+                                    "role": p.role,
+                                }
+                                for p in players
+                            ]
 
                 # Carica away team
                 if match["away_team_id"]:
@@ -240,27 +270,36 @@ class FormationSetupComplete(QWidget):
                     )
                     if away_team:
                         teams.append({"id": away_team.id, "name": away_team.name})
-                        players = (
-                            session.query(Player).filter_by(team_id=away_team.id).all()
-                        )
-                        players_by_team[away_team.id] = [
-                            {
-                                "id": p.id,
-                                "number": p.number,
-                                "last_name": p.last_name,
-                                "role": p.role,
-                            }
-                            for p in players
-                        ]
+
+                        # Usa roster match se presente, altrimenti fallback ai player della squadra
+                        if (
+                            away_team.id in roster_by_team
+                            and roster_by_team[away_team.id]
+                        ):
+                            players_by_team[away_team.id] = roster_by_team[away_team.id]
+                        else:
+                            players = (
+                                session.query(Player)
+                                .filter_by(team_id=away_team.id)
+                                .all()
+                            )
+                            players_by_team[away_team.id] = [
+                                {
+                                    "id": p.id,
+                                    "number": p.number,
+                                    "last_name": p.last_name,
+                                    "role": p.role,
+                                }
+                                for p in players
+                            ]
 
             # Crea la FormationPanel
             if teams:
-                # Rimuovi la vecchia FormationPanel se esiste
-                if self.current_formation_panel is not None:
-                    widget = self.stacked_widget.widget(1)
-                    if widget:
-                        self.stacked_widget.removeWidget(widget)
-                        widget.deleteLater()
+                # Rimuovi sempre il widget presente in index 1 (placeholder o vecchia formation)
+                existing_widget = self.stacked_widget.widget(1)
+                if existing_widget is not None:
+                    self.stacked_widget.removeWidget(existing_widget)
+                    existing_widget.deleteLater()
 
                 # Crea e configura la nuova FormationPanel
                 self.current_formation_panel = FormationPanel(
@@ -275,9 +314,9 @@ class FormationSetupComplete(QWidget):
                     self._on_back_to_matches
                 )
 
-                # Aggiungi il widget al stacked widget (index 1)
-                self.stacked_widget.addWidget(self.current_formation_panel)
-                self.stacked_widget.setCurrentIndex(1)
+                # Inserisci il widget in index 1 e mostralo
+                self.stacked_widget.insertWidget(1, self.current_formation_panel)
+                self.stacked_widget.setCurrentWidget(self.current_formation_panel)
             else:
                 print(f"⚠️ Match {match['id']} non ha squadre associate")
 
@@ -294,6 +333,15 @@ class FormationSetupComplete(QWidget):
         self.stacked_widget.setCurrentIndex(0)
         # Aggiorna la lista
         self.matches_widget._load_matches()
+
+    def open_match_by_id(self, match_id: int) -> bool:
+        """Apre la formation panel per un match_id specifico se disponibile."""
+        self.matches_widget._load_matches()
+        for match in self.matches_widget.matches:
+            if match["id"] == match_id:
+                self._on_match_selected(match)
+                return True
+        return False
 
     def _open_roster_setup(self, match_id: int):
         """
@@ -313,13 +361,10 @@ class FormationSetupComplete(QWidget):
 
         # Quando il roster è completato, carica la formazione
         def on_roster_completed():
-            # Ricarica i match
-            self.matches_widget._load_matches()
-            # Trova il match e carica la formazione
-            for match in self.matches_widget.matches:
-                if match["id"] == match_id:
-                    self._on_match_selected(match)  # Chiama direttamente il metodo
-                    break
+            # Ricarica i match e apri direttamente la formation del match appena configurato
+            opened = self.open_match_by_id(match_id)
+            if not opened:
+                print(f"⚠️ Match {match_id} non trovato dopo il salvataggio roster")
 
         roster_widget.roster_completed.connect(on_roster_completed)
 
