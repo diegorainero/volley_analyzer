@@ -10,6 +10,6 @@ import sys
 # Importa e esegue main() da app.py
 
 if __name__ == "__main__":
-    from volleyball_scout.ui.app import main
+    from volleyball_scout.ui.app_dark import main
 
     sys.exit(main() or 0)

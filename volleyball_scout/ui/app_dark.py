@@ -1,0 +1,790 @@
+"""
+Volleyball Scout - Main PyQt6 Application with Dark Theme and Menu Bar
+"""
+
+import sys
+from pathlib import Path
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction, QFont, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# Import UI components with error handling
+try:
+    from volleyball_scout.ui.formation_setup_complete import FormationSetupComplete
+except ImportError:
+    try:
+        from .formation_setup_complete import FormationSetupComplete
+    except ImportError as e:
+        print(f"⚠️ Warning: FormationSetupComplete not available: {e}")
+        FormationSetupComplete = None
+
+try:
+    from volleyball_scout.ui.formation_panel import FormationPanel
+except ImportError:
+    try:
+        from .formation_panel import FormationPanel
+    except ImportError as e:
+        print(f"⚠️ Warning: FormationPanel not available: {e}")
+        FormationPanel = None
+
+try:
+    from volleyball_scout.core.database import DatabaseManager
+except ImportError:
+    try:
+        from core.database import DatabaseManager
+    except ImportError as e:
+        print(f"❌ Cannot import DatabaseManager: {e}")
+        raise
+
+try:
+    from volleyball_scout.ui.team_management import TeamManagementWidget
+except ImportError:
+    try:
+        from .team_management import TeamManagementWidget
+    except ImportError as e:
+        print(f"⚠️ Warning: TeamManagementWidget not available: {e}")
+        TeamManagementWidget = None
+
+try:
+    from volleyball_scout.ui.matches_grid import MatchesGridWidget
+except ImportError:
+    try:
+        from .matches_grid import MatchesGridWidget
+    except ImportError as e:
+        print(f"⚠️ Warning: MatchesGridWidget not available: {e}")
+        MatchesGridWidget = None
+
+try:
+    from volleyball_scout.ui.roster_setup import RosterSetupWidget
+except ImportError:
+    RosterSetupWidget = None
+
+try:
+    from volleyball_scout.ui.scout_panel import ScoutPanel
+except ImportError:
+    try:
+        from .scout_panel import ScoutPanel
+    except ImportError as e:
+        print(f"⚠️ Warning: ScoutPanel not available: {e}")
+        ScoutPanel = None
+
+try:
+    from volleyball_scout.ui.stats_view import StatsView
+except ImportError:
+    try:
+        from .stats_view import StatsView
+    except ImportError as e:
+        print(f"⚠️ Warning: StatsView not available: {e}")
+        StatsView = None
+
+try:
+    from volleyball_scout.ui.video_player import VideoPlayer
+except ImportError:
+    try:
+        from .video_player import VideoPlayer
+    except ImportError as e:
+        print(f"⚠️ Warning: VideoPlayer not available: {e}")
+        VideoPlayer = None
+
+try:
+    from volleyball_scout.ui.drafts.draft_widget import DraftListWidget
+except ImportError:
+    try:
+        from .drafts.draft_widget import DraftListWidget
+    except ImportError as e:
+        print(f"⚠️ Warning: DraftListWidget not available: {e}")
+        DraftListWidget = None
+
+# Import assets module
+try:
+    from volleyball_scout.ui.assets import get_icon, get_logo_icon, get_logo_pixmap
+except ImportError:
+    try:
+        from .assets import get_icon, get_logo_icon, get_logo_pixmap
+    except ImportError as e:
+        print(f"⚠️ Warning: Assets module not available: {e}")
+        get_logo_pixmap = None
+        get_icon = None
+        get_logo_icon = None
+
+
+# DARK THEME STYLESHEET - UNCHANGED
+DARK_STYLESHEET = """
+QMainWindow, QWidget, QDialog {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+}
+
+QMenuBar {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+QMenuBar::item:selected {
+    background-color: #3d3d3d;
+}
+
+QMenu {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
+QMenu::item:selected {
+    background-color: #0066cc;
+    color: #ffffff;
+}
+
+QLabel {
+    color: #e0e0e0;
+}
+
+QPushButton {
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #0052a3;
+}
+
+QPushButton:pressed {
+    background-color: #003d7a;
+}
+
+QTableWidget {
+    background-color: #252525;
+    alternate-background-color: #2d2d2d;
+    gridline-color: #3d3d3d;
+    color: #e0e0e0;
+}
+
+QTableWidget::item {
+    padding: 4px;
+    border: none;
+}
+
+QTableWidget::item:selected {
+    background-color: #0066cc;
+    color: white;
+}
+
+QHeaderView::section {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+    padding: 4px;
+    border: 1px solid #3d3d3d;
+}
+
+QScrollBar:vertical {
+    background-color: #1e1e1e;
+    width: 12px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #555555;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #666666;
+}
+
+QStackedWidget {
+    background-color: #1e1e1e;
+}
+
+QRadioButton {
+    color: #e0e0e0;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+}
+
+QRadioButton::indicator:unchecked {
+    background-color: #3d3d3d;
+    border: 2px solid #555555;
+    border-radius: 8px;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #0066cc;
+    border: 2px solid #0066cc;
+    border-radius: 8px;
+}
+
+QLineEdit {
+    background-color: #3d3d3d;
+    color: #e0e0e0;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    padding: 6px;
+    selection-background-color: #0066cc;
+}
+
+QLineEdit:focus {
+    border: 2px solid #0066cc;
+}
+
+QDialog {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+}
+"""
+
+
+class LoginDialog(QDialog):
+    """Dialog semplice per il login"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("🏐 Volleyball Scout - Login")
+        self.setGeometry(400, 300, 400, 200)
+        self.setModal(True)
+        self.setStyleSheet(DARK_STYLESHEET)
+
+        layout = QVBoxLayout()
+
+        # Titolo
+        title = QLabel("🏐 Volleyball Scout")
+        title_font = QFont()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        layout.addSpacing(20)
+
+        # Username
+        layout.addWidget(QLabel("Username:"))
+        self.username_input = QLineEdit()
+        self.username_input.setText("admin")  # Default value
+        self.username_input.setMinimumHeight(35)
+        layout.addWidget(self.username_input)
+
+        # Password
+        layout.addWidget(QLabel("Password:"))
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setText("password")  # Default value
+        self.password_input.setMinimumHeight(35)
+        layout.addWidget(self.password_input)
+
+        layout.addSpacing(20)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.login_button = QPushButton("✓ Accedi")
+        self.login_button.setMinimumHeight(40)
+        self.login_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.login_button)
+
+        self.cancel_button = QPushButton("✗ Annulla")
+        self.cancel_button.setMinimumHeight(40)
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+        # Permetti di inviare il form con Enter
+        self.password_input.returnPressed.connect(self.accept)
+
+    def get_credentials(self):
+        """Ritorna le credenziali inserite"""
+        return self.username_input.text(), self.password_input.text()
+
+
+class PlaceholderWidget(QWidget):
+    """Placeholder widget per sezioni non disponibili"""
+
+    def __init__(self, title="Coming Soon", parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout()
+        layout.addStretch()
+
+        label = QLabel(title)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font = QFont()
+        font.setPointSize(14)
+        label.setFont(font)
+        label.setStyleSheet("color: #666666;")
+
+        layout.addWidget(label)
+        layout.addStretch()
+        self.setLayout(layout)
+
+
+class DashboardView(QWidget):
+    """Enhanced Dashboard widget with cards and logo"""
+
+    def __init__(self, db_manager, parent=None):
+        super().__init__(parent)
+        self.db = db_manager
+
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+
+        # Logo section at the top
+        logo_layout = QHBoxLayout()
+        logo_layout.addStretch()
+
+        if get_logo_pixmap:
+            try:
+                logo_pixmap = get_logo_pixmap(80)
+                logo_label = QLabel()
+                logo_label.setPixmap(logo_pixmap)
+                logo_layout.addWidget(logo_label)
+            except Exception as e:
+                print(f"⚠️ Could not load logo: {e}")
+
+        logo_layout.addStretch()
+        main_layout.addLayout(logo_layout)
+
+        # Title
+        title = QLabel("🏐 Volleyball Scout - Dashboard")
+        font = QFont()
+        font.setPointSize(18)
+        font.setBold(True)
+        title.setFont(font)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title)
+
+        # Subtitle
+        subtitle = QLabel("Benvenuto nella dashboard principale")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("color: #999999; font-size: 12px; margin-bottom: 20px;")
+        main_layout.addWidget(subtitle)
+
+        # Cards Grid
+        cards_layout = QGridLayout()
+        cards_layout.setSpacing(15)
+
+        # Define cards
+        cards = [
+            {
+                "title": "👥 Teams & Players",
+                "description": "Gestisci squadre e giocatori",
+                "icon": "🏐" if get_icon is None else None,
+            },
+            {
+                "title": "📋 Roster Setup",
+                "description": "Configura gli elenchi squadra",
+                "icon": "🏐" if get_icon is None else None,
+            },
+            {
+                "title": "🏐 Formation",
+                "description": "Imposta formazioni e titolari",
+                "icon": "🏐" if get_icon is None else None,
+            },
+            {
+                "title": "🎥 Scout & Video",
+                "description": "Registra e analizza video",
+                "icon": "🏐" if get_icon is None else None,
+            },
+            {
+                "title": "📈 Statistics",
+                "description": "Visualizza statistiche partite",
+                "icon": "🏐" if get_icon is None else None,
+            },
+            {
+                "title": "⚙️ Settings",
+                "description": "Impostazioni applicazione",
+                "icon": "🏐" if get_icon is None else None,
+            },
+        ]
+
+        for idx, card in enumerate(cards):
+            card_widget = self._create_card_widget(
+                card["title"], card["description"], card["icon"]
+            )
+            cards_layout.addWidget(card_widget, idx // 3, idx % 3)
+
+        main_layout.addLayout(cards_layout)
+        main_layout.addStretch()
+
+        self.setLayout(main_layout)
+
+    def _create_card_widget(self, title: str, description: str, icon: str) -> QWidget:
+        """Create a card widget for the dashboard"""
+        card = QWidget()
+        card.setStyleSheet(
+            """
+            QWidget {
+                background-color: #252525;
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+                padding: 15px;
+            }
+            QWidget:hover {
+                background-color: #2d2d2d;
+                border: 1px solid #0066cc;
+            }
+        """
+        )
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        # Title
+        title_label = QLabel(title)
+        title_font = QFont()
+        title_font.setPointSize(12)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        layout.addWidget(title_label)
+
+        # Description
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("color: #999999; font-size: 11px;")
+        layout.addWidget(desc_label)
+
+        layout.addStretch()
+
+        card.setLayout(layout)
+        card.setMinimumHeight(100)
+
+        return card
+
+    def refresh(self):
+        """Refresh dashboard data"""
+        pass
+
+
+class VolleyballScoutApp(QMainWindow):
+    """Main Application Window"""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("🏐 Volleyball Scout")
+        self.setGeometry(100, 100, 1600, 900)
+
+        # Set window icon if available
+        if get_logo_icon:
+            try:
+                icon = get_logo_icon(32)
+                self.setWindowIcon(icon)
+            except Exception as e:
+                print(f"⚠️ Could not set window icon: {e}")
+
+        # Applica tema scuro
+        app = QApplication.instance()
+        if app:
+            app.setStyle("Fusion")
+            app.setStyleSheet(DARK_STYLESHEET)
+
+        # Initialize Database
+        try:
+            self.db = DatabaseManager()
+            print("✅ Database connesso")
+        except Exception as e:
+            print(f"❌ Errore connessione database: {e}")
+            self.db = None
+
+        # Stato di autenticazione
+        self.is_authenticated = False
+        self.current_user = None
+
+        # Main layout
+        main_widget = QWidget()
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Content area con stacked widget
+        self.content_stack = QStackedWidget()
+
+        if self.db:
+            self._setup_sections()
+        else:
+            error_widget = QWidget()
+            error_layout = QVBoxLayout()
+            error_layout.addWidget(
+                QLabel("❌ Errore: Impossibile connettere il database")
+            )
+            error_widget.setLayout(error_layout)
+            self.content_stack.addWidget(error_widget)
+
+        main_layout.addWidget(self.content_stack, 1)
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+
+        # Crea menu bar (dopo setup del widget)
+        self._create_menu_bar()
+
+        # Esegui auto-login
+        if self.db:
+            self._perform_auto_login()
+        else:
+            self.showErrorDialog(
+                "Errore",
+                "❌ Impossibile connettere il database. Controllare la configurazione.",
+            )
+
+    def _create_menu_bar(self):
+        """Crea il menu bar in alto"""
+        menubar = self.menuBar()
+
+        # Menu File
+        file_menu = menubar.addMenu("📁 File")
+
+        action_logout = QAction("🚪 Logout", self)
+        action_logout.setShortcut("Ctrl+L")
+        action_logout.triggered.connect(self._perform_logout)
+        file_menu.addAction(action_logout)
+
+        file_menu.addSeparator()
+
+        action_exit = QAction("❌ Esci", self)
+        action_exit.setShortcut("Ctrl+Q")
+        action_exit.triggered.connect(self.close)
+        file_menu.addAction(action_exit)
+
+        # Menu Sezioni
+        view_menu = menubar.addMenu("👁️ Visualizza")
+
+        action_dashboard = QAction("📊 Dashboard", self)
+        action_dashboard.triggered.connect(lambda: self._show_section("dashboard"))
+        view_menu.addAction(action_dashboard)
+
+        action_teams = QAction("👥 Teams & Players", self)
+        action_teams.triggered.connect(lambda: self._show_section("teams"))
+        view_menu.addAction(action_teams)
+
+        action_roster = QAction("📋 Roster Setup", self)
+        action_roster.triggered.connect(lambda: self._show_section("roster"))
+        view_menu.addAction(action_roster)
+
+        action_formation = QAction("🏐 Formation Setup", self)
+        action_formation.triggered.connect(lambda: self._show_section("formation"))
+        view_menu.addAction(action_formation)
+
+        action_scout = QAction("🎥 Scout & Video", self)
+        action_scout.triggered.connect(lambda: self._show_section("scout"))
+        view_menu.addAction(action_scout)
+
+        action_stats = QAction("📈 Statistics", self)
+        action_stats.triggered.connect(lambda: self._show_section("stats"))
+        view_menu.addAction(action_stats)
+
+        # Menu Aiuto
+        help_menu = menubar.addMenu("❓ Aiuto")
+
+        action_about = QAction("ℹ️ About", self)
+        action_about.triggered.connect(self._show_about)
+        help_menu.addAction(action_about)
+
+    def _setup_sections(self):
+        """Setup di tutte le sezioni disponibili"""
+        # 1. Dashboard
+        self.dashboard = DashboardView(self.db)
+        self.content_stack.addWidget(self.dashboard)
+
+        # 2. Teams & Players Management
+        if TeamManagementWidget:
+            try:
+                self.teams_widget = TeamManagementWidget(self.db)
+                self.teams_widget.load_teams()
+            except Exception as e:
+                print(f"⚠️ Error creating TeamManagementWidget: {e}")
+                self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+        else:
+            self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+        self.content_stack.addWidget(self.teams_widget)
+
+        # 3. Roster Setup
+        if RosterSetupWidget:
+            self.roster_widget = RosterSetupWidget(self.db)
+        else:
+            self.roster_widget = PlaceholderWidget("📋 Roster Setup")
+        self.content_stack.addWidget(self.roster_widget)
+
+        # 4. Formation Setup Complete (con match selector e navigazione)
+        if FormationSetupComplete:
+            try:
+                self.formation_widget = FormationSetupComplete(self.db)
+            except Exception as e:
+                print(f"⚠️ Error loading FormationSetupComplete: {e}")
+                self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+        else:
+            self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+        self.content_stack.addWidget(self.formation_widget)
+
+        # 5. Scout & Video
+        scout_container = QWidget()
+        scout_layout = QHBoxLayout()
+
+        if ScoutPanel:
+            self.scout_panel = ScoutPanel()
+            scout_layout.addWidget(self.scout_panel, 1)
+        else:
+            scout_layout.addWidget(QLabel("Scout Panel not available"), 1)
+
+        if VideoPlayer:
+            self.video_player = VideoPlayer()
+            scout_layout.addWidget(self.video_player, 2)
+        else:
+            scout_layout.addWidget(QLabel("Video Player not available"), 2)
+
+        scout_container.setLayout(scout_layout)
+        self.content_stack.addWidget(scout_container)
+
+        # 6. Statistics
+        if StatsView:
+            self.stats_view = StatsView()
+        else:
+            self.stats_view = PlaceholderWidget("📈 Statistics")
+        self.content_stack.addWidget(self.stats_view)
+
+    def _show_section(self, section_id: str):
+        """Mostra una sezione"""
+        section_map = {
+            "dashboard": 0,
+            "teams": 1,
+            "roster": 2,
+            "formation": 3,
+            "scout": 4,
+            "stats": 5,
+        }
+
+        if section_id in section_map:
+            self.content_stack.setCurrentIndex(section_map[section_id])
+
+    def _show_about(self):
+        """Mostra finestra About"""
+        QMessageBox.information(
+            self,
+            "About Volleyball Scout",
+            "🏐 Volleyball Scout v1.0\n\n"
+            "Applicazione per la scout e l'analisi di partite di pallavolo.\n\n"
+            f"Utente: {self.current_user}\n\n"
+            "© 2024",
+        )
+
+    def _perform_auto_login(self):
+        """Esegui auto-login all'avvio"""
+        print("🔐 Auto-login in corso...")
+
+        # Credenziali hardcoded per la prototipazione
+        username = "admin"
+        password = "password"
+
+        # Verifica credenziali (simulato - in produzione verificare con il DB)
+        if self._verify_credentials(username, password):
+            self.is_authenticated = True
+            self.current_user = username
+            print(f"✅ Auto-login riuscito per utente: {username}")
+            # Mostra dashboard
+            self._show_section("dashboard")
+        else:
+            # Se l'auto-login fallisce, mostra il dialog di login
+            print("⚠️ Auto-login fallito, mostra dialog di login")
+            self._show_login_dialog()
+
+    def _show_login_dialog(self):
+        """Mostra il dialog di login"""
+        while not self.is_authenticated:
+            dialog = LoginDialog(self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                username, password = dialog.get_credentials()
+
+                if self._verify_credentials(username, password):
+                    self.is_authenticated = True
+                    self.current_user = username
+                    print(f"✅ Login riuscito per utente: {username}")
+                    self._show_section("dashboard")
+                    break
+                else:
+                    # Login fallito
+                    self.showErrorDialog(
+                        "Login Fallito",
+                        "❌ Credenziali non valide. Riprova.",
+                    )
+            else:
+                # Utente ha annullato il login
+                self.close()
+                break
+
+    def _verify_credentials(self, username: str, password: str) -> bool:
+        """Verifica le credenziali"""
+        # Implementazione semplice per prototipazione
+        # In produzione, verificare con il database
+        valid_users = {
+            "admin": "password",
+            "coach": "coach123",
+            "scout": "scout123",
+        }
+        return valid_users.get(username) == password
+
+    def _perform_logout(self):
+        """Esegui logout e torna al login"""
+        reply = QMessageBox.question(
+            self,
+            "Logout",
+            "Sei sicuro di voler fare logout?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.is_authenticated = False
+            self.current_user = None
+            print("🚪 Logout eseguito")
+            self._show_login_dialog()
+
+    def showErrorDialog(self, title: str, message: str):
+        """Mostra un dialog di errore"""
+        QMessageBox.critical(self, title, message)
+
+    def closeEvent(self, event):
+        """Cleanup quando si chiude l'app"""
+        if self.db:
+            self.db.close()
+        event.accept()
+
+
+def main():
+    app = QApplication(sys.argv)
+
+    window = VolleyballScoutApp()
+    window.show()
+
+    print("=" * 80)
+    print("🏐 VOLLEYBALL SCOUT - PyQt6 Application")
+    print("=" * 80)
+    print("\n📋 Applicazione avviata!")
+    print("   - Menu in alto per navigare le sezioni")
+    print("   - File → Esci per chiudere l'applicazione")
+    print("   - Tema scuro attivato")
+    print("   - Assets caricati\n")
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main() or 0)

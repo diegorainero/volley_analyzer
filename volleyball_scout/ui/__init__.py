@@ -9,4 +9,5 @@ __all__ = [
     "DraftListWidget",
     "DraftManager",
     "FormationPanel",
+    "NewMatchDialog",
 ]

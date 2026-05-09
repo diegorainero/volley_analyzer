@@ -900,12 +900,14 @@ class FormationPanel(QWidget):
     formation_confirmed = pyqtSignal(dict)  # Emesso quando la formazione è confermata
     back_requested = pyqtSignal()  # Emesso quando l'utente clicca "Torna Indietro"
 
-    def __init__(self, teams, players_by_team, parent=None):
+    def __init__(self, teams, players_by_team, parent=None, matches=None):
         super().__init__(parent)
         self.teams = teams  # [{id, name}]
         self.players_by_team = (
             players_by_team  # {team_id: [{id, number, last_name, role}]}
         )
+        self.matches = matches or []  # Elenco dei match disponibili
+        self.match_id = None  # ID del match attualmente selezionato
         self.team_widgets = {}
         self.game_method = None  # P-S-C o P-C-S
 

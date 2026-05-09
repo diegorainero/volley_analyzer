@@ -68,7 +68,7 @@ if __name__ == "__main__":
     elif scelta == "scout":
         # Launch integrated Volleyball Scout UI
         try:
-            from volleyball_scout.ui.app import main as scout_main
+            from volleyball_scout.ui.app_dark import main as scout_main
 
             raise SystemExit(scout_main() or 0)
         except ImportError as e:

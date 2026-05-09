@@ -25,12 +25,12 @@ if __name__ == "__main__":
         sys.exit(video_main())
     elif scelta == "2":
         print("\n🏐 Avviando Volleyball Scout...\n")
-        from volleyball_scout.ui.app import main as scout_main
+        from volleyball_scout.ui.app_dark import main as scout_main
 
         sys.exit(scout_main() or 0)
     elif scelta == "0":
         print("\n👋 Arrivederci!\n")
-        sys.exit(0)
+        sys.exit(0)·
     else:
         print("\n❌ Scelta non valida.\n")
         sys.exit(1)

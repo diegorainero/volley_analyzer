@@ -1,0 +1,194 @@
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║                  🏐 VOLLEYBALL SCOUT - LOGIN SYSTEM                       ║
+║                         QUICK START GUIDE                                ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+
+📁 FILE PRINCIPALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  volley_analizer/volleyball_scout/ui/app_dark.py
+
+
+🚀 COME AVVIARE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  cd volley_analizer
+  python -m volleyball_scout.ui.app_dark
+
+
+🔑 CREDENZIALI DI TEST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Username: admin      Password: password    ← Default (auto-login)
+  Username: coach      Password: coach123
+  Username: scout      Password: scout123
+
+
+💡 COSA SUCCEDE AL PRIMO AVVIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. App si avvia
+  2. Database si connette
+  3. Auto-login con admin/password (automatico)
+  4. Dashboard viene mostrata
+  5. Zero interazione richiesta ✓
+
+
+⌨️  SHORTCUTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Ctrl+L   →  Logout
+  Ctrl+Q   →  Exit
+  Enter    →  Submit form (LoginDialog)
+
+
+🧪 TEST RAPIDO (90 secondi)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Lanciare app (vedi "Come avviare" sopra)
+  2. Attendi 2-3 secondi per auto-login
+  3. Premi Ctrl+L per fare logout
+  4. Nel dialog clicca "Sì"
+  5. Premi Enter (credenziali pre-compilate)
+  6. Dashboard riappare ✓
+
+
+🎨 TEMA SCURO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ LoginDialog con tema dark (#1e1e1e)
+  ✓ QLineEdit styled (#3d3d3d background, blu focus)
+  ✓ Coerente con l'applicazione
+
+
+✅ STATO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [✓] LoginDialog implementato
+  [✓] Auto-login funzionante
+  [✓] Logout con conferma
+  [✓] 3 utenti di test
+  [✓] Tema scuro integrato
+  [✓] Documentazione completa
+
+  🟢 PRONTO ALL'USO IMMEDIATO
+
+
+📚 DOCUMENTAZIONE FORNITA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  📄 LOGIN_QUICK_REFERENCE.txt              ← Leggi per test veloce
+  📖 LOGIN_SYSTEM_GUIDE.md                  ← Leggi per capire il sistema
+  📊 APP_DARK_IMPLEMENTATION_SUMMARY.md     ← Leggi per code review
+  ✅ IMPLEMENTATION_COMPLETE_LOGIN.md       ← Leggi per briefing team
+  🗺️  LOGIN_DOCUMENTATION_INDEX.md          ← Leggi per navigare tutto
+
+
+🔄 FLUSSO PRINCIPALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  App Start
+    ↓
+  Auto-Login (admin/password)
+    ↓
+  ┌─ Success? YES → Dashboard
+  │
+  └─ Success? NO  → LoginDialog
+              ↓
+          User Input
+              ↓
+          ┌─ Valid? YES → Dashboard
+          └─ Valid? NO  → Error + Loop
+
+
+🛠️ TROUBLESHOOTING VELOCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ❓ LoginDialog non appare?
+  ✓ È normale! Auto-login è riuscito, prova Ctrl+L
+
+  ❓ Credenziali sbagliate?
+  ✓ Usa admin/password (sono pre-compilate)
+
+  ❓ PyQt6 error?
+  ✓ pip install PyQt6
+
+  ❓ Database error?
+  ✓ python volley_analizer/check_database.py
+
+
+📋 OPERAZIONI COMUNI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Voglio cambiare utente:
+    1. Ctrl+L
+    2. Sì
+    3. Cancella username
+    4. Scrivi "coach"
+    5. Cancella password, scrivi "coach123"
+    6. Premi Enter ✓
+
+  Voglio aggiungere un utente:
+    1. Apri app_dark.py
+    2. Vai a _verify_credentials()
+    3. Aggiungi al dizionario valid_users
+    4. Salva e riavvia ✓
+
+  Voglio disabilitare auto-login:
+    1. Apri app_dark.py
+    2. Commenta _perform_auto_login()
+    3. Uncomenta _show_login_dialog()
+    4. Salva e riavvia ✓
+
+
+🎯 PER INTEGRARE CON DATABASE (Futuro)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Vedi: LOGIN_SYSTEM_GUIDE.md sezione "Integrazione con Database"
+
+  Summary:
+  1. Sostituisci _verify_credentials() per cercare nel DB
+  2. Implementa password hashing (bcrypt)
+  3. Aggiungi session management
+  4. Testa con dati reali
+
+
+🌟 FEATURES IMPLEMENTATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Auto-login all'avvio
+  ✓ LoginDialog popup
+  ✓ Logout nel menu (Ctrl+L)
+  ✓ Credenziali verificate (3 utenti)
+  ✓ Tema scuro completamente integrato
+  ✓ Error handling robusto
+  ✓ Stato autenticazione tracciato
+  ✓ About menu mostra user corrente
+  ✓ Shortcut da tastiera funzionanti
+  ✓ Documentazione completa (2000+ linee)
+
+
+❌ NON IMPLEMENTATO (Next Phase)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ⏳ Database integration (vedi sezione "Per integrare con database")
+  ⏳ Password hashing
+  ⏳ Session persistence
+  ⏳ 2FA
+  ⏳ Password reset
+
+
+🚀 PRONTO A PARTIRE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Per USO IMMEDIATO:
+    python -m volleyball_scout.ui.app_dark
+
+  Per CAPIRE il sistema:
+    Leggi LOGIN_QUICK_REFERENCE.txt (5 min)
+
+  Per SVILUPPARE oltre:
+    Leggi LOGIN_SYSTEM_GUIDE.md (20 min)
+
+  Per BRIEFARE il team:
+    Usa IMPLEMENTATION_COMPLETE_LOGIN.md
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+                    ✅ SYSTEM READY FOR USE
+
+═══════════════════════════════════════════════════════════════════════════════

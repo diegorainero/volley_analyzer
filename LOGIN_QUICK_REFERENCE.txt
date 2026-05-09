@@ -1,0 +1,179 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║            🏐 VOLLEYBALL SCOUT - LOGIN SYSTEM QUICK REFERENCE              ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📁 FILE PRINCIPALE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   volley_analizer/volleyball_scout/ui/app_dark.py
+
+
+🚀 COME AVVIARE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   cd volley_analizer
+   python -m volleyball_scout.ui.app_dark
+
+   Oppure:
+   python volley_analizer/volleyball_scout/ui/app_dark.py
+
+
+🔑 CREDENZIALI DI TEST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Username: admin          Password: password
+   Username: coach          Password: coach123
+   Username: scout          Password: scout123
+
+
+🌟 AL PRIMO AVVIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ Database si connette
+   ✓ UI sezioni vengono caricate
+   ✓ Auto-login: admin/password
+   ✓ Dashboard mostrata istantaneamente
+   ✓ Nessuna interazione richiesta
+
+
+🚪 LOGOUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Menu: File → Logout
+   Shortcut: Ctrl+L
+
+   Effetto:
+   • Mostra dialog di conferma
+   • Se Sì: Resetta stato + LoginDialog
+   • Se No: Rimane nella dashboard
+
+
+🎨 TEMA SCURO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ LoginDialog integrato con tema dark
+   ✓ QLineEdit styled (#3d3d3d background)
+   ✓ Focus/Hover effects blu (#0066cc)
+   ✓ Coerente con tutta l'applicazione
+
+
+📱 COMPONENTI PRINCIPALI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   LoginDialog
+   └─ self.username_input: QLineEdit (pre-filled: admin)
+   └─ self.password_input: QLineEdit (pre-filled: password)
+   └─ login_button: QPushButton (✓ Accedi)
+   └─ cancel_button: QPushButton (✗ Annulla)
+   └─ get_credentials() → (str, str)
+
+   VolleyballScoutApp
+   └─ is_authenticated: bool
+   └─ current_user: str|None
+   └─ _perform_auto_login(): void
+   └─ _show_login_dialog(): void
+   └─ _verify_credentials(user, pass): bool
+   └─ _perform_logout(): void
+
+
+🔄 FLUSSO APPLICAZIONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   APP LAUNCH
+      ↓
+   Init Database
+      ↓
+   Setup UI Sections (Dashboard, Teams, Formation, etc.)
+      ↓
+   Create Menu Bar (con Logout option)
+      ↓
+   AUTO-LOGIN (admin/password)
+      ↓
+   ┌─ Valid?
+   │  ├─ YES → is_authenticated=True → Dashboard ✅
+   │  └─ NO  → LoginDialog ← Manual input
+   │
+   └─ LoginDialog Loop
+      ├─ User enters credentials
+      ├─ Valid? YES → Dashboard ✅
+      └─ Valid? NO  → Error message + Loop
+
+
+✅ TESTING CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   □ App avviato → Auto-login riuscito → Dashboard mostrata
+   □ Ctrl+L → Logout dialog → Sì → LoginDialog
+   □ Logout dialog → No → Rimane in dashboard
+   □ Login con coach/coach123 → Dashboard caricata
+   □ Login con credenziali sbagliate → Error message
+   □ Enter key in password field → Invia form
+   □ About menu → Mostra username attuale
+
+
+⌨️ SHORTCUTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Ctrl+L    → Logout (nel menu File)
+   Ctrl+Q    → Exit (nel menu File)
+   Enter     → Submit login form (nel LoginDialog)
+
+
+🔒 SICUREZZA NOTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ⚠️  PROTOTIPO - Credenziali hardcoded!
+
+   Per produzione integrazione con database:
+   • Hash password (bcrypt/argon2)
+   • JWT tokens per sessioni
+   • Rate limiting login falliti
+   • Audit logging accessi
+
+
+📚 DOCUMENTAZIONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LOGIN_SYSTEM_GUIDE.md           → Guida dettagliata
+   APP_DARK_IMPLEMENTATION_SUMMARY → Summary visuale
+   LOGIN_QUICK_REFERENCE.txt       → Questo file
+
+
+🎯 CREDENZIALI PRE-COMPILATE NEL DIALOG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   I campi sono pre-compilati con admin/password per facilità di test
+
+   Rimuovere per produzione:
+
+   self.username_input.setText("admin")        # REMOVE
+   self.password_input.setText("password")     # REMOVE
+
+
+🛠️ TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   Q: App non avvia?
+   A: Controllare che PyQt6 sia installato
+      pip install PyQt6
+
+   Q: Database error?
+   A: Controllare database.py e configurazione
+      python volley_analizer/check_database.py
+
+   Q: LoginDialog non appare?
+   A: Auto-login è riuscito (normale!), prova Ctrl+L per logout
+
+   Q: Enter key non funziona?
+   A: Focus deve essere nel campo password
+      self.password_input.returnPressed.connect(self.accept)
+
+
+📊 STATO IMPLEMENTAZIONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   [✓] LoginDialog class
+   [✓] Auto-login all'avvio
+   [✓] Logout nel menu
+   [✓] Credenziali verification
+   [✓] Tema scuro integrato
+   [✓] Error handling
+   [✓] Stato autenticazione
+   [✓] Documentazione
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         🟢 SISTEMA PRONTO AL USO                           ║
+╚════════════════════════════════════════════════════════════════════════════╝

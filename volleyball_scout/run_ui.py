@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from volleyball_scout.ui.app import main
+from volleyball_scout.ui.app_dark import main
 
 if __name__ == "__main__":
     main()

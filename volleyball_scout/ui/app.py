@@ -37,6 +37,15 @@ except ImportError:
 
 # Import UI components with error handling
 try:
+    from volleyball_scout.ui.formation_setup_complete import FormationSetupComplete
+except ImportError:
+    try:
+        from .formation_setup_complete import FormationSetupComplete
+    except ImportError as e:
+        print(f"⚠️ Warning: FormationSetupComplete not available: {e}")
+        FormationSetupComplete = None
+
+try:
     from volleyball_scout.ui.formation_panel import FormationPanel
 except ImportError:
     try:
@@ -335,40 +344,12 @@ class VolleyballScoutApp(QMainWindow):
             self.roster_widget = PlaceholderWidget("📋 Roster Setup")
         self.content_stack.addWidget(self.roster_widget)
 
-        # 4. Formation Panel
-        if FormationPanel:
+        # 4. Formation Setup Complete (with match selector)
+        if FormationSetupComplete:
             try:
-                # Load teams and players from database
-                teams = []
-                players_by_team = {}
-                with self.db.session_scope() as session:
-                    from volleyball_scout.core.models import Player, Team
-
-                    teams_data = session.query(Team).all()
-                    for team in teams_data:
-                        teams.append({"id": team.id, "name": team.name})
-                        players_data = (
-                            session.query(Player).filter_by(team_id=team.id).all()
-                        )
-                        players_by_team[team.id] = [
-                            {
-                                "id": p.id,
-                                "number": p.number,
-                                "last_name": p.last_name,
-                                "role": p.role,
-                            }
-                            for p in players_data
-                        ]
-
-                # Create formation panel with data
-                if teams:
-                    self.formation_widget = FormationPanel(teams, players_by_team)
-                else:
-                    self.formation_widget = PlaceholderWidget(
-                        "🏐 Formation Setup\n(No teams in database)"
-                    )
+                self.formation_widget = FormationSetupComplete(self.db)
             except Exception as e:
-                print(f"⚠️ Error loading FormationPanel: {e}")
+                print(f"⚠️ Error loading FormationSetupComplete: {e}")
                 self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
         else:
             self.formation_widget = PlaceholderWidget("🏐 Formation Setup")

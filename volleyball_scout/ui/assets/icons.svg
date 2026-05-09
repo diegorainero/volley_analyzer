@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160">
+  <!-- Dashboard icon -->
+  <g id="dashboard">
+    <rect x="10" y="10" width="120" height="140" fill="none"/>
+    <rect x="20" y="25" width="50" height="50" fill="none" stroke="#0066cc" stroke-width="2" rx="3"/>
+    <rect x="80" y="25" width="50" height="50" fill="none" stroke="#0066cc" stroke-width="2" rx="3"/>
+    <rect x="20" y="85" width="50" height="40" fill="none" stroke="#0066cc" stroke-width="2" rx="3"/>
+    <rect x="80" y="85" width="50" height="40" fill="none" stroke="#0066cc" stroke-width="2" rx="3"/>
+  </g>
+
+  <!-- Team icon -->
+  <g id="team">
+    <rect x="150" y="10" width="120" height="140" fill="none"/>
+    <!-- Head 1 -->
+    <circle cx="175" cy="40" r="10" fill="none" stroke="#0066cc" stroke-width="2"/>
+    <!-- Body 1 -->
+    <path d="M 175 50 L 175 65" stroke="#0066cc" stroke-width="2"/>
+    <!-- Head 2 -->
+    <circle cx="215" cy="40" r="10" fill="none" stroke="#0066cc" stroke-width="2"/>
+    <!-- Body 2 -->
+    <path d="M 215 50 L 215 65" stroke="#0066cc" stroke-width="2"/>
+    <!-- Head 3 -->
+    <circle cx="195" cy="55" r="10" fill="none" stroke="#0066cc" stroke-width="2"/>
+    <!-- Body 3 -->
+    <path d="M 195 65 L 195 80" stroke="#0066cc" stroke-width="2"/>
+    <!-- Stats bars -->
+    <rect x="165" y="95" width="8" height="35" fill="#0066cc" opacity="0.7"/>
+    <rect x="185" y="90" width="8" height="40" fill="#0066cc" opacity="0.7"/>
+    <rect x="205" y="85" width="8" height="45" fill="#0066cc" opacity="0.7"/>
+  </g>
+
+  <!-- Formation icon -->
+  <g id="formation">
+    <rect x="290" y="10" width="120" height="140" fill="none"/>
+    <!-- Court outline -->
+    <rect x="310" y="35" width="80" height="90" fill="none" stroke="#0066cc" stroke-width="2" rx="2"/>
+    <!-- Center line -->
+    <line x1="310" y1="80" x2="390" y2="80" stroke="#0066cc" stroke-width="1" stroke-dasharray="3,2"/>
+    <!-- Players -->
+    <circle cx="325" cy="50" r="5" fill="#0066cc"/>
+    <circle cx="345" cy="45" r="5" fill="#0066cc"/>
+    <circle cx="365" cy="50" r="5" fill="#0066cc"/>
+    <circle cx="335" cy="65" r="5" fill="#0066cc"/>
+    <circle cx="360" cy="65" r="5" fill="#0066cc"/>
+    <circle cx="350" cy="80" r="5" fill="#0066cc" opacity="0.5" stroke="#0066cc" stroke-width="1"/>
+  </g>
+
+  <!-- Scout/Video icon -->
+  <g id="scout">
+    <rect x="430" y="10" width="120" height="140" fill="none"/>
+    <!-- Camera body -->
+    <rect x="455" y="45" width="70" height="60" fill="none" stroke="#0066cc" stroke-width="2" rx="3"/>
+    <!-- Lens -->
+    <circle cx="490" cy="75" r="20" fill="none" stroke="#0066cc" stroke-width="2"/>
+    <circle cx="490" cy="75" r="12" fill="#0066cc" opacity="0.3"/>
+    <!-- Viewfinder -->
+    <rect x="480" y="50" width="20" height="10" fill="none" stroke="#0066cc" stroke-width="1"/>
+  </g>
+
+  <!-- Statistics icon -->
+  <g id="stats">
+    <rect x="570" y="10" width="120" height="140" fill="none"/>
+    <!-- Chart bars -->
+    <rect x="580" y="85" width="12" height="40" fill="#0066cc" opacity="0.7"/>
+    <rect x="600" y="75" width="12" height="50" fill="#0066cc" opacity="0.8"/>
+    <rect x="620" y="55" width="12" height="70" fill="#0066cc" opacity="0.9"/>
+    <!-- Axis -->
+    <line x1="575" y1="130" x2="640" y2="130" stroke="#0066cc" stroke-width="2"/>
+    <line x1="575" y1="130" x2="575" y2="35" stroke="#0066cc" stroke-width="2"/>
+  </g>
+</svg>
