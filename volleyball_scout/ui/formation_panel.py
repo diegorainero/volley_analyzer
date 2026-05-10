@@ -823,40 +823,45 @@ class TeamFormationWidget(QWidget):
         elenco_frame.setMaximumWidth(150)
         formation_body_layout.addWidget(elenco_frame, 0)
 
-        # Grid della formazione in gioco (6 posizioni: P1-P6)
+        # Grid della formazione in gioco
+        # Layout visuale richiesto:
+        #   Riga alta:  P4 | P3 | P2
+        #   Riga bassa: P5 | P6 | P1
         formation_grid = QGridLayout()
         formation_grid.setSpacing(8)
         formation_grid.setContentsMargins(0, 0, 0, 0)
 
         positions = ["P1", "P2", "P3", "P4", "P5", "P6"]
-        idx = 0
-        for row in range(2):
-            for col in range(3):
-                # Crea un container per ogni posizione con bordo verde e background giallo
-                position_container = QFrame()
-                position_container.setStyleSheet("""
-                    QFrame {
-                        border: 2px solid #8A613F;
-                        border-radius: 8px;
-                        background-color: #FFF7F0;
-                    }
-                """)
-                position_layout = QVBoxLayout()
-                position_layout.setContentsMargins(6, 6, 6, 6)
-                position_layout.setSpacing(0)
+        visual_order = [3, 2, 1, 4, 5, 0]  # P4,P3,P2 / P5,P6,P1
 
-                slot = FormationSlot(positions[idx])
-                slot.formation_widget = self
-                self.formation_slots[idx] = slot
+        for visual_idx, slot_idx in enumerate(visual_order):
+            row = visual_idx // 3
+            col = visual_idx % 3
 
-                position_layout.addWidget(slot, alignment=Qt.AlignmentFlag.AlignCenter)
-                position_container.setLayout(position_layout)
+            # Crea un container per ogni posizione
+            position_container = QFrame()
+            position_container.setStyleSheet("""
+                QFrame {
+                    border: 2px solid #8A613F;
+                    border-radius: 8px;
+                    background-color: #FFF7F0;
+                }
+            """)
+            position_layout = QVBoxLayout()
+            position_layout.setContentsMargins(6, 6, 6, 6)
+            position_layout.setSpacing(0)
 
-                # Box formazione più compatti
-                position_container.setMinimumSize(72, 64)
+            slot = FormationSlot(positions[slot_idx])
+            slot.formation_widget = self
+            self.formation_slots[slot_idx] = slot
 
-                formation_grid.addWidget(position_container, row, col)
-                idx += 1
+            position_layout.addWidget(slot, alignment=Qt.AlignmentFlag.AlignCenter)
+            position_container.setLayout(position_layout)
+
+            # Box formazione più compatti
+            position_container.setMinimumSize(72, 64)
+
+            formation_grid.addWidget(position_container, row, col)
 
         formation_body_layout.addLayout(formation_grid, 1)
 
@@ -1092,6 +1097,8 @@ class FormationPanel(QWidget):
         self.team_method_combos = {}
         self.team_method_auto_checkboxes = {}
         self.team_method_detected_labels = {}
+        self.team_setter_selected_labels = {}
+        self.selected_setter_by_team = {}  # {team_id: player_id}
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -1186,6 +1193,12 @@ class FormationPanel(QWidget):
             lbl_detect_a.setStyleSheet("font-size: 10px; color: #8F7D8A;")
             self.team_method_detected_labels[team_a["id"]] = lbl_detect_a
             team_a_method_layout.addWidget(lbl_detect_a)
+
+            lbl_setter_a = QLabel("Palleggiatore: -")
+            lbl_setter_a.setStyleSheet("font-size: 10px; color: #8F7D8A;")
+            self.team_setter_selected_labels[team_a["id"]] = lbl_setter_a
+            team_a_method_layout.addWidget(lbl_setter_a)
+
             team_a_method_layout.addStretch()
             team_a_layout.addLayout(team_a_method_layout)
 
@@ -1388,6 +1401,12 @@ class FormationPanel(QWidget):
             lbl_detect_b.setStyleSheet("font-size: 10px; color: #8F7D8A;")
             self.team_method_detected_labels[team_b["id"]] = lbl_detect_b
             team_b_method_layout.addWidget(lbl_detect_b)
+
+            lbl_setter_b = QLabel("Palleggiatore: -")
+            lbl_setter_b.setStyleSheet("font-size: 10px; color: #8F7D8A;")
+            self.team_setter_selected_labels[team_b["id"]] = lbl_setter_b
+            team_b_method_layout.addWidget(lbl_setter_b)
+
             team_b_method_layout.addStretch()
             team_b_layout.addLayout(team_b_method_layout)
 
@@ -1645,6 +1664,47 @@ class FormationPanel(QWidget):
         # Ridetecta il metodo di gioco
         self.detect_game_method()
 
+    def _get_setter_for_team(self, team_id: int):
+        """Restituisce il giocatore usato come palleggiatore nella formazione attuale."""
+        team_widget = self.team_widgets.get(team_id)
+        if team_widget is None:
+            return None
+
+        players_by_id = {p.get("id"): p for p in team_widget.players}
+        players_in_field = [
+            slot.player_id
+            for slot in team_widget.formation_slots.values()
+            if slot.player_id is not None
+        ]
+        players_in_field_set = set(players_in_field)
+
+        selected_setter_id = self.selected_setter_by_team.get(team_id)
+        if selected_setter_id is not None:
+            if selected_setter_id in players_in_field_set:
+                return players_by_id.get(selected_setter_id)
+            # Pulizia selezione non più valida
+            self.selected_setter_by_team.pop(team_id, None)
+
+        # Fallback: primo titolare con ruolo palleggiatore
+        for player_id in players_in_field:
+            player = players_by_id.get(player_id)
+            role = str((player or {}).get("role", "")).strip().lower()
+            if "palleggiatore" in role:
+                return player
+
+        return None
+
+    def _format_setter_text(self, player):
+        """Formatta una descrizione breve del palleggiatore per la UI."""
+        if not player:
+            return "-"
+
+        number = player.get("number", "-")
+        last_name = str(player.get("last_name", "")).strip()
+        if last_name:
+            return f"#{number} {last_name}"
+        return f"#{number}"
+
     def _refresh_game_method_summary(self):
         """Aggiorna il riepilogo metodi gioco per entrambe le squadre."""
         summary_parts = []
@@ -1652,7 +1712,17 @@ class FormationPanel(QWidget):
             team_id = team["id"]
             combo = self.team_method_combos.get(team_id)
             selected = combo.currentText() if combo is not None else "P-S-C"
-            summary_parts.append(f"{team['name']}: {selected}")
+
+            setter_player = self._get_setter_for_team(team_id)
+            setter_text = self._format_setter_text(setter_player)
+
+            setter_label = self.team_setter_selected_labels.get(team_id)
+            if setter_label is not None:
+                setter_label.setText(f"Palleggiatore: {setter_text}")
+
+            summary_parts.append(
+                f"{team['name']}: {selected} (Palleggiatore: {setter_text})"
+            )
 
         if summary_parts:
             self.game_method_display.setText(
@@ -1677,53 +1747,95 @@ class FormationPanel(QWidget):
         else:
             self._refresh_game_method_summary()
 
+    def _ask_setter_for_team(self, team_name: str, candidates):
+        """Chiede quale palleggiatore usare in formazione quando ce ne sono più di uno."""
+        if not candidates:
+            return None
+
+        sorted_candidates = sorted(candidates, key=lambda p: p.get("number", 0))
+        if len(sorted_candidates) == 1:
+            return sorted_candidates[0].get("id")
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(f"Palleggiatore - {team_name}")
+        dialog.setText(
+            "Sono presenti più palleggiatori nella formazione titolari.\n\n"
+            "Seleziona quale sarà il palleggiatore di riferimento:"
+        )
+        dialog.setIcon(QMessageBox.Icon.Question)
+
+        combo = QComboBox()
+        for p in sorted_candidates:
+            combo.addItem(
+                f"#{p.get('number', '-')} - {p.get('last_name', '')} ({p.get('role', '')})",
+                p.get("id"),
+            )
+
+        dialog.layout().addWidget(combo, dialog.layout().rowCount(), 0, 1, 2)
+        dialog.setStandardButtons(
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+        )
+        dialog.setDefaultButton(QMessageBox.StandardButton.Ok)
+
+        result = dialog.exec()
+        if result != QMessageBox.StandardButton.Ok:
+            return None
+
+        return combo.currentData()
+
     def _detect_method_for_team(self, team_id: int):
-        """Rileva il metodo di gioco per una singola squadra."""
+        """Rileva il metodo di gioco per una singola squadra.
+
+        Regola operativa richiesta:
+        - il palleggiatore deve essere in posizione 1 (P1)
+        - se in posizione 2 c'è uno schiacciatore/banda -> P-S-C
+        - se in posizione 2 c'è un centrale -> P-C-S
+        """
         if team_id not in self.team_widgets:
             return None
 
         team_widget = self.team_widgets[team_id]
-        players = team_widget.players
+        players_by_id = {p.get("id"): p for p in team_widget.players}
 
+        # Trova la zona del palleggiatore
+        # Priorità: scelta manuale (se presente), altrimenti primo palleggiatore per ruolo.
         setter_idx = None
-        for idx, slot in team_widget.formation_slots.items():
-            if not slot.player_id:
-                continue
-            for p in players:
-                if p["id"] == slot.player_id and p.get("role") == "Palleggiatore":
+        selected_setter_id = self.selected_setter_by_team.get(team_id)
+
+        if selected_setter_id is not None:
+            for idx, slot in team_widget.formation_slots.items():
+                if slot.player_id == selected_setter_id:
                     setter_idx = idx
                     break
-            if setter_idx is not None:
-                break
 
         if setter_idx is None:
+            for idx, slot in team_widget.formation_slots.items():
+                if not slot.player_id:
+                    continue
+                player = players_by_id.get(slot.player_id)
+                role = (player or {}).get("role", "")
+                if "palleggiatore" in str(role).strip().lower():
+                    setter_idx = idx
+                    break
+
+        # Rilevazione valida solo con P in posizione 1
+        # Indici interni: 0=P1, 1=P2, 2=P3, 3=P4, 4=P5, 5=P6
+        if setter_idx != 0:
             return None
 
-        detected_method = None
-        oraria_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 0}
-        adjacent_idx = oraria_map.get(setter_idx)
+        pos2_slot = team_widget.formation_slots.get(1)  # P2
+        if pos2_slot is None or not pos2_slot.player_id:
+            return None
 
-        if adjacent_idx is not None and adjacent_idx in team_widget.formation_slots:
-            adjacent_slot = team_widget.formation_slots[adjacent_idx]
-            if adjacent_slot.player_id:
-                for p in players:
-                    if p["id"] == adjacent_slot.player_id:
-                        role = p.get("role", "").lower()
-                        if any(
-                            keyword in role
-                            for keyword in [
-                                "schiacciatore",
-                                "opposto",
-                                "banda",
-                                "universale",
-                            ]
-                        ):
-                            detected_method = "P-S-C"
-                        elif "centrale" in role:
-                            detected_method = "P-C-S"
-                        break
+        pos2_player = players_by_id.get(pos2_slot.player_id)
+        pos2_role = str((pos2_player or {}).get("role", "")).strip().lower()
 
-        return detected_method
+        if "centrale" in pos2_role:
+            return "P-C-S"
+        if "schiacciatore" in pos2_role or "banda" in pos2_role:
+            return "P-S-C"
+
+        return None
 
     def _detect_and_apply_team_method(self, team_id: int, force: bool = False):
         """Rileva e applica (se auto/manuale) il metodo gioco per squadra."""
@@ -1816,53 +1928,82 @@ class FormationPanel(QWidget):
                 )
                 return
 
-            # Validazione palleggiatore obbligatorio
-            has_setter_available = any(
-                p["role"] == "Palleggiatore" for p in team_widget.players
-            )
+            # Validazione palleggiatore e scelta esplicita in caso di multipli
+            titolari_ids = set(formation["titolari"])
+            titolari_players = [
+                p for p in team_widget.players if p["id"] in titolari_ids
+            ]
 
-            if has_setter_available:
-                titolari_ids = formation["titolari"]
-                titolari_players = [
-                    p for p in team_widget.players if p["id"] in titolari_ids
-                ]
-                has_setter_in_field = any(
-                    p["role"] == "Palleggiatore" for p in titolari_players
+            setters_available = [
+                p
+                for p in team_widget.players
+                if "palleggiatore" in str(p.get("role", "")).strip().lower()
+            ]
+            setters_in_field = [
+                p
+                for p in titolari_players
+                if "palleggiatore" in str(p.get("role", "")).strip().lower()
+            ]
+
+            selected_setter_id = None
+
+            # Caso richiesto: più palleggiatori in formazione -> chiedi quale usare
+            if len(setters_in_field) >= 2:
+                selected_setter_id = self._ask_setter_for_team(
+                    team["name"], setters_in_field
                 )
-
-                if not has_setter_in_field:
-                    dialog = QMessageBox(self)
-                    dialog.setWindowTitle(f"Palleggiatore per {team['name']}")
-                    dialog.setText(
-                        "Nessun titolare ha il ruolo di Palleggiatore.\n\n"
-                        "Seleziona uno dei titolari come palleggiatore temporaneo:"
+                if selected_setter_id is None:
+                    QMessageBox.warning(
+                        self,
+                        "Errore",
+                        f"Seleziona il palleggiatore di riferimento per {team['name']}",
                     )
-                    dialog.setIcon(QMessageBox.Icon.Question)
+                    return
 
-                    combo = QComboBox()
-                    options = [
-                        f"#{p['number']} - {p['last_name']} ({p['role']})"
-                        for p in titolari_players
-                    ]
-                    combo.addItems(options)
+            # Un solo palleggiatore in campo: selezione automatica
+            elif len(setters_in_field) == 1:
+                selected_setter_id = setters_in_field[0]["id"]
 
-                    dialog.layout().addWidget(
-                        combo, dialog.layout().rowCount(), 0, 1, 2
+            # Nessun palleggiatore in campo ma palleggiatore presente nel roster
+            elif setters_available:
+                dialog = QMessageBox(self)
+                dialog.setWindowTitle(f"Palleggiatore per {team['name']}")
+                dialog.setText(
+                    "Nessun titolare ha il ruolo di Palleggiatore.\n\n"
+                    "Seleziona uno dei titolari come palleggiatore temporaneo:"
+                )
+                dialog.setIcon(QMessageBox.Icon.Question)
+
+                combo = QComboBox()
+                for p in sorted(titolari_players, key=lambda x: x.get("number", 0)):
+                    combo.addItem(
+                        f"#{p.get('number', '-')} - {p.get('last_name', '')} ({p.get('role', '')})",
+                        p.get("id"),
                     )
-                    dialog.setStandardButtons(
-                        QMessageBox.StandardButton.Ok
-                        | QMessageBox.StandardButton.Cancel
-                    )
-                    dialog.setDefaultButton(QMessageBox.StandardButton.Ok)
 
-                    result = dialog.exec()
-                    if result != QMessageBox.StandardButton.Ok:
-                        QMessageBox.warning(
-                            self,
-                            "Errore",
-                            "Seleziona un palleggiatore per continuare",
-                        )
-                        return
+                dialog.layout().addWidget(combo, dialog.layout().rowCount(), 0, 1, 2)
+                dialog.setStandardButtons(
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
+                )
+                dialog.setDefaultButton(QMessageBox.StandardButton.Ok)
+
+                result = dialog.exec()
+                if result != QMessageBox.StandardButton.Ok:
+                    QMessageBox.warning(
+                        self,
+                        "Errore",
+                        "Seleziona un palleggiatore per continuare",
+                    )
+                    return
+
+                selected_setter_id = combo.currentData()
+
+            # Salva scelta setter per la rilevazione metodo
+            if selected_setter_id is not None:
+                self.selected_setter_by_team[team_id] = selected_setter_id
+                self._detect_and_apply_team_method(team_id, force=False)
+            else:
+                self.selected_setter_by_team.pop(team_id, None)
 
             titolari_by_team[team_id] = formation["titolari"]
             libero_by_team[team_id] = (
@@ -1917,6 +2058,7 @@ class FormationPanel(QWidget):
 
             # Mantieni i dati sincronizzati e ricrea il widget squadra
             self.players_by_team[team_id] = players
+            self.selected_setter_by_team.pop(team_id, None)
             self._reload_team_widget(team_id)
 
             # Dopo i cambiamenti, rileva il metodo di gioco di nuovo
@@ -1932,6 +2074,9 @@ class FormationPanel(QWidget):
         # Resetta le formazioni di tutte le squadre
         for team_id, team_widget in self.team_widgets.items():
             team_widget.reset_formation()
+
+        # Resetta eventuali scelte manuali del palleggiatore
+        self.selected_setter_by_team.clear()
 
         # Reset metodo di gioco per entrambe le squadre
         for team_id, combo in self.team_method_combos.items():
