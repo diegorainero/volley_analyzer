@@ -8,7 +8,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QStackedWidget,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -99,7 +100,7 @@ class RosterSetupWidget(QWidget):
         main_layout.setContentsMargins(20, 20, 20, 20)
 
         # Titolo
-        title = QLabel("🧾 Gestione Squadre")
+        title = QLabel("Gestione Squadre")
         font = QFont()
         font.setPointSize(14)
         font.setBold(True)
@@ -164,8 +165,11 @@ class RosterSetupWidget(QWidget):
         header_layout.addStretch()
 
         if not self.match_id:
-            btn_back = QPushButton("← Indietro")
-            btn_back.setMaximumWidth(100)
+            btn_back = QPushButton("Indietro")
+            btn_back.setMaximumWidth(120)
+            btn_back.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack)
+            )
             btn_back.clicked.connect(self._go_back_to_selection)
             header_layout.addWidget(btn_back)
 
@@ -185,7 +189,7 @@ class RosterSetupWidget(QWidget):
         team_layout.addWidget(self.combo_teams)
 
         self.label_team_step = QLabel("Step roster: -")
-        self.label_team_step.setStyleSheet("color: #777777; font-size: 11px;")
+        self.label_team_step.setStyleSheet("font-size: 11px;")
         team_layout.addWidget(self.label_team_step)
 
         team_layout.addStretch()
@@ -213,14 +217,20 @@ class RosterSetupWidget(QWidget):
         footer_layout = QHBoxLayout()
         footer_layout.addStretch()
 
-        self.btn_continue = QPushButton("✅ Continua")
+        self.btn_continue = QPushButton("Continua")
         self.btn_continue.setMinimumWidth(180)
+        self.btn_continue.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward)
+        )
         self.btn_continue.clicked.connect(self._save_roster)
         footer_layout.addWidget(self.btn_continue)
 
         if not self.match_id:
-            btn_cancel = QPushButton("❌ Annulla")
+            btn_cancel = QPushButton("Annulla")
             btn_cancel.setMinimumWidth(150)
+            btn_cancel.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+            )
             btn_cancel.clicked.connect(self._go_back_to_selection)
             footer_layout.addWidget(btn_cancel)
 
@@ -237,10 +247,19 @@ class RosterSetupWidget(QWidget):
 
         # Lista giocatori (QListWidget, cliccabili, no checkbox)
         self.list_available_players = QListWidget()
+        self.list_available_players.setIconSize(QSize(18, 18))
         self.list_available_players.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #B79C8A;
+                border-radius: 8px;
+            }
             QListWidget::item {
                 padding-top: 5px;
                 padding-bottom: 5px;
+            }
+            QListWidget::item:selected {
+                background-color: #E95420;
+                color: white;
             }
         """)
         self.list_available_players.itemSelectionChanged.connect(
@@ -253,7 +272,7 @@ class RosterSetupWidget(QWidget):
 
         # Hint
         hint = QLabel("<i>Doppio-click per aggiungere</i>")
-        hint.setStyleSheet("color: #888888; font-size: 10px;")
+        hint.setStyleSheet("font-size: 10px;")
         layout.addWidget(hint)
 
         return widget
@@ -269,44 +288,60 @@ class RosterSetupWidget(QWidget):
         )
         self.label_roster_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label_roster_counter.setStyleSheet(
-            "font-size: 12px; font-weight: bold; color: #2ecc71;"
+            "font-size: 12px; font-weight: bold; color: #8A613F;"
         )
         layout.addWidget(self.label_roster_counter)
         layout.addSpacing(8)
 
-        # Freccia verde singolo →
-        self.btn_add_single = QPushButton("➕\nSingolo\n→")
-        self.btn_add_single.setMinimumHeight(60)
+        # Freccia singolo →
+        self.btn_add_single = QPushButton("Singolo →")
+        self.btn_add_single.setMinimumHeight(52)
+        self.btn_add_single.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward)
+        )
         self.btn_add_single.clicked.connect(lambda: self._on_add_single_player())
         self.btn_add_single.setStyleSheet(
             """
             QPushButton {
-                border-radius: 5px;
+                border-radius: 6px;
                 font-weight: bold;
-                font-size: 16px;
-                background-color: green;
-                color: #333;
-                border: 3px solid green;
-                cursor: move;
+                font-size: 12px;
+                background-color: #E95420;
+                color: white;
+                border: 2px solid #C7451A;
+            }
+            QPushButton:hover {
+                background-color: #F06B3C;
+            }
+            QPushButton:pressed {
+                background-color: #C7451A;
             }
         """
         )
         layout.addWidget(self.btn_add_single)
 
-        # Freccia verde tutti ⇒
-        self.btn_add_all = QPushButton("➕\nTutti\n⇒")
-        self.btn_add_all.setMinimumHeight(60)
+        # Freccia tutti ⇒
+        self.btn_add_all = QPushButton("Tutti ⇒")
+        self.btn_add_all.setMinimumHeight(52)
+        self.btn_add_all.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward)
+        )
         self.btn_add_all.clicked.connect(lambda: self._on_add_all_players())
         self.btn_add_all.setStyleSheet(
             """
             QPushButton {
-                border-radius: 5px;
+                border-radius: 6px;
                 font-weight: bold;
-                font-size: 16px;
-                background-color: green;
-                color: #333;
-                border: 3px solid green;
-                cursor: move;
+                font-size: 12px;
+                background-color: #E95420;
+                color: white;
+                border: 2px solid #C7451A;
+            }
+            QPushButton:hover {
+                background-color: #F06B3C;
+            }
+            QPushButton:pressed {
+                background-color: #C7451A;
             }
         """
         )
@@ -314,20 +349,28 @@ class RosterSetupWidget(QWidget):
 
         layout.addSpacing(20)
 
-        # Freccia rossa singolo ←
-        self.btn_remove_single = QPushButton("➖\nSingolo\n←")
-        self.btn_remove_single.setMinimumHeight(60)
+        # Freccia singolo ←
+        self.btn_remove_single = QPushButton("Singolo ←")
+        self.btn_remove_single.setMinimumHeight(52)
+        self.btn_remove_single.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack)
+        )
         self.btn_remove_single.clicked.connect(lambda: self._on_remove_single_player())
         self.btn_remove_single.setStyleSheet(
             """
             QPushButton {
-                border-radius: 5px;
+                border-radius: 6px;
                 font-weight: bold;
-                font-size: 16px;
-                background-color: red;
-                color: #333;
-                border: 3px solid red;
-                cursor: move;
+                font-size: 12px;
+                background-color: #8A613F;
+                color: white;
+                border: 2px solid #6E4B32;
+            }
+            QPushButton:hover {
+                background-color: #A5784D;
+            }
+            QPushButton:pressed {
+                background-color: #6E4B32;
             }
         """
         )
@@ -350,9 +393,25 @@ class RosterSetupWidget(QWidget):
         self.table_roster = QTableWidget()
         self.table_roster.setColumnCount(5)
         self.table_roster.setHorizontalHeaderLabels(
-            ["Nome", "Cognome", "Ruolo", "Cap.", "❌"]
+            ["Nome", "Cognome", "Ruolo", "Cap.", "Azioni"]
         )
         self.table_roster.verticalHeader().setVisible(False)  # nasconde numeri di riga
+        self.table_roster.setStyleSheet(
+            """
+            QTableWidget {
+                border: 1px solid #B79C8A;
+                border-radius: 8px;
+            }
+            QTableWidget::item:selected {
+                background-color: #E95420;
+                color: white;
+            }
+            QHeaderView::section {
+                border: 1px solid #B79C8A;
+                padding: 4px;
+            }
+            """
+        )
 
         header = self.table_roster.horizontalHeader()
         try:
@@ -381,7 +440,15 @@ class RosterSetupWidget(QWidget):
 
         self.list_roster_events = QListWidget()
         self.list_roster_events.setMaximumHeight(130)
-        self.list_roster_events.setStyleSheet("font-size: 11px;")
+        self.list_roster_events.setStyleSheet(
+            """
+            QListWidget {
+                font-size: 11px;
+                border: 1px solid #B79C8A;
+                border-radius: 8px;
+            }
+            """
+        )
         layout.addWidget(self.list_roster_events)
 
         return widget
@@ -539,7 +606,7 @@ class RosterSetupWidget(QWidget):
         if not self.teams:
             self.label_current_team.setText("Squadra corrente: -")
             self.label_team_step.setText("Step roster: -")
-            self.btn_continue.setText("✅ Continua")
+            self.btn_continue.setText("Continua")
             self._update_roster_counter()
             return
 
@@ -553,9 +620,9 @@ class RosterSetupWidget(QWidget):
 
         if self.current_team_index < total - 1:
             next_team_name = self.teams[self.current_team_index + 1]["name"]
-            self.btn_continue.setText(f"✅ Continua → {next_team_name}")
+            self.btn_continue.setText(f"Continua → {next_team_name}")
         else:
-            self.btn_continue.setText("✅ Salva roster e apri formation")
+            self.btn_continue.setText("Salva roster e apri formation")
 
         self._update_roster_counter()
 
@@ -568,6 +635,15 @@ class RosterSetupWidget(QWidget):
             return None
         return icon
 
+    def _is_dark_theme(self) -> bool:
+        return self.palette().window().color().lightness() < 128
+
+    def _muted_text_color(self) -> QColor:
+        return QColor("#9D8878") if self._is_dark_theme() else QColor("#7D6757")
+
+    def _base_text_color(self) -> QColor:
+        return QColor("#F6EFE9") if self._is_dark_theme() else QColor("#2B211C")
+
     def _update_roster_counter(self):
         """Aggiorna il contatore giocatori caricati per la squadra corrente."""
         count = len(self.selected_players)
@@ -576,15 +652,15 @@ class RosterSetupWidget(QWidget):
         self.label_roster_counter.setText(f"Giocatori caricati: {count}/{max_count}")
         if count > max_count:
             self.label_roster_counter.setStyleSheet(
-                "font-size: 12px; font-weight: bold; color: #e74c3c;"
+                "font-size: 12px; font-weight: bold; color: #C7451A;"
             )
         elif count == max_count:
             self.label_roster_counter.setStyleSheet(
-                "font-size: 12px; font-weight: bold; color: #f39c12;"
+                "font-size: 12px; font-weight: bold; color: #E95420;"
             )
         else:
             self.label_roster_counter.setStyleSheet(
-                "font-size: 12px; font-weight: bold; color: #2ecc71;"
+                "font-size: 12px; font-weight: bold; color: #8A613F;"
             )
 
     def _normalize_captains_for_current_team(self, captain_player_id: int | None):
@@ -607,8 +683,8 @@ class RosterSetupWidget(QWidget):
 
         timestamp = datetime.now().strftime("%H:%M:%S")
         if action == "added":
-            return f"[{timestamp}] ➕ Aggiunto: {label}"
-        return f"[{timestamp}] ➖ Rimosso: {label}"
+            return f"[{timestamp}] Aggiunto: {label}"
+        return f"[{timestamp}] Rimosso: {label}"
 
     def _log_roster_event(self, action: str, player_id: int):
         """Registra un evento di aggiunta/rimozione per il team corrente."""
@@ -635,18 +711,18 @@ class RosterSetupWidget(QWidget):
         events = self.team_change_events.get(self.current_team_id, [])
         if not events:
             info_item = QListWidgetItem("Nessuna modifica registrata")
-            info_item.setForeground(QColor("#7f8c8d"))
+            info_item.setForeground(self._muted_text_color())
             self.list_roster_events.addItem(info_item)
             return
 
         for event in events:
             item = QListWidgetItem(event["text"])
             if event.get("action") == "added":
-                item.setForeground(QColor("#27ae60"))
+                item.setForeground(QColor("#E95420"))
             elif event.get("action") == "removed":
-                item.setForeground(QColor("#e74c3c"))
+                item.setForeground(QColor("#C7451A"))
             else:
-                item.setForeground(QColor("#ecf0f1"))
+                item.setForeground(self._base_text_color())
             self.list_roster_events.addItem(item)
 
     def _on_team_changed(self, index: int):
@@ -695,7 +771,7 @@ class RosterSetupWidget(QWidget):
                 "is_captain", player_data.get("captain", False)
             )
 
-            captain_suffix = " 👑" if is_captain else ""
+            captain_suffix = " (C)" if is_captain else ""
             display_text = (
                 f"{player_data['first_name']} {player_data['last_name']} "
                 f"(#{player_data['number']}, {player_data['role'] or 'N/A'})"
@@ -703,7 +779,7 @@ class RosterSetupWidget(QWidget):
             ).strip()
 
             if is_selected:
-                display_text = f"✅ {display_text}"
+                display_text = f"[In roster] {display_text}"
 
             item = QListWidgetItem(display_text)
             item.setData(Qt.ItemDataRole.UserRole, player_id)
@@ -887,7 +963,7 @@ class RosterSetupWidget(QWidget):
 
                 # Colonna Capitano (checkbox)
                 is_captain = bool(data.get("is_captain", False))
-                item_captain = QTableWidgetItem("👑")
+                item_captain = QTableWidgetItem("C")
                 captain_icon = self._get_role_icon("capitano")
                 if captain_icon is not None:
                     item_captain.setIcon(captain_icon)
@@ -901,9 +977,14 @@ class RosterSetupWidget(QWidget):
                 self.table_roster.setItem(row, 3, item_captain)
 
                 # Colonna Azioni (bottone delete)
-                btn_delete = QPushButton("❌")
-                btn_delete.setMaximumWidth(40)
-                btn_delete.setStyleSheet("background-color: red; color: white;")
+                btn_delete = QPushButton("Rimuovi")
+                btn_delete.setIcon(
+                    self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+                )
+                btn_delete.setMaximumWidth(98)
+                btn_delete.setStyleSheet(
+                    "background-color: #8A613F; color: white; border: 1px solid #6E4B32; border-radius: 5px;"
+                )
                 btn_delete.clicked.connect(
                     lambda checked, pid=player_id: self._remove_player_from_roster(pid)
                 )
@@ -962,13 +1043,19 @@ class RosterSetupWidget(QWidget):
         layout.addRow("Ruolo:", combo_role)
 
         # Capitano
-        check_captain = QCheckBox("Capitano 👑")
+        check_captain = QCheckBox("Capitano")
         check_captain.setChecked(current_captain)
         layout.addRow("", check_captain)
 
         # Bottoni
-        btn_ok = QPushButton("✅ OK")
-        btn_cancel = QPushButton("❌ Annulla")
+        btn_ok = QPushButton("OK")
+        btn_ok.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        )
+        btn_cancel = QPushButton("Annulla")
+        btn_cancel.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+        )
         layout.addRow(btn_ok, btn_cancel)
 
         def on_ok():
@@ -1129,7 +1216,7 @@ class RosterSetupWidget(QWidget):
             QMessageBox.information(
                 self,
                 "Successo",
-                "Roster completo salvato con successo! ✅\n"
+                "Roster completo salvato con successo.\n"
                 "Apro la pagina Formation Panel...",
             )
 

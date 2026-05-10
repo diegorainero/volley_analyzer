@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QStyle,
     QTextEdit,
     QVBoxLayout,
 )
@@ -36,7 +37,7 @@ class NewMatchDialog(QDialog):
         self.teams = []
         self.new_match = None
 
-        self.setWindowTitle("➕ Nuova Partita")
+        self.setWindowTitle("Nuova Partita")
         self.setModal(True)
         self.setMinimumWidth(500)
 
@@ -117,13 +118,19 @@ class NewMatchDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
-        btn_save = QPushButton("✅ Salva")
+        btn_save = QPushButton("Salva")
         btn_save.setMinimumWidth(120)
+        btn_save.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton)
+        )
         btn_save.clicked.connect(self._on_save)
         buttons_layout.addWidget(btn_save)
 
-        btn_cancel = QPushButton("❌ Annulla")
+        btn_cancel = QPushButton("Annulla")
         btn_cancel.setMinimumWidth(120)
+        btn_cancel.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+        )
         btn_cancel.clicked.connect(self.reject)
         buttons_layout.addWidget(btn_cancel)
 

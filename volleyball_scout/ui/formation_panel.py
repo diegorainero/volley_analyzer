@@ -1,16 +1,21 @@
+from pathlib import Path
+from typing import Any
+
 from PyQt6.QtCore import QMimeData, Qt, pyqtSignal
 from PyQt6.QtGui import QDrag, QFont
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
-    QRadioButton,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -28,7 +33,7 @@ class EditMatchRolesDialog(QDialog):
         self.role_changes = {}  # {player_id: new_role}
 
         self.setWindowTitle(f"Modifica Ruoli - {team_name}")
-        self.setGeometry(100, 100, 600, 500)
+        self.setFixedSize(640, 520)
 
         layout = QVBoxLayout()
 
@@ -44,6 +49,24 @@ class EditMatchRolesDialog(QDialog):
             ["#", "Nome", "Ruolo Attuale", "Nuovo Ruolo"]
         )
         self.table.setRowCount(len(players))
+        self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionsMovable(False)
+
+        self.table.setColumnWidth(0, 70)
+        self.table.setColumnWidth(1, 200)
+        self.table.setColumnWidth(2, 160)
+        self.table.setColumnWidth(3, 180)
+
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(34)
 
         roles = [
             "Palleggiatore",
@@ -117,11 +140,20 @@ class PlayerButton(QPushButton):
 
     player_selected = pyqtSignal(int)  # player_id
 
-    def __init__(self, number, player_id, role="", parent=None, is_titolare=False):
+    def __init__(
+        self,
+        number,
+        player_id,
+        role="",
+        parent=None,
+        is_titolare=False,
+        photo_path=None,
+    ):
         super().__init__(str(number), parent)
         self.player_id = player_id
         self.number = number
         self.role = role
+        self.photo_path = photo_path
         self.is_selected = False
         self.is_disabled = False
         self.is_titolare = is_titolare  # True se giocatore titolare
@@ -140,6 +172,17 @@ class PlayerButton(QPushButton):
             drag.exec(Qt.DropAction.MoveAction)
         super().mousePressEvent(event)
 
+    def _resolved_photo_path(self):
+        """Restituisce il path foto valido per il background, se disponibile."""
+        if not self.photo_path:
+            return None
+
+        p = Path(str(self.photo_path))
+        if p.exists():
+            return p.as_posix()
+
+        return None
+
     def _update_style(self):
         # Determina il testo del bottone
         button_text = str(self.number)
@@ -147,76 +190,89 @@ class PlayerButton(QPushButton):
         if self.role and "palleggiatore" in self.role.lower():
             button_text += "P"
 
+        photo_path = self._resolved_photo_path()
+        photo_css = ""
+        if photo_path:
+            photo_css = (
+                f'background-image: url("{photo_path}"); '
+                "background-position: center; "
+                "background-repeat: no-repeat;"
+            )
+
         if self.is_titolare:
-            # Stile titolari: cerchi blu brillanti
+            # Stile titolari: palette Ubuntu
             if self.is_selected:
                 self.setStyleSheet(
-                    """
-                    QPushButton {
-                        border-radius: 21px;
+                    f"""
+                    QPushButton {{
+                        border-radius: 24px;
                         font-weight: bold;
                         font-size: 13px;
-                        background-color: #FFD700;
-                        color: #333;
-                        border: 2px solid #FFA500;
+                        background-color: #E9A06B;
+                        color: #2B211C;
+                        border: 2px solid #E95420;
                         cursor: move;
-                    }
-                    QPushButton:hover {
-                        background-color: #FFED4E;
-                    }
+                        {photo_css}
+                    }}
+                    QPushButton:hover {{
+                        background-color: #F2B284;
+                    }}
                 """
                 )
             else:
                 self.setStyleSheet(
-                    """
-                    QPushButton {
-                        border-radius: 21px;
+                    f"""
+                    QPushButton {{
+                        border-radius: 24px;
                         font-weight: bold;
                         font-size: 13px;
-                        background-color: #5B8DEF;
+                        background-color: #8A613F;
                         color: white;
-                        border: 2px solid #3A5DB5;
+                        border: 2px solid #6E4B32;
                         cursor: move;
-                    }
-                    QPushButton:hover {
-                        background-color: #7BA3FF;
-                    }
+                        {photo_css}
+                    }}
+                    QPushButton:hover {{
+                        background-color: #A1734A;
+                    }}
                 """
                 )
         else:
-            # Stile liberi: cerchi viola
+            # Stile liberi
             if self.is_selected:
                 self.setStyleSheet(
-                    """
-                    QPushButton {
-                        border-radius: 21px;
+                    f"""
+                    QPushButton {{
+                        border-radius: 24px;
                         font-weight: bold;
                         font-size: 13px;
-                        background-color: #f4c430;
-                        color: #333;
-                        border: 2px solid #e6b800;
+                        background-color: #F4D29A;
+                        color: #2B211C;
+                        border: 2px solid #E95420;
                         cursor: move;
-                    }
-                    QPushButton:hover {
-                        background-color: #ffdd47;
-                    }
+                        {photo_css}
+                    }}
+                    QPushButton:hover {{
+                        background-color: #F9DEB8;
+                    }}
                 """
                 )
             else:
                 self.setStyleSheet(
-                    """
-                    QPushButton {
-                        border-radius: 21px;
+                    f"""
+                    QPushButton {{
+                        border-radius: 24px;
                         font-weight: bold;
                         font-size: 13px;
-                        background-color: #9b59b6;
+                        background-color: #9C6F45;
                         color: white;
-                        border: 2px solid #7d3c98;
+                        border: 2px solid #8A613F;
                         cursor: move;
-                    }
-                    QPushButton:hover {
-                        background-color: #af7ac5;
-                    }
+                        {photo_css}
+                    }}
+                    QPushButton:hover {{
+                        background-color: #B88757;
+                    }}
                 """
                 )
         self.setText(button_text)
@@ -264,7 +320,8 @@ class FormationSlot(QFrame):
         self.player_id = None
         self.player_number = None
         self.player_role = None  # Ruolo del giocatore (es. "Palleggiatore")
-        self.formation_widget = None  # Riferimento al TeamFormationWidget padre
+        self.player_photo_path = None
+        self.formation_widget: Any = None  # Riferimento al TeamFormationWidget padre
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(56, 56)
@@ -278,30 +335,60 @@ class FormationSlot(QFrame):
         font.setPointSize(14)
         font.setBold(True)
         self.label.setFont(font)
-        self.label.setStyleSheet("color: #333;")
+        self.label.setStyleSheet("color: #2B211C;")
 
         layout.addWidget(self.label)
         self.setLayout(layout)
         self._update_style()
 
+    def _resolved_photo_path(self):
+        if not self.player_photo_path:
+            return None
+
+        p = Path(str(self.player_photo_path))
+        if p.exists():
+            return p.as_posix()
+
+        return None
+
     def _update_style(self):
+        photo_path = self._resolved_photo_path()
+
         if self.player_id is None:
+            self.label.setStyleSheet("color: #6B7280;")
             self.setStyleSheet(
                 """
                 QFrame {
-                    border: 3px dashed #cccccc;
-                    border-radius: 8px;
-                    background-color: #ffffcc;
+                    border: 2px dashed #B7A2B0;
+                    border-radius: 12px;
+                    background-color: #F7ECE8;
                 }
                 """
             )
+        elif photo_path:
+            self.label.setStyleSheet(
+                "color: white; background-color: rgba(43, 33, 28, 0.55); border-radius: 8px; padding: 1px 4px;"
+            )
+            self.setStyleSheet(
+                f"""
+                QFrame {{
+                    border: 2px solid #E95420;
+                    border-radius: 12px;
+                    background-color: #2B211C;
+                    background-image: url(\"{photo_path}\");
+                    background-position: center;
+                    background-repeat: no-repeat;
+                }}
+                """
+            )
         else:
+            self.label.setStyleSheet("color: #2B211C;")
             self.setStyleSheet(
                 """
                 QFrame {
-                    border: 3px solid #27ae60;
-                    border-radius: 8px;
-                    background-color: #d5f4e6;
+                    border: 2px solid #E95420;
+                    border-radius: 12px;
+                    background-color: #FDE8D7;
                 }
                 """
             )
@@ -313,9 +400,9 @@ class FormationSlot(QFrame):
             self.setStyleSheet(
                 """
                 QFrame {
-                    border: 3px solid #27ae60;
-                    border-radius: 8px;
-                    background-color: #a9dfbf;
+                    border: 2px solid #E95420;
+                    border-radius: 12px;
+                    background-color: #FBD8C4;
                 }
                 """
             )
@@ -400,6 +487,11 @@ class FormationSlot(QFrame):
         self.player_id = player_id
         self.player_number = player_number
         self.player_role = player_role
+        self.player_photo_path = None
+        if self.formation_widget:
+            self.player_photo_path = self.formation_widget.get_player_photo_path(
+                player_id
+            )
 
         # Aggiorna il testo del label per includere "P" se palleggiatore
         label_text = str(player_number)
@@ -428,6 +520,7 @@ class FormationSlot(QFrame):
         self.player_id = None
         self.player_number = None
         self.player_role = None
+        self.player_photo_path = None
         self.label.setText("-")
         self._update_style()
 
@@ -441,7 +534,8 @@ class LiberoSlot(QFrame):
         self.player_id = None
         self.player_number = None
         self.player_role = None  # Ruolo del giocatore (es. "Palleggiatore")
-        self.formation_widget = None  # Riferimento al TeamFormationWidget padre
+        self.player_photo_path = None
+        self.formation_widget: Any = None  # Riferimento al TeamFormationWidget padre
         self.setAcceptDrops(True)
 
         layout = QVBoxLayout()
@@ -453,34 +547,64 @@ class LiberoSlot(QFrame):
         font.setPointSize(12)
         font.setBold(True)
         self.label.setFont(font)
-        self.label.setStyleSheet("color: #333;")
+        self.label.setStyleSheet("color: #2B211C;")
 
         layout.addWidget(self.label)
         self.setLayout(layout)
 
-        self.setFixedSize(74, 74)
+        self.setFixedSize(76, 76)
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         self.setLineWidth(2)
         self._update_style()
 
+    def _resolved_photo_path(self):
+        if not self.player_photo_path:
+            return None
+
+        p = Path(str(self.player_photo_path))
+        if p.exists():
+            return p.as_posix()
+
+        return None
+
     def _update_style(self):
+        photo_path = self._resolved_photo_path()
+
         if self.player_id is None:
+            self.label.setStyleSheet("color: #6B7280;")
             self.setStyleSheet(
                 """
                 QFrame {
-                    background-color: #e8d4a2;
-                    border: 2px dashed #d4c5a0;
-                    border-radius: 5px;
+                    background-color: #FFF2E8;
+                    border: 2px dashed #E3B8A3;
+                    border-radius: 10px;
                 }
             """
             )
+        elif photo_path:
+            self.label.setStyleSheet(
+                "color: white; background-color: rgba(43, 33, 28, 0.55); border-radius: 8px; padding: 1px 4px;"
+            )
+            self.setStyleSheet(
+                f"""
+                QFrame {{
+                    background-color: #2B211C;
+                    border: 2px solid #E95420;
+                    border-radius: 10px;
+                    background-image: url(\"{photo_path}\");
+                    background-position: center;
+                    background-repeat: no-repeat;
+                }}
+            """
+            )
         else:
+            self.label.setStyleSheet("color: #2B211C;")
             self.setStyleSheet(
                 """
                 QFrame {
-                    background-color: #e8d4a2;
-                    border: 2px solid #d4c5a0;
-                    border-radius: 5px;
+                    background-color: #FBDCCB;
+                    border: 2px solid #E95420;
+                    border-radius: 10px;
                 }
             """
             )
@@ -492,9 +616,9 @@ class LiberoSlot(QFrame):
             self.setStyleSheet(
                 """
                 QFrame {
-                    background-color: #f5e6c8;
-                    border: 3px solid #d4c5a0;
-                    border-radius: 5px;
+                    background-color: #FFE8D9;
+                    border: 2px solid #E95420;
+                    border-radius: 10px;
                 }
             """
             )
@@ -565,6 +689,11 @@ class LiberoSlot(QFrame):
         self.player_id = player_id
         self.player_number = player_number
         self.player_role = player_role
+        self.player_photo_path = None
+        if self.formation_widget:
+            self.player_photo_path = self.formation_widget.get_player_photo_path(
+                player_id
+            )
 
         # Aggiorna il testo del label per includere "P" se palleggiatore
         label_text = str(player_number)
@@ -593,6 +722,7 @@ class LiberoSlot(QFrame):
         self.player_id = None
         self.player_number = None
         self.player_role = None
+        self.player_photo_path = None
         self.label.setText("-")
         self._update_style()
 
@@ -604,6 +734,7 @@ class TeamFormationWidget(QWidget):
         super().__init__(parent)
         self.team = team
         self.players = players  # [{id, number, last_name, role}]
+        self.players_by_id = {p.get("id"): p for p in players}
         self.player_buttons = {}
         self.formation_slots = {}
         self.libero_slots = {}
@@ -622,9 +753,9 @@ class TeamFormationWidget(QWidget):
         formation_frame = QFrame()
         formation_frame.setStyleSheet("""
             QFrame {
-                border: 3px solid #2d5016;
-                border-radius: 10px;
-                background-color: #90EE90;
+                border: 3px solid #6E4B32;
+                border-radius: 12px;
+                background-color: #FDF3ED;
             }
         """)
         formation_layout = QVBoxLayout()
@@ -640,9 +771,9 @@ class TeamFormationWidget(QWidget):
         elenco_frame = QFrame()
         elenco_frame.setStyleSheet("""
             QFrame {
-                border: 1px solid #4a4a4a;
-                border-radius: 6px;
-                background-color: #2b2b2b;
+                border: 1px solid #6E4B32;
+                border-radius: 8px;
+                background-color: #2B211C;
             }
         """)
         elenco_layout = QVBoxLayout()
@@ -653,7 +784,7 @@ class TeamFormationWidget(QWidget):
         elenco_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         elenco_title.setStyleSheet(
             """
-            background-color: #1f6fdb;
+            background-color: #E95420;
             color: white;
             font-weight: bold;
             border-radius: 6px;
@@ -674,9 +805,10 @@ class TeamFormationWidget(QWidget):
                 player["id"],
                 role=player.get("role", ""),
                 is_titolare=True,
+                photo_path=player.get("photo"),
             )
             btn.player_selected.connect(self._on_player_button_clicked)
-            btn.setFixedSize(42, 42)
+            btn.setFixedSize(48, 48)
             self.player_buttons[player["id"]] = btn
             titolari_grid.addWidget(btn, row, col)
 
@@ -688,7 +820,7 @@ class TeamFormationWidget(QWidget):
         elenco_layout.addLayout(titolari_grid)
         elenco_layout.addStretch()
         elenco_frame.setLayout(elenco_layout)
-        elenco_frame.setMaximumWidth(130)
+        elenco_frame.setMaximumWidth(150)
         formation_body_layout.addWidget(elenco_frame, 0)
 
         # Grid della formazione in gioco (6 posizioni: P1-P6)
@@ -704,9 +836,9 @@ class TeamFormationWidget(QWidget):
                 position_container = QFrame()
                 position_container.setStyleSheet("""
                     QFrame {
-                        border: 2px solid #2d5016;
-                        border-radius: 6px;
-                        background-color: #FFFACD;
+                        border: 2px solid #8A613F;
+                        border-radius: 8px;
+                        background-color: #FFF7F0;
                     }
                 """)
                 position_layout = QVBoxLayout()
@@ -737,20 +869,22 @@ class TeamFormationWidget(QWidget):
         libero_group = QGroupBox("Liberi")
         libero_group.setStyleSheet("""
             QGroupBox {
-                border: 1px solid #FF6B6B;
-                border-radius: 3px;
-                margin-top: 5px;
-                padding-top: 5px;
-                background-color: #FFE5E5;
+                border: 2px solid #E95420;
+                border-radius: 10px;
+                margin-top: 8px;
+                padding-top: 10px;
+                background-color: #2B211C;
                 font-weight: bold;
+                color: #F6EFE9;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 5px;
-                padding: 0 2px 0 2px;
+                left: 10px;
+                padding: 0 6px;
                 font-weight: bold;
-                font-size: 9px;
-                color: #CC0000;
+                font-size: 10px;
+                color: #E95420;
+                background-color: #2B211C;
             }
         """)
         libero_layout = QHBoxLayout()
@@ -762,8 +896,9 @@ class TeamFormationWidget(QWidget):
         libero_slots_container.setSpacing(2)
         libero_slots_container.setContentsMargins(0, 0, 0, 0)
 
-        libero_slots_label = QLabel("Posizioni:")
-        libero_slots_label.setFont(QFont("Arial", 7, QFont.Weight.Bold))
+        libero_slots_label = QLabel("Posizioni")
+        libero_slots_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        libero_slots_label.setStyleSheet("color: #F6EFE9;")
         libero_slots_container.addWidget(libero_slots_label)
 
         libero_slots_grid = QGridLayout()
@@ -784,7 +919,7 @@ class TeamFormationWidget(QWidget):
         separator_v = QFrame()
         separator_v.setStyleSheet("""
             QFrame {
-                background-color: #FF6B6B;
+                background-color: #E95420;
                 border: none;
             }
         """)
@@ -796,8 +931,9 @@ class TeamFormationWidget(QWidget):
         liberi_disponibili_container.setSpacing(2)
         liberi_disponibili_container.setContentsMargins(0, 0, 0, 0)
 
-        liberi_disp_label = QLabel("Disponibili:")
-        liberi_disp_label.setFont(QFont("Arial", 7, QFont.Weight.Bold))
+        liberi_disp_label = QLabel("Disponibili")
+        liberi_disp_label.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        liberi_disp_label.setStyleSheet("color: #F6EFE9;")
         liberi_disponibili_container.addWidget(liberi_disp_label)
 
         # Grid dei giocatori liberi disponibili (in orizzontale)
@@ -807,7 +943,10 @@ class TeamFormationWidget(QWidget):
 
         for player in liberi_players:
             btn = PlayerButton(
-                player["number"], player["id"], role=player.get("role", "")
+                player["number"],
+                player["id"],
+                role=player.get("role", ""),
+                photo_path=player.get("photo"),
             )
             btn.player_selected.connect(self._on_player_button_clicked)
             self.player_buttons[player["id"]] = btn
@@ -818,7 +957,7 @@ class TeamFormationWidget(QWidget):
         libero_layout.addLayout(liberi_disponibili_container)
 
         libero_group.setLayout(libero_layout)
-        libero_group.setMaximumHeight(120)
+        libero_group.setMaximumHeight(140)
         layout.addWidget(libero_group)
 
         self.setLayout(layout)
@@ -830,6 +969,11 @@ class TeamFormationWidget(QWidget):
             self.selected_players.add(player_id)
         else:
             self.selected_players.discard(player_id)
+
+    def get_player_photo_path(self, player_id):
+        """Restituisce il path foto del giocatore se disponibile."""
+        player = self.players_by_id.get(player_id) if self.players_by_id else None
+        return player.get("photo") if player else None
 
     def get_formation(self):
         """Restituisce la formazione (titolari e liberi) per questa squadra"""
@@ -945,6 +1089,9 @@ class FormationPanel(QWidget):
         self.separator_widget = None
         self.team_containers = {}
         self.team_container_layouts = {}
+        self.team_method_combos = {}
+        self.team_method_auto_checkboxes = {}
+        self.team_method_detected_labels = {}
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -958,20 +1105,11 @@ class FormationPanel(QWidget):
         title.setFont(font)
         layout.addWidget(title)
 
-        # Sezione selezione metodo di gioco (nascoste inizialmente - determinate automaticamente)
+        # Sezione riepilogo metodo di gioco (per entrambe le squadre)
         self.game_method_layout = QHBoxLayout()
         self.game_method_label = QLabel("Metodo di gioco:")
         self.game_method_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
         self.game_method_layout.addWidget(self.game_method_label)
-        self.game_method_layout.addSpacing(10)
-
-        self.radio_psc = QRadioButton("P-S-C (Palleggio - Schiacciatore - Centrale)")
-        self.radio_pcs = QRadioButton("P-C-S (Palleggio - Centrale - Schiacciatore)")
-        # Default: nessuno selezionato
-        self.radio_psc.setVisible(False)  # Nascosto - determinato automaticamente
-        self.radio_pcs.setVisible(False)  # Nascosto - determinato automaticamente
-        self.game_method_layout.addWidget(self.radio_psc)
-        self.game_method_layout.addWidget(self.radio_pcs)
         self.game_method_layout.addStretch()
 
         self.game_method_display = QLabel("Metodo di gioco: -")
@@ -1004,6 +1142,53 @@ class FormationPanel(QWidget):
             self.left_team_header = header_a
             team_a_layout.addWidget(header_a)
 
+            # Metodo gioco squadra A (default P-S-C, modificabile manualmente)
+            team_a_method_layout = QHBoxLayout()
+            team_a_method_layout.setSpacing(6)
+            team_a_method_layout.addWidget(QLabel("Metodo:"))
+
+            combo_method_a = QComboBox()
+            combo_method_a.addItems(["P-S-C", "P-C-S"])
+            combo_method_a.setCurrentText("P-S-C")
+            combo_method_a.setMinimumWidth(90)
+            combo_method_a.setEnabled(False)
+            combo_method_a.currentTextChanged.connect(
+                lambda _text, tid=team_a["id"]: self._refresh_game_method_summary()
+            )
+            self.team_method_combos[team_a["id"]] = combo_method_a
+            team_a_method_layout.addWidget(combo_method_a)
+
+            chk_auto_a = QCheckBox("Auto")
+            chk_auto_a.setChecked(True)
+            chk_auto_a.toggled.connect(
+                lambda checked, tid=team_a["id"]: self._on_team_auto_method_toggled(
+                    tid, checked
+                )
+            )
+            self.team_method_auto_checkboxes[team_a["id"]] = chk_auto_a
+            team_a_method_layout.addWidget(chk_auto_a)
+
+            btn_detect_a = QPushButton("Rileva")
+            btn_detect_a.setMaximumWidth(72)
+            btn_detect_a.setIcon(
+                self.style().standardIcon(
+                    QStyle.StandardPixmap.SP_FileDialogContentsView
+                )
+            )
+            btn_detect_a.clicked.connect(
+                lambda checked, tid=team_a["id"]: self._detect_and_apply_team_method(
+                    tid, force=True
+                )
+            )
+            team_a_method_layout.addWidget(btn_detect_a)
+
+            lbl_detect_a = QLabel("Rilevato: -")
+            lbl_detect_a.setStyleSheet("font-size: 10px; color: #8F7D8A;")
+            self.team_method_detected_labels[team_a["id"]] = lbl_detect_a
+            team_a_method_layout.addWidget(lbl_detect_a)
+            team_a_method_layout.addStretch()
+            team_a_layout.addLayout(team_a_method_layout)
+
             # Widget formazione team A
             team_a_layout.addWidget(widget_a, 1)
 
@@ -1011,24 +1196,27 @@ class FormationPanel(QWidget):
             buttons_team_a = QHBoxLayout()
             buttons_team_a.setSpacing(4)
 
-            btn_reset_a = QPushButton("↺ Reset")
+            btn_reset_a = QPushButton("Reset")
             btn_reset_a.setMaximumWidth(95)
+            btn_reset_a.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+            )
             btn_reset_a.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #7f8c8d;
+                    background-color: #6E4B32;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #5A3D2A;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #6f7a7b;
+                    background-color: #8A613F;
                 }
                 QPushButton:pressed {
-                    background-color: #5f6768;
+                    background-color: #5A3D2A;
                 }
             """
             )
@@ -1037,24 +1225,27 @@ class FormationPanel(QWidget):
             )
             buttons_team_a.addWidget(btn_reset_a)
 
-            btn_rotate_a = QPushButton("🔄 Ruota")
+            btn_rotate_a = QPushButton("Ruota")
             btn_rotate_a.setMaximumWidth(95)
+            btn_rotate_a.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward)
+            )
             btn_rotate_a.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #f39c12;
+                    background-color: #E95420;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #C7451A;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #e67e22;
+                    background-color: #F06B3C;
                 }
                 QPushButton:pressed {
-                    background-color: #d35400;
+                    background-color: #C7451A;
                 }
             """
             )
@@ -1063,24 +1254,27 @@ class FormationPanel(QWidget):
             )
             buttons_team_a.addWidget(btn_rotate_a)
 
-            btn_elenco_a = QPushButton("📋 Elenco")
+            btn_elenco_a = QPushButton("Ruoli")
             btn_elenco_a.setMaximumWidth(95)
+            btn_elenco_a.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView)
+            )
             btn_elenco_a.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #9b59b6;
+                    background-color: #8A613F;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #6E4B32;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #8e44ad;
+                    background-color: #A5784D;
                 }
                 QPushButton:pressed {
-                    background-color: #76448a;
+                    background-color: #6E4B32;
                 }
             """
             )
@@ -1108,24 +1302,24 @@ class FormationPanel(QWidget):
         separator_layout.addStretch()
 
         # Pulsante Switch al centro
-        btn_switch = QPushButton("⟷")
+        btn_switch = QPushButton("⇆")
         btn_switch.setFixedSize(50, 50)
         btn_switch.setStyleSheet(
             """
             QPushButton {
-                background-color: #f39c12;
+                background-color: #E95420;
                 color: white;
                 font-weight: bold;
                 border-radius: 25px;
-                border: 2px solid #e67e22;
+                border: 2px solid #C7451A;
                 font-size: 20px;
                 padding: 0px;
             }
             QPushButton:hover {
-                background-color: #e67e22;
+                background-color: #F06B3C;
             }
             QPushButton:pressed {
-                background-color: #d35400;
+                background-color: #C7451A;
             }
         """
         )
@@ -1150,6 +1344,53 @@ class FormationPanel(QWidget):
             self.right_team_header = header_b
             team_b_layout.addWidget(header_b)
 
+            # Metodo gioco squadra B (default P-S-C, modificabile manualmente)
+            team_b_method_layout = QHBoxLayout()
+            team_b_method_layout.setSpacing(6)
+            team_b_method_layout.addWidget(QLabel("Metodo:"))
+
+            combo_method_b = QComboBox()
+            combo_method_b.addItems(["P-S-C", "P-C-S"])
+            combo_method_b.setCurrentText("P-S-C")
+            combo_method_b.setMinimumWidth(90)
+            combo_method_b.setEnabled(False)
+            combo_method_b.currentTextChanged.connect(
+                lambda _text, tid=team_b["id"]: self._refresh_game_method_summary()
+            )
+            self.team_method_combos[team_b["id"]] = combo_method_b
+            team_b_method_layout.addWidget(combo_method_b)
+
+            chk_auto_b = QCheckBox("Auto")
+            chk_auto_b.setChecked(True)
+            chk_auto_b.toggled.connect(
+                lambda checked, tid=team_b["id"]: self._on_team_auto_method_toggled(
+                    tid, checked
+                )
+            )
+            self.team_method_auto_checkboxes[team_b["id"]] = chk_auto_b
+            team_b_method_layout.addWidget(chk_auto_b)
+
+            btn_detect_b = QPushButton("Rileva")
+            btn_detect_b.setMaximumWidth(72)
+            btn_detect_b.setIcon(
+                self.style().standardIcon(
+                    QStyle.StandardPixmap.SP_FileDialogContentsView
+                )
+            )
+            btn_detect_b.clicked.connect(
+                lambda checked, tid=team_b["id"]: self._detect_and_apply_team_method(
+                    tid, force=True
+                )
+            )
+            team_b_method_layout.addWidget(btn_detect_b)
+
+            lbl_detect_b = QLabel("Rilevato: -")
+            lbl_detect_b.setStyleSheet("font-size: 10px; color: #8F7D8A;")
+            self.team_method_detected_labels[team_b["id"]] = lbl_detect_b
+            team_b_method_layout.addWidget(lbl_detect_b)
+            team_b_method_layout.addStretch()
+            team_b_layout.addLayout(team_b_method_layout)
+
             # Widget formazione team B
             team_b_layout.addWidget(widget_b, 1)
 
@@ -1157,24 +1398,27 @@ class FormationPanel(QWidget):
             buttons_team_b = QHBoxLayout()
             buttons_team_b.setSpacing(4)
 
-            btn_reset_b = QPushButton("↺ Reset")
+            btn_reset_b = QPushButton("Reset")
             btn_reset_b.setMaximumWidth(95)
+            btn_reset_b.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+            )
             btn_reset_b.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #7f8c8d;
+                    background-color: #6E4B32;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #5A3D2A;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #6f7a7b;
+                    background-color: #8A613F;
                 }
                 QPushButton:pressed {
-                    background-color: #5f6768;
+                    background-color: #5A3D2A;
                 }
             """
             )
@@ -1183,24 +1427,27 @@ class FormationPanel(QWidget):
             )
             buttons_team_b.addWidget(btn_reset_b)
 
-            btn_rotate_b = QPushButton("🔄 Ruota")
+            btn_rotate_b = QPushButton("Ruota")
             btn_rotate_b.setMaximumWidth(95)
+            btn_rotate_b.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward)
+            )
             btn_rotate_b.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #f39c12;
+                    background-color: #E95420;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #C7451A;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #e67e22;
+                    background-color: #F06B3C;
                 }
                 QPushButton:pressed {
-                    background-color: #d35400;
+                    background-color: #C7451A;
                 }
             """
             )
@@ -1209,24 +1456,27 @@ class FormationPanel(QWidget):
             )
             buttons_team_b.addWidget(btn_rotate_b)
 
-            btn_elenco_b = QPushButton("📋 Elenco")
+            btn_elenco_b = QPushButton("Ruoli")
             btn_elenco_b.setMaximumWidth(95)
+            btn_elenco_b.setIcon(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView)
+            )
             btn_elenco_b.setStyleSheet(
                 """
                 QPushButton {
-                    background-color: #9b59b6;
+                    background-color: #8A613F;
                     color: white;
                     font-weight: bold;
                     padding: 6px 8px;
                     border-radius: 5px;
-                    border: none;
+                    border: 1px solid #6E4B32;
                     font-size: 10px;
                 }
                 QPushButton:hover {
-                    background-color: #8e44ad;
+                    background-color: #A5784D;
                 }
                 QPushButton:pressed {
-                    background-color: #76448a;
+                    background-color: #6E4B32;
                 }
             """
             )
@@ -1250,21 +1500,22 @@ class FormationPanel(QWidget):
         buttons_layout.setSpacing(10)
 
         btn_back = QPushButton("← Torna Indietro")
+        btn_back.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
         btn_back.setStyleSheet(
             """
             QPushButton {
-                background-color: #95a5a6;
+                background-color: #6E4B32;
                 color: white;
                 font-weight: bold;
                 padding: 10px 20px;
                 border-radius: 5px;
-                border: none;
+                border: 1px solid #5A3D2A;
             }
             QPushButton:hover {
-                background-color: #7f8c8d;
+                background-color: #8A613F;
             }
             QPushButton:pressed {
-                background-color: #687475;
+                background-color: #5A3D2A;
             }
         """
         )
@@ -1278,21 +1529,24 @@ class FormationPanel(QWidget):
         buttons_layout.addWidget(btn_reset)
 
         btn_confirm = QPushButton("Conferma Formazione")
+        btn_confirm.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        )
         btn_confirm.setStyleSheet(
             """
             QPushButton {
-                background-color: #27ae60;
+                background-color: #E95420;
                 color: white;
                 font-weight: bold;
                 padding: 10px 20px;
                 border-radius: 5px;
-                border: none;
+                border: 1px solid #C7451A;
             }
             QPushButton:hover {
-                background-color: #229954;
+                background-color: #F06B3C;
             }
             QPushButton:pressed {
-                background-color: #1e8449;
+                background-color: #C7451A;
             }
         """
         )
@@ -1302,6 +1556,8 @@ class FormationPanel(QWidget):
         layout.addLayout(buttons_layout)
 
         self.setLayout(layout)
+        self._refresh_game_method_summary()
+        self.detect_game_method()
 
     def _rotate_team_formation(self, team_id: int):
         """Ruota la formazione della squadra specificata."""
@@ -1332,13 +1588,19 @@ class FormationPanel(QWidget):
 
         new_widget = TeamFormationWidget(team_meta, players)
 
+        insert_index = 2
         if old_widget is not None:
+            current_index = team_layout.indexOf(old_widget)
+            if current_index >= 0:
+                insert_index = current_index
             team_layout.removeWidget(old_widget)
             old_widget.deleteLater()
 
-        # index 1: dopo header, prima dei pulsanti
-        team_layout.insertWidget(1, new_widget, 1)
+        team_layout.insertWidget(insert_index, new_widget, 1)
         self.team_widgets[team_id] = new_widget
+
+        # Ricalcola metodi dopo ricostruzione dei box
+        self.detect_game_method()
 
     def _switch_teams_formations(self):
         """Scambia realmente i due campi (pannello sinistra/destra)."""
@@ -1383,91 +1645,168 @@ class FormationPanel(QWidget):
         # Ridetecta il metodo di gioco
         self.detect_game_method()
 
-    def detect_game_method(self):
-        """Rileva automaticamente il metodo di gioco dalla formazione"""
-        # Esamina solo la prima squadra per il metodo di gioco
-        if not self.teams:
-            return
+    def _refresh_game_method_summary(self):
+        """Aggiorna il riepilogo metodi gioco per entrambe le squadre."""
+        summary_parts = []
+        for team in self.teams:
+            team_id = team["id"]
+            combo = self.team_method_combos.get(team_id)
+            selected = combo.currentText() if combo is not None else "P-S-C"
+            summary_parts.append(f"{team['name']}: {selected}")
 
-        team_id = self.teams[0]["id"]
+        if summary_parts:
+            self.game_method_display.setText(
+                "Metodo di gioco: " + " | ".join(summary_parts)
+            )
+        else:
+            self.game_method_display.setText("Metodo di gioco: -")
+
+        if self.teams:
+            first_team_id = self.teams[0]["id"]
+            first_combo = self.team_method_combos.get(first_team_id)
+            self.game_method = first_combo.currentText() if first_combo else "P-S-C"
+
+    def _on_team_auto_method_toggled(self, team_id: int, checked: bool):
+        """Gestisce auto/manuale del metodo gioco per una squadra."""
+        combo = self.team_method_combos.get(team_id)
+        if combo is not None:
+            combo.setEnabled(not checked)
+
+        if checked:
+            self._detect_and_apply_team_method(team_id, force=False)
+        else:
+            self._refresh_game_method_summary()
+
+    def _detect_method_for_team(self, team_id: int):
+        """Rileva il metodo di gioco per una singola squadra."""
+        if team_id not in self.team_widgets:
+            return None
+
         team_widget = self.team_widgets[team_id]
         players = team_widget.players
 
-        # Trova il palleggiatore OVUNQUE sia nella formazione
-        # Mapping posizioni: idx 0=P1, 1=P2, 2=P3, 3=P4, 4=P5, 5=P6
-        # Sequenza rotazione in campo: 1→6→5→4→3→2→1 (antioraria in indici: 0→5→4→3→2→1→0)
         setter_idx = None
-        setter_player = None
-
         for idx, slot in team_widget.formation_slots.items():
-            if slot.player_id:
-                # Trova il giocatore nel roster
-                for p in players:
-                    if p["id"] == slot.player_id:
-                        if p.get("role") == "Palleggiatore":
-                            setter_idx = idx
-                            setter_player = p
-                        break
-                if setter_idx is not None:
+            if not slot.player_id:
+                continue
+            for p in players:
+                if p["id"] == slot.player_id and p.get("role") == "Palleggiatore":
+                    setter_idx = idx
                     break
+            if setter_idx is not None:
+                break
 
-        # Se trovato il palleggiatore, controlla il giocatore in senso ORARIO (il prossimo)
-        # Sequenza oraria in indici: 0→1→2→3→4→5→0
+        if setter_idx is None:
+            return None
+
         detected_method = None
-        if setter_idx is not None:
-            # Calcola l'indice successivo in senso orario
-            oraria_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 0}
-            adjacent_idx = oraria_map.get(setter_idx)
+        oraria_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 0}
+        adjacent_idx = oraria_map.get(setter_idx)
 
-            if adjacent_idx is not None and adjacent_idx in team_widget.formation_slots:
-                adjacent_slot = team_widget.formation_slots[adjacent_idx]
-                if adjacent_slot.player_id:
-                    # Trova il giocatore adiacente
-                    for p in players:
-                        if p["id"] == adjacent_slot.player_id:
-                            role = p.get("role", "").lower()
-                            if any(
-                                keyword in role
-                                for keyword in ["schiacciatore", "opposto"]
-                            ):
-                                detected_method = "P-S-C"
-                            elif "centrale" in role:
-                                detected_method = "P-C-S"
-                            break
+        if adjacent_idx is not None and adjacent_idx in team_widget.formation_slots:
+            adjacent_slot = team_widget.formation_slots[adjacent_idx]
+            if adjacent_slot.player_id:
+                for p in players:
+                    if p["id"] == adjacent_slot.player_id:
+                        role = p.get("role", "").lower()
+                        if any(
+                            keyword in role
+                            for keyword in [
+                                "schiacciatore",
+                                "opposto",
+                                "banda",
+                                "universale",
+                            ]
+                        ):
+                            detected_method = "P-S-C"
+                        elif "centrale" in role:
+                            detected_method = "P-C-S"
+                        break
 
-        # Aggiorna la visualizzazione
-        if detected_method:
-            self.game_method_display.setText(f"Metodo di gioco: {detected_method}")
-            self.game_method = detected_method
-        else:
-            self.game_method_display.setText("Metodo di gioco: Non rilevato")
-            self.game_method = None
+        return detected_method
+
+    def _detect_and_apply_team_method(self, team_id: int, force: bool = False):
+        """Rileva e applica (se auto/manuale) il metodo gioco per squadra."""
+        detected = self._detect_method_for_team(team_id)
+
+        lbl_detect = self.team_method_detected_labels.get(team_id)
+        if lbl_detect is not None:
+            lbl_detect.setText(f"Rilevato: {detected or '-'}")
+
+        combo = self.team_method_combos.get(team_id)
+        auto_check = self.team_method_auto_checkboxes.get(team_id)
+        auto_enabled = auto_check.isChecked() if auto_check is not None else False
+
+        if combo is not None and detected and (force or auto_enabled):
+            combo.setCurrentText(detected)
+
+        self._refresh_game_method_summary()
+
+    def detect_game_method(self):
+        """Rileva automaticamente il metodo di gioco per entrambe le squadre."""
+        if not self.teams:
+            return
+
+        for team in self.teams:
+            self._detect_and_apply_team_method(team["id"], force=False)
+
+        self._refresh_game_method_summary()
+
+    def _autofill_liberi_if_available(self, team_widget):
+        """Inserisce automaticamente i primi 2 liberi disponibili nei box L1/L2."""
+        libero_candidates = sorted(
+            [p for p in team_widget.players if p.get("role", "").lower() == "libero"],
+            key=lambda p: p.get("number", 0),
+        )
+
+        if not libero_candidates:
+            return
+
+        for idx in sorted(team_widget.libero_slots.keys()):
+            slot = team_widget.libero_slots[idx]
+            if slot.player_id is not None:
+                continue
+
+            next_player = next(
+                (
+                    p
+                    for p in libero_candidates
+                    if p["id"] not in team_widget.used_players
+                ),
+                None,
+            )
+
+            if next_player is None:
+                break
+
+            slot.set_player(
+                next_player["number"],
+                next_player["id"],
+                next_player.get("role"),
+            )
+            libero_candidates = [
+                p for p in libero_candidates if p["id"] != next_player["id"]
+            ]
 
     def confirm_formation(self):
         """Valida e conferma la formazione"""
         # Rileva automaticamente il metodo di gioco prima di confermare
         self.detect_game_method()
 
-        # Validazione metodo di gioco
-        if not self.game_method:
-            QMessageBox.warning(
-                self,
-                "Errore",
-                "Impossibile rilevare il metodo di gioco automaticamente.\n"
-                "Assicurati che il palleggiatore sia in posizione 1 (P1) e un schiacciatore/opposto "
-                "o centrale sia in posizione 2 (P2).",
-            )
-            return
-
         titolari_by_team = {}
         libero_by_team = {}
+        game_method_by_team = {}
 
         for team in self.teams:
             team_id = team["id"]
             team_widget = self.team_widgets[team_id]
+
+            # Autofill liberi se disponibili
+            self._autofill_liberi_if_available(team_widget)
+
             formation = team_widget.get_formation()
 
-            # Validazione numero titolari
+            # Validazione numero titolari (formazioni scritte)
             if len(formation["titolari"]) != 6:
                 QMessageBox.warning(
                     self,
@@ -1477,16 +1816,12 @@ class FormationPanel(QWidget):
                 )
                 return
 
-            # Libero è opzionale - non bloccare se non presente
-
             # Validazione palleggiatore obbligatorio
-            # Controlla se il team ha almeno un giocatore con role "Palleggiatore"
             has_setter_available = any(
                 p["role"] == "Palleggiatore" for p in team_widget.players
             )
 
             if has_setter_available:
-                # Se il team ha un palleggiatore disponibile, deve essercene uno tra i titolari
                 titolari_ids = formation["titolari"]
                 titolari_players = [
                     p for p in team_widget.players if p["id"] in titolari_ids
@@ -1496,7 +1831,6 @@ class FormationPanel(QWidget):
                 )
 
                 if not has_setter_in_field:
-                    # Nessun titolare è palleggiatore, offri opzione di sceglierne uno dai titolari
                     dialog = QMessageBox(self)
                     dialog.setWindowTitle(f"Palleggiatore per {team['name']}")
                     dialog.setText(
@@ -1505,7 +1839,6 @@ class FormationPanel(QWidget):
                     )
                     dialog.setIcon(QMessageBox.Icon.Question)
 
-                    # Crea combobox con opzioni
                     combo = QComboBox()
                     options = [
                         f"#{p['number']} - {p['last_name']} ({p['role']})"
@@ -1513,22 +1846,16 @@ class FormationPanel(QWidget):
                     ]
                     combo.addItems(options)
 
-                    # Aggiungi combobox al dialog
                     dialog.layout().addWidget(
                         combo, dialog.layout().rowCount(), 0, 1, 2
                     )
-
-                    # Bottoni OK e Annulla
                     dialog.setStandardButtons(
                         QMessageBox.StandardButton.Ok
                         | QMessageBox.StandardButton.Cancel
                     )
                     dialog.setDefaultButton(QMessageBox.StandardButton.Ok)
 
-                    # Mostra dialog
                     result = dialog.exec()
-
-                    # Se utente clicca Annulla, blocca
                     if result != QMessageBox.StandardButton.Ok:
                         QMessageBox.warning(
                             self,
@@ -1537,21 +1864,28 @@ class FormationPanel(QWidget):
                         )
                         return
 
-                    # Se OK, continua (la scelta è stata registrata nella combobox)
-                    # Non bloccare qui, continua pure con l'emit del segnale
-
             titolari_by_team[team_id] = formation["titolari"]
-            # Libero è opzionale - prendi il primo se presente, altrimenti None
             libero_by_team[team_id] = (
                 formation["liberi"][0] if formation["liberi"] else None
             )
 
-        # Emetti il segnale con il formato atteso, includendo il metodo di gioco
+            combo_method = self.team_method_combos.get(team_id)
+            game_method_by_team[team_id] = (
+                combo_method.currentText() if combo_method is not None else "P-S-C"
+            )
+
+        # Compatibilità con payload precedente
+        if self.teams:
+            self.game_method = game_method_by_team.get(self.teams[0]["id"], "P-S-C")
+        else:
+            self.game_method = "P-S-C"
+
         self.formation_confirmed.emit(
             {
                 "titolari": titolari_by_team,
                 "libero": libero_by_team,
                 "game_method": self.game_method,
+                "game_method_by_team": game_method_by_team,
             }
         )
 
@@ -1595,10 +1929,20 @@ class FormationPanel(QWidget):
 
     def reset_all(self):
         """Resetta tutte le formazioni e le opzioni di gioco"""
-        # Resetta il metodo di gioco
-        self.game_method = None
-        self.game_method_display.setText("Metodo di gioco: -")
-
         # Resetta le formazioni di tutte le squadre
         for team_id, team_widget in self.team_widgets.items():
             team_widget.reset_formation()
+
+        # Reset metodo di gioco per entrambe le squadre
+        for team_id, combo in self.team_method_combos.items():
+            combo.setCurrentText("P-S-C")
+            combo.setEnabled(False)
+
+        for team_id, chk_auto in self.team_method_auto_checkboxes.items():
+            chk_auto.setChecked(True)
+
+        for team_id, lbl_detect in self.team_method_detected_labels.items():
+            lbl_detect.setText("Rilevato: -")
+
+        self.game_method = "P-S-C"
+        self._refresh_game_method_summary()

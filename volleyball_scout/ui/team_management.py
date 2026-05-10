@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSplitter,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +33,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from volleyball_scout.core.database import DatabaseManager
 from volleyball_scout.core.models import Player, Team
+
+try:
+    from volleyball_scout.ui.assets import get_role_icon
+except ImportError:
+    try:
+        from .assets import get_role_icon
+    except ImportError:
+        get_role_icon = None
 
 
 class ModifyPlayerDialog(QDialog):
@@ -77,7 +87,10 @@ class ModifyPlayerDialog(QDialog):
 
         # Foto
         self.photo_label = QLabel("(Nessuna foto selezionata)")
-        btn_choose_photo = QPushButton("📷 Scegli Foto")
+        btn_choose_photo = QPushButton("Seleziona Foto")
+        btn_choose_photo.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        )
         btn_choose_photo.clicked.connect(self._choose_photo)
 
         photo_layout = QHBoxLayout()
@@ -91,10 +104,16 @@ class ModifyPlayerDialog(QDialog):
         # Pulsanti Salva/Annulla
         buttons_layout = QHBoxLayout()
 
-        btn_save = QPushButton("✅ Salva")
+        btn_save = QPushButton("Salva")
+        btn_save.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton)
+        )
         btn_save.clicked.connect(self.accept)
 
-        btn_cancel = QPushButton("❌ Annulla")
+        btn_cancel = QPushButton("Annulla")
+        btn_cancel.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+        )
         btn_cancel.clicked.connect(self.reject)
 
         buttons_layout.addWidget(btn_save)
@@ -114,7 +133,7 @@ class ModifyPlayerDialog(QDialog):
                 self.role_combo.setCurrentText(self.player.role)
 
             if self.player.photo:
-                self.photo_label.setText(f"📷 {Path(self.player.photo).name}")
+                self.photo_label.setText(f"Foto: {Path(self.player.photo).name}")
 
     def _choose_photo(self):
         """Apre il dialog per scegliere la foto"""
@@ -123,7 +142,7 @@ class ModifyPlayerDialog(QDialog):
         )
         if file_path:
             self.photo_path = file_path
-            self.photo_label.setText(f"📷 {Path(file_path).name}")
+            self.photo_label.setText(f"Foto: {Path(file_path).name}")
 
     def get_player_data(self):
         """Ritorna i dati modificati del giocatore"""
@@ -177,9 +196,12 @@ class TeamManagementWidget(QWidget):
 
         # Header con titolo e pulsante aggiungi squadra
         header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("<h2>👥 Squadre e Giocatori</h2>"))
+        header_layout.addWidget(QLabel("<h2>Squadre e Giocatori</h2>"))
         header_layout.addStretch()
-        btn_add_team = QPushButton("➕ Aggiungi Squadra")
+        btn_add_team = QPushButton("Nuova Squadra")
+        btn_add_team.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder)
+        )
         btn_add_team.clicked.connect(self.enable_team_form)
         header_layout.addWidget(btn_add_team)
         main_layout.addLayout(header_layout)
@@ -218,7 +240,10 @@ class TeamManagementWidget(QWidget):
         self.team_category_input = QLineEdit()
         self.team_venue_input = QLineEdit()
         self.team_logo_label = QLabel("(Nessun logo selezionato)")
-        btn_choose_logo = QPushButton("🖼️ Scegli Logo")
+        btn_choose_logo = QPushButton("Seleziona Logo")
+        btn_choose_logo.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        )
         btn_choose_logo.clicked.connect(self.choose_team_logo)
 
         logo_layout = QHBoxLayout()
@@ -236,15 +261,23 @@ class TeamManagementWidget(QWidget):
         team_form_layout.addWidget(QLabel("<b>Giocatori</b>"))
 
         players_buttons = QHBoxLayout()
-        btn_add_player = QPushButton("➕ Aggiungi Giocatore")
+        btn_add_player = QPushButton("Nuovo Giocatore")
+        btn_add_player.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder)
+        )
         btn_add_player.clicked.connect(self.enable_player_form)
-        btn_remove_player = QPushButton("❌ Rimuovi Giocatore")
+        btn_remove_player = QPushButton("Rimuovi Giocatore")
+        btn_remove_player.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
         btn_remove_player.clicked.connect(self.delete_player)
         players_buttons.addWidget(btn_add_player)
         players_buttons.addWidget(btn_remove_player)
         team_form_layout.addLayout(players_buttons)
 
         self.players_list = QListWidget()
+        self.players_list.setIconSize(QSize(34, 34))
+        self.players_list.setSpacing(4)
         self.players_list.itemClicked.connect(self.on_player_selected)
         self.players_list.itemDoubleClicked.connect(self.edit_player)
         team_form_layout.addWidget(self.players_list)
@@ -253,11 +286,20 @@ class TeamManagementWidget(QWidget):
 
         # Save/Delete/Cancel buttons for team form
         save_delete_layout = QHBoxLayout()
-        btn_save_team = QPushButton("✅ Salva Squadra")
+        btn_save_team = QPushButton("Salva Squadra")
+        btn_save_team.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton)
+        )
         btn_save_team.clicked.connect(self.save_team)
-        btn_delete_team = QPushButton("❌ Elimina Squadra")
+        btn_delete_team = QPushButton("Elimina Squadra")
+        btn_delete_team.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
         btn_delete_team.clicked.connect(self.delete_team)
-        btn_cancel = QPushButton("↩️ Annulla")
+        btn_cancel = QPushButton("Annulla")
+        btn_cancel.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+        )
         btn_cancel.clicked.connect(lambda: self.team_form.hide())
         save_delete_layout.addWidget(btn_save_team)
         save_delete_layout.addWidget(btn_delete_team)
@@ -280,6 +322,51 @@ class TeamManagementWidget(QWidget):
 
         self.setLayout(main_layout)
 
+    def _resolve_image_path(self, image_path):
+        if not image_path:
+            return None
+        p = Path(str(image_path))
+        return p if p.exists() else None
+
+    def _build_player_icon(self, player):
+        photo_path = self._resolve_image_path(getattr(player, "photo", None))
+        if photo_path:
+            source = QPixmap(str(photo_path))
+            if not source.isNull():
+                size = 34
+                avatar = QPixmap(size, size)
+                avatar.fill(Qt.GlobalColor.transparent)
+
+                painter = QPainter(avatar)
+                painter.setRenderHints(
+                    QPainter.RenderHint.Antialiasing
+                    | QPainter.RenderHint.SmoothPixmapTransform
+                )
+                clip = QPainterPath()
+                clip.addEllipse(1, 1, size - 2, size - 2)
+                painter.setClipPath(clip)
+
+                scaled = source.scaled(
+                    size - 2,
+                    size - 2,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                painter.drawPixmap(1, 1, scaled)
+                painter.setClipping(False)
+                painter.setPen(QPen(QColor("#E95420"), 2))
+                painter.drawEllipse(1, 1, size - 2, size - 2)
+                painter.end()
+
+                return QIcon(avatar)
+
+        if callable(get_role_icon):
+            role_icon = get_role_icon(getattr(player, "role", ""), size=18)
+            if isinstance(role_icon, QIcon) and not role_icon.isNull():
+                return role_icon
+
+        return self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+
     def load_teams(self):
         """Carica le squadre dal database"""
         self.teams_list.clear()
@@ -290,14 +377,12 @@ class TeamManagementWidget(QWidget):
 
             if not teams:
                 # Mostra messaggio se no teams
-                item = QListWidgetItem(
-                    "(Nessuna squadra - Clicca '➕ Aggiungi Squadra')"
-                )
+                item = QListWidgetItem("(Nessuna squadra - Clicca 'Nuova Squadra')")
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 self.teams_list.addItem(item)
             else:
                 for team in teams:
-                    display_text = f"🏐 {team.name}"
+                    display_text = f"{team.name}"
                     if team.short_name:
                         display_text += f" ({team.short_name})"
                     item = QListWidgetItem(display_text)
@@ -328,7 +413,7 @@ class TeamManagementWidget(QWidget):
                 self.team_venue_input.setText(team.venue or "")
 
                 if team.logo:
-                    self.team_logo_label.setText(f"🖼️ {Path(team.logo).name}")
+                    self.team_logo_label.setText(f"Logo: {Path(team.logo).name}")
                     self.current_team_logo = team.logo
                 else:
                     self.team_logo_label.setText("(Nessun logo selezionato)")
@@ -342,6 +427,7 @@ class TeamManagementWidget(QWidget):
                     if player.role:
                         display_text += f" ({player.role})"
                     item = QListWidgetItem(display_text)
+                    item.setIcon(self._build_player_icon(player))
                     item.setData(Qt.ItemDataRole.UserRole, player.id)
                     self.players_list.addItem(item)
 
@@ -435,7 +521,7 @@ class TeamManagementWidget(QWidget):
         )
         if file_path:
             self.current_team_logo = file_path
-            self.team_logo_label.setText(f"🖼️ {Path(file_path).name}")
+            self.team_logo_label.setText(f"Logo: {Path(file_path).name}")
 
     def enable_player_form(self):
         """Abilita il form per aggiungere un nuovo giocatore"""

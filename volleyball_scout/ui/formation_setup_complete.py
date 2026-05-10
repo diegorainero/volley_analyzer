@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QStackedWidget,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -41,7 +42,7 @@ class FormationSetupMatches(QWidget):
         layout.setSpacing(15)
 
         # Titolo
-        title = QLabel("🏐 Selezione Partita per Formazione")
+        title = QLabel("Selezione Partita per Formazione")
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -50,12 +51,15 @@ class FormationSetupMatches(QWidget):
 
         # Sottotitolo
         subtitle = QLabel("Clicca su una partita per inserire la formazione")
-        subtitle.setStyleSheet("color: #999999; font-size: 12px;")
+        subtitle.setStyleSheet("color: #D8C8D5; font-size: 12px;")
         layout.addWidget(subtitle)
 
         # Pulsante "Nuova Partita"
-        btn_new_match = QPushButton("➕ Nuova Partita")
-        btn_new_match.setMaximumWidth(150)
+        btn_new_match = QPushButton("Nuova Partita")
+        btn_new_match.setMaximumWidth(170)
+        btn_new_match.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder)
+        )
         btn_new_match.clicked.connect(self._on_new_match_clicked)
         layout.addWidget(btn_new_match)
 
@@ -74,8 +78,11 @@ class FormationSetupMatches(QWidget):
         layout.addWidget(self.matches_table, 1)
 
         # Bottone refresh
-        btn_refresh = QPushButton("🔄 Aggiorna")
-        btn_refresh.setMaximumWidth(150)
+        btn_refresh = QPushButton("Aggiorna")
+        btn_refresh.setMaximumWidth(170)
+        btn_refresh.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+        )
         btn_refresh.clicked.connect(self._load_matches)
         layout.addWidget(btn_refresh)
 
@@ -227,9 +234,13 @@ class FormationSetupComplete(QWidget):
                         {
                             "id": entry.player_id,
                             "number": entry.number,
+                            "first_name": entry.player.first_name
+                            if entry.player
+                            else "",
                             "last_name": entry.player.last_name if entry.player else "",
                             "role": entry.role
                             or (entry.player.role if entry.player else ""),
+                            "photo": entry.player.photo if entry.player else None,
                         }
                     )
 
@@ -257,8 +268,10 @@ class FormationSetupComplete(QWidget):
                                 {
                                     "id": p.id,
                                     "number": p.number,
+                                    "first_name": p.first_name,
                                     "last_name": p.last_name,
                                     "role": p.role,
+                                    "photo": p.photo,
                                 }
                                 for p in players
                             ]
@@ -287,8 +300,10 @@ class FormationSetupComplete(QWidget):
                                 {
                                     "id": p.id,
                                     "number": p.number,
+                                    "first_name": p.first_name,
                                     "last_name": p.last_name,
                                     "role": p.role,
+                                    "photo": p.photo,
                                 }
                                 for p in players
                             ]

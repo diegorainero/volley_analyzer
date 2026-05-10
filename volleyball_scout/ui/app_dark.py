@@ -5,8 +5,8 @@ Volleyball Scout - Main PyQt6 Application with Dark Theme and Menu Bar
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QFont, QPixmap
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QStackedWidget,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -134,56 +135,68 @@ except ImportError:
 # DARK THEME STYLESHEET
 DARK_STYLESHEET = """
 QMainWindow, QWidget, QDialog {
-    background-color: #1e1e1e;
-    color: #e0e0e0;
+    background-color: #2B211C;
+    color: #F6EFE9;
 }
 
 QMenuBar {
-    background-color: #2d2d2d;
-    color: #e0e0e0;
-    border-bottom: 1px solid #3d3d3d;
+    background-color: #3A2D27;
+    color: #F6EFE9;
+    border-bottom: 1px solid #6E4B32;
 }
 
 QMenuBar::item:selected {
-    background-color: #3d3d3d;
+    background-color: #6E4B32;
 }
 
 QMenu {
-    background-color: #2d2d2d;
-    color: #e0e0e0;
+    background-color: #3A2D27;
+    color: #F6EFE9;
+    border: 1px solid #6E4B32;
 }
 
 QMenu::item:selected {
-    background-color: #0066cc;
+    background-color: #E95420;
     color: #ffffff;
 }
 
-QLabel {
-    color: #e0e0e0;
+QLabel, QCheckBox, QRadioButton {
+    color: #F6EFE9;
 }
 
 QPushButton {
-    background-color: #0066cc;
+    background-color: #8A613F;
     color: white;
-    border: none;
-    border-radius: 4px;
+    border: 1px solid #6E4B32;
+    border-radius: 6px;
     padding: 6px 12px;
     font-weight: bold;
 }
 
 QPushButton:hover {
-    background-color: #0052a3;
+    background-color: #A5784D;
 }
 
 QPushButton:pressed {
-    background-color: #003d7a;
+    background-color: #6E4B32;
+}
+
+QPushButton:disabled {
+    background-color: #4F4035;
+    color: #9D8878;
+    border-color: #4F4035;
+}
+
+QTableWidget, QListWidget, QComboBox, QLineEdit, QTextEdit {
+    background-color: #3A2D27;
+    color: #F6EFE9;
+    border: 1px solid #6E4B32;
+    border-radius: 6px;
 }
 
 QTableWidget {
-    background-color: #252525;
-    alternate-background-color: #2d2d2d;
-    gridline-color: #3d3d3d;
-    color: #e0e0e0;
+    alternate-background-color: #5A3D2A;
+    gridline-color: #6E4B32;
 }
 
 QTableWidget::item {
@@ -191,38 +204,34 @@ QTableWidget::item {
     border: none;
 }
 
-QTableWidget::item:selected {
-    background-color: #0066cc;
+QTableWidget::item:selected, QListWidget::item:selected {
+    background-color: #E95420;
     color: white;
 }
 
 QHeaderView::section {
-    background-color: #2d2d2d;
-    color: #e0e0e0;
+    background-color: #3A2D27;
+    color: #F6EFE9;
     padding: 4px;
-    border: 1px solid #3d3d3d;
+    border: 1px solid #6E4B32;
 }
 
 QScrollBar:vertical {
-    background-color: #1e1e1e;
+    background-color: #2B211C;
     width: 12px;
 }
 
 QScrollBar::handle:vertical {
-    background-color: #555555;
+    background-color: #8A613F;
     border-radius: 6px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background-color: #666666;
+    background-color: #A5784D;
 }
 
 QStackedWidget {
-    background-color: #1e1e1e;
-}
-
-QRadioButton {
-    color: #e0e0e0;
+    background-color: #2B211C;
 }
 
 QRadioButton::indicator {
@@ -231,89 +240,106 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:unchecked {
-    background-color: #3d3d3d;
-    border: 2px solid #555555;
+    background-color: #4F4035;
+    border: 2px solid #7D6757;
     border-radius: 8px;
 }
 
 QRadioButton::indicator:checked {
-    background-color: #0066cc;
-    border: 2px solid #0066cc;
+    background-color: #E95420;
+    border: 2px solid #E95420;
     border-radius: 8px;
 }
 
-QLineEdit {
-    background-color: #3d3d3d;
-    color: #e0e0e0;
-    border: 1px solid #555555;
-    border-radius: 4px;
+QLineEdit, QTextEdit {
     padding: 6px;
-    selection-background-color: #0066cc;
+    selection-background-color: #E95420;
 }
 
-QLineEdit:focus {
-    border: 2px solid #0066cc;
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
+    border: 2px solid #E95420;
 }
 
-QDialog {
-    background-color: #1e1e1e;
-    color: #e0e0e0;
+QGroupBox {
+    border: 1px solid #6E4B32;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+    color: #E95420;
 }
 """
 
 # LIGHT THEME STYLESHEET
 LIGHT_STYLESHEET = """
 QMainWindow, QWidget, QDialog {
-    background-color: #ffffff;
-    color: #1e1e1e;
+    background-color: #FFF7F2;
+    color: #2B211C;
 }
 
 QMenuBar {
-    background-color: #f5f5f5;
-    color: #1e1e1e;
-    border-bottom: 1px solid #cccccc;
+    background-color: #F6EAE4;
+    color: #2B211C;
+    border-bottom: 1px solid #D8B7AA;
 }
 
 QMenuBar::item:selected {
-    background-color: #e8e8e8;
+    background-color: #EDD7CE;
 }
 
 QMenu {
-    background-color: #f5f5f5;
-    color: #1e1e1e;
+    background-color: #FFF7F2;
+    color: #2B211C;
+    border: 1px solid #D8B7AA;
 }
 
 QMenu::item:selected {
-    background-color: #0066cc;
+    background-color: #E95420;
     color: #ffffff;
 }
 
-QLabel {
-    color: #1e1e1e;
+QLabel, QCheckBox, QRadioButton {
+    color: #2B211C;
 }
 
 QPushButton {
-    background-color: #0066cc;
+    background-color: #E95420;
     color: white;
-    border: none;
-    border-radius: 4px;
+    border: 1px solid #C7451A;
+    border-radius: 6px;
     padding: 6px 12px;
     font-weight: bold;
 }
 
 QPushButton:hover {
-    background-color: #0052a3;
+    background-color: #F06B3C;
 }
 
 QPushButton:pressed {
-    background-color: #003d7a;
+    background-color: #C7451A;
+}
+
+QPushButton:disabled {
+    background-color: #E6CDC2;
+    color: #9D7E72;
+    border-color: #D8B7AA;
+}
+
+QTableWidget, QListWidget, QComboBox, QLineEdit, QTextEdit {
+    background-color: #FFFFFF;
+    color: #2B211C;
+    border: 1px solid #D8B7AA;
+    border-radius: 6px;
 }
 
 QTableWidget {
-    background-color: #ffffff;
-    alternate-background-color: #f9f9f9;
-    gridline-color: #cccccc;
-    color: #1e1e1e;
+    alternate-background-color: #FFF1EA;
+    gridline-color: #E6CDC2;
 }
 
 QTableWidget::item {
@@ -321,38 +347,34 @@ QTableWidget::item {
     border: none;
 }
 
-QTableWidget::item:selected {
-    background-color: #0066cc;
+QTableWidget::item:selected, QListWidget::item:selected {
+    background-color: #E95420;
     color: white;
 }
 
 QHeaderView::section {
-    background-color: #f0f0f0;
-    color: #1e1e1e;
+    background-color: #F6EAE4;
+    color: #2B211C;
     padding: 4px;
-    border: 1px solid #cccccc;
+    border: 1px solid #D8B7AA;
 }
 
 QScrollBar:vertical {
-    background-color: #ffffff;
+    background-color: #FFF7F2;
     width: 12px;
 }
 
 QScrollBar::handle:vertical {
-    background-color: #c0c0c0;
+    background-color: #D1B2A6;
     border-radius: 6px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background-color: #a0a0a0;
+    background-color: #C39B8C;
 }
 
 QStackedWidget {
-    background-color: #ffffff;
-}
-
-QRadioButton {
-    color: #1e1e1e;
+    background-color: #FFF7F2;
 }
 
 QRadioButton::indicator {
@@ -361,33 +383,38 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:unchecked {
-    background-color: #ffffff;
-    border: 2px solid #cccccc;
+    background-color: #FFFFFF;
+    border: 2px solid #D8B7AA;
     border-radius: 8px;
 }
 
 QRadioButton::indicator:checked {
-    background-color: #0066cc;
-    border: 2px solid #0066cc;
+    background-color: #E95420;
+    border: 2px solid #E95420;
     border-radius: 8px;
 }
 
-QLineEdit {
-    background-color: #ffffff;
-    color: #1e1e1e;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
+QLineEdit, QTextEdit {
     padding: 6px;
-    selection-background-color: #0066cc;
+    selection-background-color: #E95420;
 }
 
-QLineEdit:focus {
-    border: 2px solid #0066cc;
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
+    border: 2px solid #E95420;
 }
 
-QDialog {
-    background-color: #ffffff;
-    color: #1e1e1e;
+QGroupBox {
+    border: 1px solid #D8B7AA;
+    border-radius: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+    color: #C7451A;
 }
 """
 
@@ -397,7 +424,7 @@ class LoginDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("🏐 Volleyball Scout - Login")
+        self.setWindowTitle("Volleyball Scout - Login")
         self.setGeometry(400, 300, 400, 200)
         self.setModal(True)
         self.setStyleSheet(DARK_STYLESHEET)
@@ -405,7 +432,7 @@ class LoginDialog(QDialog):
         layout = QVBoxLayout()
 
         # Titolo
-        title = QLabel("🏐 Volleyball Scout")
+        title = QLabel("Volleyball Scout")
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -434,13 +461,19 @@ class LoginDialog(QDialog):
 
         # Buttons
         button_layout = QHBoxLayout()
-        self.login_button = QPushButton("✓ Accedi")
+        self.login_button = QPushButton("Accedi")
         self.login_button.setMinimumHeight(40)
+        self.login_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton)
+        )
         self.login_button.clicked.connect(self.accept)
         button_layout.addWidget(self.login_button)
 
-        self.cancel_button = QPushButton("✗ Annulla")
+        self.cancel_button = QPushButton("Annulla")
         self.cancel_button.setMinimumHeight(40)
+        self.cancel_button.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCancelButton)
+        )
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
 
@@ -468,7 +501,7 @@ class PlaceholderWidget(QWidget):
         font = QFont()
         font.setPointSize(14)
         label.setFont(font)
-        label.setStyleSheet("color: #666666;")
+        label.setStyleSheet("color: #9D8878;")
 
         layout.addWidget(label)
         layout.addStretch()
@@ -482,6 +515,8 @@ class DashboardView(QWidget):
         super().__init__(parent)
         self.db = db_manager
         self.on_navigate = on_navigate
+        self.is_dark_theme = True
+        self.card_buttons = []
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -504,7 +539,7 @@ class DashboardView(QWidget):
         main_layout.addLayout(logo_layout)
 
         # Title
-        title = QLabel("🏐 Volleyball Scout - Dashboard")
+        title = QLabel("Volleyball Scout - Dashboard")
         font = QFont()
         font.setPointSize(18)
         font.setBold(True)
@@ -515,7 +550,8 @@ class DashboardView(QWidget):
         # Subtitle
         subtitle = QLabel("Benvenuto nella dashboard principale")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet("color: #999999; font-size: 12px; margin-bottom: 20px;")
+        subtitle.setStyleSheet("font-size: 12px; margin-bottom: 20px;")
+        self.subtitle_label = subtitle
         main_layout.addWidget(subtitle)
 
         # Cards Grid
@@ -525,32 +561,32 @@ class DashboardView(QWidget):
         # Define cards
         cards = [
             {
-                "title": "👥 Squadre e Giocatori",
+                "title": "Squadre e Giocatori",
                 "description": "Gestisci squadre e giocatori",
                 "section_id": "teams",
             },
             {
-                "title": "🧾 Gestione Squadre",
+                "title": "Gestione Squadre",
                 "description": "Configura i giocatori convocati",
                 "section_id": "roster",
             },
             {
-                "title": "🏐 Formazioni",
+                "title": "Formazioni",
                 "description": "Imposta formazioni e titolari",
                 "section_id": "formation",
             },
             {
-                "title": "📡 Scouting Live",
+                "title": "Scouting Live",
                 "description": "Registra e analizza video",
                 "section_id": "scout",
             },
             {
-                "title": "📈 Statistiche",
+                "title": "Statistiche",
                 "description": "Visualizza statistiche partite",
                 "section_id": "stats",
             },
             {
-                "title": "🏠 Dashboard",
+                "title": "Dashboard",
                 "description": "Aggiorna la schermata principale",
                 "section_id": "dashboard",
             },
@@ -566,6 +602,66 @@ class DashboardView(QWidget):
         main_layout.addStretch()
 
         self.setLayout(main_layout)
+        self.set_theme(True)
+
+    def _card_stylesheet(self):
+        if self.is_dark_theme:
+            return """
+                QPushButton {
+                    background-color: #3A2D27;
+                    color: #F6EFE9;
+                    border: 1px solid #6E4B32;
+                    border-radius: 10px;
+                    padding: 12px;
+                    text-align: left;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5A3D2A;
+                    border: 1px solid #E95420;
+                }
+                QPushButton:pressed {
+                    background-color: #2B211C;
+                    border: 1px solid #C7451A;
+                }
+            """
+
+        return """
+            QPushButton {
+                background-color: #FFF1EA;
+                color: #2B211C;
+                border: 1px solid #D8B7AA;
+                border-radius: 10px;
+                padding: 12px;
+                text-align: left;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #FDE7DC;
+                border: 1px solid #E95420;
+            }
+            QPushButton:pressed {
+                background-color: #F8D8C8;
+                border: 1px solid #C7451A;
+            }
+        """
+
+    def set_theme(self, is_dark: bool):
+        self.is_dark_theme = is_dark
+        if hasattr(self, "subtitle_label"):
+            self.subtitle_label.setStyleSheet(
+                (
+                    "color: #C6B3A5; font-size: 12px; margin-bottom: 20px;"
+                    if is_dark
+                    else "color: #7D6757; font-size: 12px; margin-bottom: 20px;"
+                )
+            )
+
+        card_css = self._card_stylesheet()
+        for btn in self.card_buttons:
+            btn.setStyleSheet(card_css)
 
     def _create_card_widget(
         self, title: str, description: str, section_id: str
@@ -579,29 +675,8 @@ class DashboardView(QWidget):
             icon = get_section_icon(section_id, size=20)
             if not icon.isNull():
                 card_btn.setIcon(icon)
-                card_btn.setIconSize(card_btn.iconSize())
-        card_btn.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #252525;
-                color: #e0e0e0;
-                border: 1px solid #3d3d3d;
-                border-radius: 8px;
-                padding: 12px;
-                text-align: left;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2d2d2d;
-                border: 1px solid #0066cc;
-            }
-            QPushButton:pressed {
-                background-color: #1f1f1f;
-                border: 1px solid #3385ff;
-            }
-        """
-        )
+                card_btn.setIconSize(QSize(22, 22))
+        self.card_buttons.append(card_btn)
 
         navigate_fn = self.on_navigate
         if callable(navigate_fn):
@@ -621,7 +696,7 @@ class VolleyballScoutApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("🏐 Volleyball Scout")
+        self.setWindowTitle("Volleyball Scout")
         self.setGeometry(100, 100, 1600, 900)
 
         # Set window icon if available
@@ -668,9 +743,7 @@ class VolleyballScoutApp(QMainWindow):
         else:
             error_widget = QWidget()
             error_layout = QVBoxLayout()
-            error_layout.addWidget(
-                QLabel("❌ Errore: Impossibile connettere il database")
-            )
+            error_layout.addWidget(QLabel("Errore: Impossibile connettere il database"))
             error_widget.setLayout(error_layout)
             self.content_stack.addWidget(error_widget)
 
@@ -687,7 +760,7 @@ class VolleyballScoutApp(QMainWindow):
         else:
             self.showErrorDialog(
                 "Errore",
-                "❌ Impossibile connettere il database. Controllare la configurazione.",
+                "Impossibile connettere il database. Controllare la configurazione.",
             )
 
     def _create_menu_bar(self):
@@ -695,83 +768,107 @@ class VolleyballScoutApp(QMainWindow):
         menubar = self.menuBar()
 
         # Menu File
-        file_menu = menubar.addMenu("📁 File")
+        file_menu = menubar.addMenu("File")
+        file_menu.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
 
-        action_logout = QAction("🚪 Logout", self)
+        action_logout = QAction("Logout", self)
+        action_logout.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton)
+        )
         action_logout.setShortcut("Ctrl+L")
         action_logout.triggered.connect(self._perform_logout)
         file_menu.addAction(action_logout)
 
         file_menu.addSeparator()
 
-        action_exit = QAction("❌ Esci", self)
+        action_exit = QAction("Esci", self)
+        action_exit.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+        )
         action_exit.setShortcut("Ctrl+Q")
         action_exit.triggered.connect(self.close)
         file_menu.addAction(action_exit)
 
         # Menu Sezioni
-        view_menu = menubar.addMenu("👁️ Visualizza")
+        view_menu = menubar.addMenu("Sezioni")
+        view_menu.setIcon(
+            get_section_icon("dashboard", size=16)
+            if callable(get_section_icon)
+            else self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
+        )
 
-        action_dashboard = QAction("🏠 Dashboard", self)
+        action_dashboard = QAction("Dashboard", self)
         if callable(get_section_icon):
             action_dashboard.setIcon(get_section_icon("dashboard", size=18))
         action_dashboard.triggered.connect(lambda: self._show_section("dashboard"))
         view_menu.addAction(action_dashboard)
 
-        action_teams = QAction("👥 Squadre e Giocatori", self)
+        action_teams = QAction("Squadre e Giocatori", self)
         if callable(get_section_icon):
             action_teams.setIcon(get_section_icon("teams", size=18))
         action_teams.triggered.connect(lambda: self._show_section("teams"))
         view_menu.addAction(action_teams)
 
-        action_roster = QAction("🧾 Gestione Squadre", self)
+        action_roster = QAction("Gestione Squadre", self)
         if callable(get_section_icon):
             action_roster.setIcon(get_section_icon("roster", size=18))
         action_roster.triggered.connect(lambda: self._show_section("roster"))
         view_menu.addAction(action_roster)
 
-        action_formation = QAction("🏐 Formazioni", self)
+        action_formation = QAction("Formazioni", self)
         if callable(get_section_icon):
             action_formation.setIcon(get_section_icon("formation", size=18))
         action_formation.triggered.connect(lambda: self._show_section("formation"))
         view_menu.addAction(action_formation)
 
-        action_scout = QAction("📡 Scouting Live", self)
+        action_scout = QAction("Scouting Live", self)
         if callable(get_section_icon):
             action_scout.setIcon(get_section_icon("scout", size=18))
         action_scout.triggered.connect(lambda: self._show_section("scout"))
         view_menu.addAction(action_scout)
 
-        action_stats = QAction("📈 Statistiche", self)
+        action_stats = QAction("Statistiche", self)
         if callable(get_section_icon):
             action_stats.setIcon(get_section_icon("stats", size=18))
         action_stats.triggered.connect(lambda: self._show_section("stats"))
         view_menu.addAction(action_stats)
 
         # Menu Preferenze
-        preferences_menu = menubar.addMenu("⚙️ Preferenze")
+        preferences_menu = menubar.addMenu("Preferenze")
+        preferences_menu.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        )
 
         # Submenu Tema
-        theme_menu = preferences_menu.addMenu("🎨 Tema")
+        theme_menu = preferences_menu.addMenu("Tema")
+        theme_menu.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
+        )
 
         # Azione Modalità Scura
-        action_dark_mode = QAction("🌙 Modalità Scura", self, checkable=True)
+        action_dark_mode = QAction("Modalità Scura", self, checkable=True)
         action_dark_mode.setChecked(True)  # Default
         action_dark_mode.triggered.connect(lambda: self._toggle_theme(True))
         theme_menu.addAction(action_dark_mode)
         self.theme_actions["dark"] = action_dark_mode
 
         # Azione Modalità Chiara
-        action_light_mode = QAction("☀️ Modalità Chiara", self, checkable=True)
+        action_light_mode = QAction("Modalità Chiara", self, checkable=True)
         action_light_mode.setChecked(False)  # Default
         action_light_mode.triggered.connect(lambda: self._toggle_theme(False))
         theme_menu.addAction(action_light_mode)
         self.theme_actions["light"] = action_light_mode
 
         # Menu Aiuto
-        help_menu = menubar.addMenu("❓ Aiuto")
+        help_menu = menubar.addMenu("Aiuto")
+        help_menu.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogHelpButton)
+        )
 
-        action_about = QAction("ℹ️ About", self)
+        action_about = QAction("About", self)
+        action_about.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
+        )
         action_about.triggered.connect(self._show_about)
         help_menu.addAction(action_about)
 
@@ -780,8 +877,10 @@ class VolleyballScoutApp(QMainWindow):
         # 1. Dashboard
         if self.db is not None:
             self.dashboard = DashboardView(self.db, on_navigate=self._show_section)
+            if hasattr(self.dashboard, "set_theme"):
+                self.dashboard.set_theme(self.is_dark_theme)
         else:
-            self.dashboard = PlaceholderWidget("📊 Dashboard")
+            self.dashboard = PlaceholderWidget("Dashboard")
         self.content_stack.addWidget(self.dashboard)
 
         # 2. Teams & Players Management
@@ -791,9 +890,9 @@ class VolleyballScoutApp(QMainWindow):
                 self.teams_widget.load_teams()
             except Exception as e:
                 print(f"⚠️ Error creating TeamManagementWidget: {e}")
-                self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
+                self.teams_widget = PlaceholderWidget("Squadre e Giocatori")
         else:
-            self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
+            self.teams_widget = PlaceholderWidget("Squadre e Giocatori")
         self.content_stack.addWidget(self.teams_widget)
 
         # 3. Gestione Squadre
@@ -804,7 +903,7 @@ class VolleyballScoutApp(QMainWindow):
                     self._on_roster_setup_completed
                 )
         else:
-            self.roster_widget = PlaceholderWidget("🧾 Gestione Squadre")
+            self.roster_widget = PlaceholderWidget("Gestione Squadre")
         self.content_stack.addWidget(self.roster_widget)
 
         # 4. Formation Setup Complete (con match selector e navigazione)
@@ -813,9 +912,9 @@ class VolleyballScoutApp(QMainWindow):
                 self.formation_widget = FormationSetupComplete(self.db)
             except Exception as e:
                 print(f"⚠️ Error loading FormationSetupComplete: {e}")
-                self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+                self.formation_widget = PlaceholderWidget("Formation Setup")
         else:
-            self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+            self.formation_widget = PlaceholderWidget("Formation Setup")
         self.content_stack.addWidget(self.formation_widget)
 
         # 5. Scout & Video
@@ -841,7 +940,7 @@ class VolleyballScoutApp(QMainWindow):
         if StatsView:
             self.stats_view = StatsView()
         else:
-            self.stats_view = PlaceholderWidget("📈 Statistics")
+            self.stats_view = PlaceholderWidget("Statistics")
         self.content_stack.addWidget(self.stats_view)
 
     def _show_section(self, section_id: str):
@@ -889,11 +988,15 @@ class VolleyballScoutApp(QMainWindow):
         if is_dark:
             # Applica tema scuro
             app.setStyleSheet(DARK_STYLESHEET)
-            print("🌙 Tema scuro attivato")
+            print("Tema scuro attivato")
         else:
             # Applica tema chiaro
             app.setStyleSheet(LIGHT_STYLESHEET)
-            print("☀️ Tema chiaro attivato")
+            print("Tema chiaro attivato")
+
+        # Aggiorna widget con temi personalizzati
+        if hasattr(self, "dashboard") and hasattr(self.dashboard, "set_theme"):
+            self.dashboard.set_theme(is_dark)
 
         # Aggiorna i checkmark dei menu items
         self.theme_actions["dark"].setChecked(is_dark)
@@ -904,7 +1007,7 @@ class VolleyballScoutApp(QMainWindow):
         QMessageBox.information(
             self,
             "About Volleyball Scout",
-            "🏐 Volleyball Scout v1.0\n\n"
+            "Volleyball Scout v1.0\n\n"
             "Applicazione per la scout e l'analisi di partite di pallavolo.\n\n"
             f"Utente: {self.current_user}\n\n"
             "© 2024",
@@ -947,7 +1050,7 @@ class VolleyballScoutApp(QMainWindow):
                     # Login fallito
                     self.showErrorDialog(
                         "Login Fallito",
-                        "❌ Credenziali non valide. Riprova.",
+                        "Credenziali non valide. Riprova.",
                     )
             else:
                 # Utente ha annullato il login
@@ -977,7 +1080,7 @@ class VolleyballScoutApp(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             self.is_authenticated = False
             self.current_user = None
-            print("🚪 Logout eseguito")
+            print("Logout eseguito")
             self._show_login_dialog()
 
     def showErrorDialog(self, title: str, message: str):

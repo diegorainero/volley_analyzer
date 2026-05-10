@@ -255,8 +255,8 @@ def test_svg_colors():
         "#e0e0e0": "Primary text",
         "#999999": "Secondary text",
         "#666666": "Tertiary text",
-        "#0066cc": "Primary accent (blue)",
-        "#0052a3": "Dark accent (blue hover)",
+        "#E95420": "Primary accent (Ubuntu orange)",
+        "#C7451A": "Dark accent (Ubuntu orange hover)",
     }
 
     assets_dir = Path(__file__).parent / "assets"
