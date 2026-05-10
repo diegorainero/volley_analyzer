@@ -267,7 +267,7 @@ class FormationSlot(QFrame):
         self.formation_widget = None  # Riferimento al TeamFormationWidget padre
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(68, 68)
+        self.setFixedSize(56, 56)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
@@ -721,7 +721,7 @@ class TeamFormationWidget(QWidget):
                 position_container.setLayout(position_layout)
 
                 # Box formazione più compatti
-                position_container.setMinimumSize(84, 74)
+                position_container.setMinimumSize(72, 64)
 
                 formation_grid.addWidget(position_container, row, col)
                 idx += 1
@@ -943,6 +943,8 @@ class FormationPanel(QWidget):
         self.left_team_container = None
         self.right_team_container = None
         self.separator_widget = None
+        self.team_containers = {}
+        self.team_container_layouts = {}
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -1091,6 +1093,8 @@ class FormationPanel(QWidget):
 
             team_a_container.setLayout(team_a_layout)
             self.left_team_container = team_a_container
+            self.team_containers[team_a["id"]] = team_a_container
+            self.team_container_layouts[team_a["id"]] = team_a_layout
             self.teams_layout.addWidget(team_a_container, 1)
 
         # SEPARATORE RETE CON SWITCH AL CENTRO
@@ -1235,6 +1239,8 @@ class FormationPanel(QWidget):
 
             team_b_container.setLayout(team_b_layout)
             self.right_team_container = team_b_container
+            self.team_containers[team_b["id"]] = team_b_container
+            self.team_container_layouts[team_b["id"]] = team_b_layout
             self.teams_layout.addWidget(team_b_container, 1)
 
         layout.addLayout(self.teams_layout, 1)
@@ -1310,6 +1316,29 @@ class FormationPanel(QWidget):
             return
         self.team_widgets[team_id].reset_formation()
         self.detect_game_method()
+
+    def _reload_team_widget(self, team_id: int):
+        """Ricrea il widget squadra per riallineare i box ai ruoli aggiornati."""
+        if team_id not in self.team_container_layouts:
+            return
+
+        team_layout = self.team_container_layouts[team_id]
+        old_widget = self.team_widgets.get(team_id)
+
+        team_meta = next((t for t in self.teams if t["id"] == team_id), None)
+        players = self.players_by_team.get(team_id, [])
+        if team_meta is None:
+            return
+
+        new_widget = TeamFormationWidget(team_meta, players)
+
+        if old_widget is not None:
+            team_layout.removeWidget(old_widget)
+            old_widget.deleteLater()
+
+        # index 1: dopo header, prima dei pulsanti
+        team_layout.insertWidget(1, new_widget, 1)
+        self.team_widgets[team_id] = new_widget
 
     def _switch_teams_formations(self):
         """Scambia realmente i due campi (pannello sinistra/destra)."""
@@ -1528,6 +1557,9 @@ class FormationPanel(QWidget):
 
     def _open_team_roles_dialog(self, team_id):
         """Apre il dialog di modifica ruoli per una squadra specifica"""
+        if team_id not in self.team_widgets:
+            return
+
         team_widget = self.team_widgets[team_id]
         team_name = None
         for team in self.teams:
@@ -1538,22 +1570,21 @@ class FormationPanel(QWidget):
         if not team_name:
             return
 
-        players = team_widget.players
+        players = self.players_by_team.get(team_id, team_widget.players)
         dialog = EditMatchRolesDialog(team_name, players, self)
         if dialog.exec():
             # Applica i cambiamenti di ruolo ai dati dei giocatori
             role_changes = dialog.get_role_changes()
             for player_id, new_role in role_changes.items():
-                # Trova il giocatore e aggiorna il suo ruolo
                 for player in players:
                     if player["id"] == player_id:
                         player["role"] = new_role
-                        # Aggiorna anche il bottone se esiste
-                        if player_id in team_widget.player_buttons:
-                            btn = team_widget.player_buttons[player_id]
-                            btn.role = new_role
-                            btn._update_style()  # Ricostituisci lo stile con il nuovo ruolo
                         break
+
+            # Mantieni i dati sincronizzati e ricrea il widget squadra
+            self.players_by_team[team_id] = players
+            self._reload_team_widget(team_id)
+
             # Dopo i cambiamenti, rileva il metodo di gioco di nuovo
             self.detect_game_method()
 
