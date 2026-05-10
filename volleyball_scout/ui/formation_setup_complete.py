@@ -349,7 +349,7 @@ class FormationSetupComplete(QWidget):
         Dopo il completamento del roster, caricherà automaticamente la formazione.
         """
         dialog = QDialog(self)
-        dialog.setWindowTitle("🏐 Setup Roster Partita")
+        dialog.setWindowTitle("🧾 Gestione Squadre Partita")
         dialog.setModal(True)
         dialog.setMinimumSize(1000, 600)
 

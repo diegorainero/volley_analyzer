@@ -9,6 +9,28 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 
 ASSETS_DIR = Path(__file__).parent
+SECTIONS_DIR = ASSETS_DIR / "sections"
+ROLES_DIR = ASSETS_DIR / "roles"
+
+SECTION_ICON_FILES = {
+    "dashboard": "dashboard.svg",
+    "teams": "teams.svg",
+    "roster": "roster.svg",
+    "formation": "formation.svg",
+    "scout": "scout.svg",
+    "stats": "stats.svg",
+}
+
+ROLE_ICON_FILES = {
+    "palleggiatore": "palleggiatore.svg",
+    "opposto": "opposto.svg",
+    "schiacciatore": "schiacciatore.svg",
+    "banda": "schiacciatore.svg",
+    "centrale": "centrale.svg",
+    "libero": "libero.svg",
+    "universale": "universale.svg",
+    "capitano": "capitano.svg",
+}
 
 
 def get_logo_pixmap(size: int = 100) -> QPixmap:
@@ -74,6 +96,45 @@ def get_icon(icon_name: str) -> QIcon:
         return QIcon(pixmap)
 
     return QIcon()
+
+
+def _icon_from_svg_path(icon_path: Path, size: int = 20) -> QIcon:
+    """Carica una icona SVG locale e la ridimensiona."""
+    if not icon_path.exists():
+        return QIcon()
+
+    pixmap = QPixmap(str(icon_path))
+    if pixmap.isNull():
+        return QIcon(str(icon_path))
+
+    scaled = pixmap.scaled(
+        size,
+        size,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return QIcon(scaled)
+
+
+def get_section_icon(section_name: str, size: int = 20) -> QIcon:
+    """Restituisce l'icona web della sezione richiesta."""
+    file_name = SECTION_ICON_FILES.get(section_name)
+    if not file_name:
+        return QIcon()
+    return _icon_from_svg_path(SECTIONS_DIR / file_name, size=size)
+
+
+def get_role_icon(role_name: str, size: int = 16) -> QIcon:
+    """Restituisce l'icona web associata al ruolo del giocatore."""
+    if not role_name:
+        return QIcon()
+
+    key = role_name.strip().lower()
+    file_name = ROLE_ICON_FILES.get(key)
+    if not file_name:
+        return QIcon()
+
+    return _icon_from_svg_path(ROLES_DIR / file_name, size=size)
 
 
 def get_logo_icon(size: int = 32) -> QIcon:

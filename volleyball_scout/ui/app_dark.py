@@ -114,15 +114,21 @@ except ImportError:
 
 # Import assets module
 try:
-    from volleyball_scout.ui.assets import get_icon, get_logo_icon, get_logo_pixmap
+    from volleyball_scout.ui.assets import (
+        get_icon,
+        get_logo_icon,
+        get_logo_pixmap,
+        get_section_icon,
+    )
 except ImportError:
     try:
-        from .assets import get_icon, get_logo_icon, get_logo_pixmap
+        from .assets import get_icon, get_logo_icon, get_logo_pixmap, get_section_icon
     except ImportError as e:
         print(f"⚠️ Warning: Assets module not available: {e}")
         get_logo_pixmap = None
         get_icon = None
         get_logo_icon = None
+        get_section_icon = None
 
 
 # DARK THEME STYLESHEET
@@ -470,11 +476,12 @@ class PlaceholderWidget(QWidget):
 
 
 class DashboardView(QWidget):
-    """Enhanced Dashboard widget with cards and logo"""
+    """Enhanced Dashboard widget with cards cliccabili e logo"""
 
-    def __init__(self, db_manager, parent=None):
+    def __init__(self, db_manager, on_navigate=None, parent=None):
         super().__init__(parent)
         self.db = db_manager
+        self.on_navigate = on_navigate
 
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -484,7 +491,7 @@ class DashboardView(QWidget):
         logo_layout = QHBoxLayout()
         logo_layout.addStretch()
 
-        if get_logo_pixmap:
+        if callable(get_logo_pixmap):
             try:
                 logo_pixmap = get_logo_pixmap(80)
                 logo_label = QLabel()
@@ -520,38 +527,38 @@ class DashboardView(QWidget):
             {
                 "title": "👥 Squadre e Giocatori",
                 "description": "Gestisci squadre e giocatori",
-                "icon": "🏐" if get_icon is None else None,
+                "section_id": "teams",
             },
             {
-                "title": "📋 Roster Setup",
-                "description": "Configura gli elenchi squadra",
-                "icon": "🏐" if get_icon is None else None,
+                "title": "🧾 Gestione Squadre",
+                "description": "Configura i giocatori convocati",
+                "section_id": "roster",
             },
             {
-                "title": "🏐 Formation",
+                "title": "🏐 Formazioni",
                 "description": "Imposta formazioni e titolari",
-                "icon": "🏐" if get_icon is None else None,
+                "section_id": "formation",
             },
             {
-                "title": "🎥 Scout & Video",
+                "title": "📡 Scouting Live",
                 "description": "Registra e analizza video",
-                "icon": "🏐" if get_icon is None else None,
+                "section_id": "scout",
             },
             {
-                "title": "📈 Statistics",
+                "title": "📈 Statistiche",
                 "description": "Visualizza statistiche partite",
-                "icon": "🏐" if get_icon is None else None,
+                "section_id": "stats",
             },
             {
-                "title": "⚙️ Settings",
-                "description": "Impostazioni applicazione",
-                "icon": "🏐" if get_icon is None else None,
+                "title": "🏠 Dashboard",
+                "description": "Aggiorna la schermata principale",
+                "section_id": "dashboard",
             },
         ]
 
         for idx, card in enumerate(cards):
             card_widget = self._create_card_widget(
-                card["title"], card["description"], card["icon"]
+                card["title"], card["description"], card["section_id"]
             )
             cards_layout.addWidget(card_widget, idx // 3, idx % 3)
 
@@ -560,47 +567,49 @@ class DashboardView(QWidget):
 
         self.setLayout(main_layout)
 
-    def _create_card_widget(self, title: str, description: str, icon: str) -> QWidget:
-        """Create a card widget for the dashboard"""
-        card = QWidget()
-        card.setStyleSheet(
+    def _create_card_widget(
+        self, title: str, description: str, section_id: str
+    ) -> QWidget:
+        """Create una card cliccabile per la dashboard"""
+        card_btn = QPushButton(f"{title}\n{description}")
+        card_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        card_btn.setMinimumHeight(110)
+
+        if callable(get_section_icon):
+            icon = get_section_icon(section_id, size=20)
+            if not icon.isNull():
+                card_btn.setIcon(icon)
+                card_btn.setIconSize(card_btn.iconSize())
+        card_btn.setStyleSheet(
             """
-            QWidget {
+            QPushButton {
                 background-color: #252525;
+                color: #e0e0e0;
                 border: 1px solid #3d3d3d;
                 border-radius: 8px;
-                padding: 15px;
+                padding: 12px;
+                text-align: left;
+                font-size: 12px;
+                font-weight: bold;
             }
-            QWidget:hover {
+            QPushButton:hover {
                 background-color: #2d2d2d;
                 border: 1px solid #0066cc;
+            }
+            QPushButton:pressed {
+                background-color: #1f1f1f;
+                border: 1px solid #3385ff;
             }
         """
         )
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        navigate_fn = self.on_navigate
+        if callable(navigate_fn):
+            card_btn.clicked.connect(
+                lambda checked, sid=section_id, fn=navigate_fn: fn(sid)
+            )
 
-        # Title
-        title_label = QLabel(title)
-        title_font = QFont()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        layout.addWidget(title_label)
-
-        # Description
-        desc_label = QLabel(description)
-        desc_label.setStyleSheet("color: #999999; font-size: 11px;")
-        layout.addWidget(desc_label)
-
-        layout.addStretch()
-
-        card.setLayout(layout)
-        card.setMinimumHeight(100)
-
-        return card
+        return card_btn
 
     def refresh(self):
         """Refresh dashboard data"""
@@ -616,7 +625,7 @@ class VolleyballScoutApp(QMainWindow):
         self.setGeometry(100, 100, 1600, 900)
 
         # Set window icon if available
-        if get_logo_icon:
+        if callable(get_logo_icon):
             try:
                 icon = get_logo_icon(32)
                 self.setWindowIcon(icon)
@@ -703,27 +712,39 @@ class VolleyballScoutApp(QMainWindow):
         # Menu Sezioni
         view_menu = menubar.addMenu("👁️ Visualizza")
 
-        action_dashboard = QAction("📊 Dashboard", self)
+        action_dashboard = QAction("🏠 Dashboard", self)
+        if callable(get_section_icon):
+            action_dashboard.setIcon(get_section_icon("dashboard", size=18))
         action_dashboard.triggered.connect(lambda: self._show_section("dashboard"))
         view_menu.addAction(action_dashboard)
 
         action_teams = QAction("👥 Squadre e Giocatori", self)
+        if callable(get_section_icon):
+            action_teams.setIcon(get_section_icon("teams", size=18))
         action_teams.triggered.connect(lambda: self._show_section("teams"))
         view_menu.addAction(action_teams)
 
-        action_roster = QAction("📋 Roster Setup", self)
+        action_roster = QAction("🧾 Gestione Squadre", self)
+        if callable(get_section_icon):
+            action_roster.setIcon(get_section_icon("roster", size=18))
         action_roster.triggered.connect(lambda: self._show_section("roster"))
         view_menu.addAction(action_roster)
 
-        action_formation = QAction("🏐 Formation Setup", self)
+        action_formation = QAction("🏐 Formazioni", self)
+        if callable(get_section_icon):
+            action_formation.setIcon(get_section_icon("formation", size=18))
         action_formation.triggered.connect(lambda: self._show_section("formation"))
         view_menu.addAction(action_formation)
 
-        action_scout = QAction("🎥 Scout & Video", self)
+        action_scout = QAction("📡 Scouting Live", self)
+        if callable(get_section_icon):
+            action_scout.setIcon(get_section_icon("scout", size=18))
         action_scout.triggered.connect(lambda: self._show_section("scout"))
         view_menu.addAction(action_scout)
 
-        action_stats = QAction("📈 Statistics", self)
+        action_stats = QAction("📈 Statistiche", self)
+        if callable(get_section_icon):
+            action_stats.setIcon(get_section_icon("stats", size=18))
         action_stats.triggered.connect(lambda: self._show_section("stats"))
         view_menu.addAction(action_stats)
 
@@ -758,7 +779,7 @@ class VolleyballScoutApp(QMainWindow):
         """Setup di tutte le sezioni disponibili"""
         # 1. Dashboard
         if self.db is not None:
-            self.dashboard = DashboardView(self.db)
+            self.dashboard = DashboardView(self.db, on_navigate=self._show_section)
         else:
             self.dashboard = PlaceholderWidget("📊 Dashboard")
         self.content_stack.addWidget(self.dashboard)
@@ -775,7 +796,7 @@ class VolleyballScoutApp(QMainWindow):
             self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         self.content_stack.addWidget(self.teams_widget)
 
-        # 3. Roster Setup
+        # 3. Gestione Squadre
         if RosterSetupWidget and self.db is not None:
             self.roster_widget = RosterSetupWidget(self.db)
             if hasattr(self.roster_widget, "roster_completed"):
@@ -783,7 +804,7 @@ class VolleyballScoutApp(QMainWindow):
                     self._on_roster_setup_completed
                 )
         else:
-            self.roster_widget = PlaceholderWidget("📋 Roster Setup")
+            self.roster_widget = PlaceholderWidget("🧾 Gestione Squadre")
         self.content_stack.addWidget(self.roster_widget)
 
         # 4. Formation Setup Complete (con match selector e navigazione)

@@ -11,6 +11,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -36,9 +37,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from volleyball_scout.core.database import DatabaseManager
 from volleyball_scout.core.models import Match, MatchPlayer, Player
 
+try:
+    from volleyball_scout.ui.assets import get_role_icon
+except Exception:
+    get_role_icon = None
+
 
 class RosterSetupWidget(QWidget):
-    """Widget per configurare il roster di una partita con sistema frecce"""
+    """Widget per configurare la Gestione Squadre di una partita con sistema frecce"""
+
+    MAX_PLAYERS_PER_TEAM = 14
 
     # Signal emesso quando il roster setup è completato
     roster_completed = pyqtSignal()
@@ -76,6 +84,7 @@ class RosterSetupWidget(QWidget):
         self.team_change_events = {}
         # Cache dei dati dei giocatori per evitare query ripetute
         self.players_cache = {}
+        self._updating_roster_table = False
 
         self._setup_ui()
 
@@ -90,7 +99,7 @@ class RosterSetupWidget(QWidget):
         main_layout.setContentsMargins(20, 20, 20, 20)
 
         # Titolo
-        title = QLabel("📋 Roster Setup")
+        title = QLabel("🧾 Gestione Squadre")
         font = QFont()
         font.setPointSize(14)
         font.setBold(True)
@@ -162,12 +171,16 @@ class RosterSetupWidget(QWidget):
 
         layout.addLayout(header_layout)
 
-        # Sottotitolo team selector
+        # Sottotitolo team selector (senza menu a tendina)
         team_layout = QHBoxLayout()
-        team_layout.addWidget(QLabel("Squadra:"))
+        self.label_current_team = QLabel("Squadra corrente: -")
+        self.label_current_team.setStyleSheet("font-weight: bold;")
+        team_layout.addWidget(self.label_current_team)
+
+        # Manteniamo il combo nascosto solo per gestione indice interna
         self.combo_teams = QComboBox()
         self.combo_teams.currentIndexChanged.connect(self._on_team_changed)
-        # Nel nuovo flusso la squadra è guidata a step (prima home, poi away)
+        self.combo_teams.setVisible(False)
         self.combo_teams.setEnabled(False)
         team_layout.addWidget(self.combo_teams)
 
@@ -250,7 +263,16 @@ class RosterSetupWidget(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        layout.addStretch()
+        # Contatore giocatori caricati
+        self.label_roster_counter = QLabel(
+            f"Giocatori caricati: 0/{self.MAX_PLAYERS_PER_TEAM}"
+        )
+        self.label_roster_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label_roster_counter.setStyleSheet(
+            "font-size: 12px; font-weight: bold; color: #2ecc71;"
+        )
+        layout.addWidget(self.label_roster_counter)
+        layout.addSpacing(8)
 
         # Freccia verde singolo →
         self.btn_add_single = QPushButton("➕\nSingolo\n→")
@@ -324,11 +346,11 @@ class RosterSetupWidget(QWidget):
         title.setStyleSheet("font-size: 16px;")
         layout.addWidget(title)
         # Tabella con giocatori selezionati
-        # Colonne: Nome, Cognome, Ruolo, Azioni (delete)
+        # Colonne: Nome, Cognome, Ruolo, Capitano, Azioni (delete)
         self.table_roster = QTableWidget()
         self.table_roster.setColumnCount(5)
         self.table_roster.setHorizontalHeaderLabels(
-            ["Nome", "Cognome", "Ruolo", "Stato", "❌"]
+            ["Nome", "Cognome", "Ruolo", "Cap.", "❌"]
         )
         self.table_roster.verticalHeader().setVisible(False)  # nasconde numeri di riga
 
@@ -345,10 +367,11 @@ class RosterSetupWidget(QWidget):
         header.setSectionResizeMode(0, stretch)  # Nome
         header.setSectionResizeMode(1, stretch)  # Cognome
         header.setSectionResizeMode(2, resize_to_contents)  # Ruolo
-        header.setSectionResizeMode(3, resize_to_contents)  # Stato
+        header.setSectionResizeMode(3, resize_to_contents)  # Cap.
         header.setSectionResizeMode(4, resize_to_contents)  # ❌
 
         self.table_roster.itemDoubleClicked.connect(self._on_roster_item_double_clicked)
+        self.table_roster.itemChanged.connect(self._on_roster_table_item_changed)
         layout.addWidget(self.table_roster)
 
         # Log eventi di modifica roster per il team corrente
@@ -448,6 +471,7 @@ class RosterSetupWidget(QWidget):
                         "number": mp.number,
                         "role": mp.role,
                         "team_id": mp.team_id,
+                        "is_captain": bool(getattr(mp.player, "captain", False)),
                     }
                     self.initial_team_players[mp.team_id].add(mp.player_id)
 
@@ -513,11 +537,14 @@ class RosterSetupWidget(QWidget):
     def _update_team_step_ui(self):
         """Aggiorna etichette e pulsante in base allo step corrente."""
         if not self.teams:
+            self.label_current_team.setText("Squadra corrente: -")
             self.label_team_step.setText("Step roster: -")
             self.btn_continue.setText("✅ Continua")
+            self._update_roster_counter()
             return
 
         current_team_name = self.teams[self.current_team_index]["name"]
+        self.label_current_team.setText(f"Squadra corrente: {current_team_name}")
         total = len(self.teams)
         step = self.current_team_index + 1
         self.label_team_step.setText(
@@ -529,6 +556,43 @@ class RosterSetupWidget(QWidget):
             self.btn_continue.setText(f"✅ Continua → {next_team_name}")
         else:
             self.btn_continue.setText("✅ Salva roster e apri formation")
+
+        self._update_roster_counter()
+
+    def _get_role_icon(self, role_name: str):
+        """Ritorna l'icona del ruolo, se disponibile."""
+        if get_role_icon is None:
+            return None
+        icon = get_role_icon(role_name or "", size=14)
+        if icon.isNull():
+            return None
+        return icon
+
+    def _update_roster_counter(self):
+        """Aggiorna il contatore giocatori caricati per la squadra corrente."""
+        count = len(self.selected_players)
+        max_count = self.MAX_PLAYERS_PER_TEAM
+
+        self.label_roster_counter.setText(f"Giocatori caricati: {count}/{max_count}")
+        if count > max_count:
+            self.label_roster_counter.setStyleSheet(
+                "font-size: 12px; font-weight: bold; color: #e74c3c;"
+            )
+        elif count == max_count:
+            self.label_roster_counter.setStyleSheet(
+                "font-size: 12px; font-weight: bold; color: #f39c12;"
+            )
+        else:
+            self.label_roster_counter.setStyleSheet(
+                "font-size: 12px; font-weight: bold; color: #2ecc71;"
+            )
+
+    def _normalize_captains_for_current_team(self, captain_player_id: int | None):
+        """Mantiene al massimo un capitano per il team corrente."""
+        for player_id in list(self.selected_players.keys()):
+            self.selected_players[player_id]["is_captain"] = (
+                captain_player_id is not None and player_id == captain_player_id
+            )
 
     def _build_player_event_text(self, player_id: int, action: str) -> str:
         """Costruisce la stringa evento per la timeline roster."""
@@ -611,6 +675,7 @@ class RosterSetupWidget(QWidget):
                         "number": player.number or 0,
                         "role": player.role or "Schiacciatore",
                         "team_id": player.team_id,
+                        "captain": bool(getattr(player, "captain", False)),
                     }
 
                 # Popola la lista disponibili
@@ -624,17 +689,29 @@ class RosterSetupWidget(QWidget):
         self.list_available_players.clear()
 
         for player_id, player_data in self.players_cache.items():
-            # Formato: "Nome Cognome (Numero, Ruolo)"
+            # Formato: "Nome Cognome (#numero, ruolo)" con evidenza capitano
+            is_selected = player_id in self.selected_players
+            is_captain = self.selected_players.get(player_id, {}).get(
+                "is_captain", player_data.get("captain", False)
+            )
+
+            captain_suffix = " 👑" if is_captain else ""
             display_text = (
                 f"{player_data['first_name']} {player_data['last_name']} "
                 f"(#{player_data['number']}, {player_data['role'] or 'N/A'})"
+                f"{captain_suffix}"
             ).strip()
 
-            if player_id in self.selected_players:
+            if is_selected:
                 display_text = f"✅ {display_text}"
 
             item = QListWidgetItem(display_text)
             item.setData(Qt.ItemDataRole.UserRole, player_id)
+
+            role_icon = self._get_role_icon(player_data.get("role", ""))
+            if role_icon is not None:
+                item.setIcon(role_icon)
+
             self.list_available_players.addItem(item)
 
         # Aggiorna la tabella del roster
@@ -666,6 +743,9 @@ class RosterSetupWidget(QWidget):
         count = self.list_available_players.count()
         added = 0
         for i in range(count):
+            if len(self.selected_players) >= self.MAX_PLAYERS_PER_TEAM:
+                break
+
             item = self.list_available_players.item(i)
             player_id = item.data(Qt.ItemDataRole.UserRole)
             if player_id and player_id not in self.selected_players:
@@ -674,13 +754,21 @@ class RosterSetupWidget(QWidget):
 
         if added == 0:
             QMessageBox.information(
-                self, "Info", "Tutti i giocatori sono già nel roster"
+                self, "Info", "Tutti i giocatori sono già nel roster o limite raggiunto"
             )
 
     def _add_player_to_roster(self, player_id: int):
         """Aggiunge un giocatore al roster"""
         if player_id in self.selected_players:
             QMessageBox.warning(self, "Attenzione", "Giocatore già nel roster")
+            return
+
+        if len(self.selected_players) >= self.MAX_PLAYERS_PER_TEAM:
+            QMessageBox.warning(
+                self,
+                "Limite raggiunto",
+                f"Non puoi superare {self.MAX_PLAYERS_PER_TEAM} giocatori in partita.",
+            )
             return
 
         # Usa i dati dal cache
@@ -690,7 +778,13 @@ class RosterSetupWidget(QWidget):
                 "number": player_data["number"],
                 "role": player_data["role"],
                 "team_id": player_data["team_id"],
+                "is_captain": bool(player_data.get("captain", False)),
             }
+
+            # Se entra un capitano già marcato nel DB, mantieni unicità del capitano nel team
+            if self.selected_players[player_id].get("is_captain"):
+                self._normalize_captains_for_current_team(player_id)
+
             self._persist_current_team_selection()
             self._log_roster_event("added", player_id)
             self._update_available_players_list()
@@ -732,11 +826,33 @@ class RosterSetupWidget(QWidget):
             if player_id:
                 self._edit_player(player_id)
 
+    def _on_roster_table_item_changed(self, item: QTableWidgetItem):
+        """Gestisce i cambiamenti inline della tabella roster (es. checkbox capitano)."""
+        if self._updating_roster_table:
+            return
+
+        if item.column() != 3:
+            return
+
+        player_id = self.table_roster.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
+        if not player_id or player_id not in self.selected_players:
+            return
+
+        is_checked = item.checkState() == Qt.CheckState.Checked
+        if is_checked:
+            self._normalize_captains_for_current_team(player_id)
+        else:
+            self.selected_players[player_id]["is_captain"] = False
+
+        self._persist_current_team_selection()
+        self._update_available_players_list()
+
     def _update_roster_table(self):
         """Aggiorna la tabella del roster in base ai giocatori selezionati"""
+        self._updating_roster_table = True
+        self.table_roster.blockSignals(True)
         self.table_roster.setRowCount(len(self.selected_players))
 
-        initial_players = self.initial_team_players.get(self.current_team_id, set())
         sorted_players = sorted(
             self.selected_players.items(),
             key=lambda item: (item[1].get("number", 0), item[0]),
@@ -761,21 +877,28 @@ class RosterSetupWidget(QWidget):
                 item_last.setFlags(item_last.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table_roster.setItem(row, 1, item_last)
 
-                # Colonna Ruolo
+                # Colonna Ruolo con icona
                 item_role = QTableWidgetItem(role if role else "")
                 item_role.setFlags(item_role.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                role_icon = self._get_role_icon(role)
+                if role_icon is not None:
+                    item_role.setIcon(role_icon)
                 self.table_roster.setItem(row, 2, item_role)
 
-                # Colonna Stato
-                is_present = player_id in initial_players
-                status_text = "✓ Presente" if is_present else "➕ Aggiunto"
-                item_status = QTableWidgetItem(status_text)
-                item_status.setFlags(item_status.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if is_present:
-                    item_status.setForeground(QColor("#3498db"))
-                else:
-                    item_status.setForeground(QColor("#27ae60"))
-                self.table_roster.setItem(row, 3, item_status)
+                # Colonna Capitano (checkbox)
+                is_captain = bool(data.get("is_captain", False))
+                item_captain = QTableWidgetItem("👑")
+                captain_icon = self._get_role_icon("capitano")
+                if captain_icon is not None:
+                    item_captain.setIcon(captain_icon)
+                item_captain.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item_captain.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                item_captain.setCheckState(
+                    Qt.CheckState.Checked if is_captain else Qt.CheckState.Unchecked
+                )
+                self.table_roster.setItem(row, 3, item_captain)
 
                 # Colonna Azioni (bottone delete)
                 btn_delete = QPushButton("❌")
@@ -787,6 +910,10 @@ class RosterSetupWidget(QWidget):
                 self.table_roster.setCellWidget(row, 4, btn_delete)
 
                 row += 1
+
+        self.table_roster.blockSignals(False)
+        self._updating_roster_table = False
+        self._update_roster_counter()
 
     def _edit_player(self, player_id: int):
         """Apri un dialog per modificare numero/ruolo del giocatore"""
@@ -801,6 +928,7 @@ class RosterSetupWidget(QWidget):
         player_data = self.players_cache[player_id]
         current_number = data["number"]
         current_role = data["role"]
+        current_captain = bool(data.get("is_captain", False))
 
         # Dialog di modifica
         dialog = QDialog(self)
@@ -833,6 +961,11 @@ class RosterSetupWidget(QWidget):
             combo_role.setCurrentText(current_role)
         layout.addRow("Ruolo:", combo_role)
 
+        # Capitano
+        check_captain = QCheckBox("Capitano 👑")
+        check_captain.setChecked(current_captain)
+        layout.addRow("", check_captain)
+
         # Bottoni
         btn_ok = QPushButton("✅ OK")
         btn_cancel = QPushButton("❌ Annulla")
@@ -841,6 +974,11 @@ class RosterSetupWidget(QWidget):
         def on_ok():
             self.selected_players[player_id]["number"] = spin_number.value()
             self.selected_players[player_id]["role"] = combo_role.currentText()
+            self.selected_players[player_id]["is_captain"] = check_captain.isChecked()
+
+            if check_captain.isChecked():
+                self._normalize_captains_for_current_team(player_id)
+
             self._persist_current_team_selection()
             self._update_available_players_list()
             dialog.accept()
@@ -882,6 +1020,21 @@ class RosterSetupWidget(QWidget):
                 team_id = team["id"]
                 team_roster = self.team_selected_players.get(team_id, {})
 
+                # Capitano a livello squadra (unico)
+                captain_ids = [
+                    pid for pid, pdata in team_roster.items() if pdata.get("is_captain")
+                ]
+                captain_id = captain_ids[0] if captain_ids else None
+
+                # Aggiorna il flag capitano sui player del team
+                session.query(Player).filter_by(team_id=team_id).update(
+                    {Player.captain: False}, synchronize_session=False
+                )
+                if captain_id is not None:
+                    player_obj = session.query(Player).filter_by(id=captain_id).first()
+                    if player_obj is not None:
+                        player_obj.captain = True
+
                 for player_id, data in team_roster.items():
                     role = data.get("role") or ""
                     mp = MatchPlayer(
@@ -914,6 +1067,14 @@ class RosterSetupWidget(QWidget):
                 self,
                 "Errore",
                 f"Seleziona almeno un giocatore per {current_team_name}",
+            )
+            return
+
+        if len(self.selected_players) > self.MAX_PLAYERS_PER_TEAM:
+            QMessageBox.warning(
+                self,
+                "Errore",
+                f"{current_team_name}: massimo {self.MAX_PLAYERS_PER_TEAM} giocatori in partita.",
             )
             return
 
@@ -951,6 +1112,15 @@ class RosterSetupWidget(QWidget):
                     self,
                     "Errore",
                     f"Completa il roster per {team['name']} prima di continuare.",
+                )
+                return
+
+            if len(team_roster) > self.MAX_PLAYERS_PER_TEAM:
+                self._set_active_team(idx, preserve_current=False)
+                QMessageBox.warning(
+                    self,
+                    "Errore",
+                    f"{team['name']}: massimo {self.MAX_PLAYERS_PER_TEAM} giocatori in partita.",
                 )
                 return
 

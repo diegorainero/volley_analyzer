@@ -112,6 +112,15 @@ except ImportError:
         print(f"⚠️ Warning: VideoPlayer not available: {e}")
         VideoPlayer = None
 
+# Assets (icone web)
+try:
+    from volleyball_scout.ui.assets import get_section_icon
+except ImportError:
+    try:
+        from .assets import get_section_icon
+    except ImportError:
+        get_section_icon = None
+
 
 try:
     from volleyball_scout.ui.drafts.draft_widget import DraftListWidget
@@ -140,7 +149,7 @@ if RosterSetupWidget is None:
         def __init__(self, db_manager, parent=None):
             super().__init__(parent)
             layout = QVBoxLayout()
-            layout.addWidget(QLabel("📋 Roster Setup (not yet implemented)"))
+            layout.addWidget(QLabel("🧾 Gestione Squadre (non ancora implementato)"))
             layout.addStretch()
             self.setLayout(layout)
 
@@ -230,18 +239,22 @@ class NavigationMenu(QWidget):
 
         # Sezioni disponibili
         sections = [
-            ("📊 Dashboard", "dashboard"),
-            ("👥 Team & Players", "teams"),
-            ("📋 Roster Setup", "roster"),
-            ("🏐 Formation", "formation"),
-            ("📝 Scout & Video", "scout"),
-            ("📈 Statistics", "stats"),
+            ("🏠 Dashboard", "dashboard"),
+            ("👥 Squadre e Giocatori", "teams"),
+            ("🧾 Gestione Squadre", "roster"),
+            ("🏐 Formazioni", "formation"),
+            ("📡 Scouting Live", "scout"),
+            ("📈 Statistiche", "stats"),
         ]
 
         self.buttons = {}
         for icon_text, section_id in sections:
             btn = QPushButton(icon_text)
             btn.setMinimumHeight(35)
+            if callable(get_section_icon):
+                icon = get_section_icon(section_id, size=16)
+                if not icon.isNull():
+                    btn.setIcon(icon)
             btn.clicked.connect(
                 lambda checked, s=section_id: self.section_selected.emit(s)
             )
@@ -332,16 +345,16 @@ class VolleyballScoutApp(QMainWindow):
                 self.teams_widget.load_teams()
             except Exception as e:
                 print(f"⚠️ Error creating TeamManagementWidget: {e}")
-                self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+                self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         else:
-            self.teams_widget = PlaceholderWidget("👥 Team & Players Management")
+            self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         self.content_stack.addWidget(self.teams_widget)
 
-        # 3. Roster Setup
+        # 3. Gestione Squadre
         if RosterSetupWidget:
             self.roster_widget = RosterSetupWidget(self.db)
         else:
-            self.roster_widget = PlaceholderWidget("📋 Roster Setup")
+            self.roster_widget = PlaceholderWidget("🧾 Gestione Squadre")
         self.content_stack.addWidget(self.roster_widget)
 
         # 4. Formation Setup Complete (with match selector)
@@ -350,9 +363,9 @@ class VolleyballScoutApp(QMainWindow):
                 self.formation_widget = FormationSetupComplete(self.db)
             except Exception as e:
                 print(f"⚠️ Error loading FormationSetupComplete: {e}")
-                self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+                self.formation_widget = PlaceholderWidget("🏐 Formazioni")
         else:
-            self.formation_widget = PlaceholderWidget("🏐 Formation Setup")
+            self.formation_widget = PlaceholderWidget("🏐 Formazioni")
         self.content_stack.addWidget(self.formation_widget)
 
         # 5. Scout & Video
@@ -378,7 +391,7 @@ class VolleyballScoutApp(QMainWindow):
         if StatsView:
             self.stats_view = StatsView()
         else:
-            self.stats_view = PlaceholderWidget("📈 Statistics")
+            self.stats_view = PlaceholderWidget("📈 Statistiche")
         self.content_stack.addWidget(self.stats_view)
 
     def _on_section_selected(self, section_id: str):
@@ -434,7 +447,7 @@ class VolleyballScoutApp(QMainWindow):
                 new_widget = FormationPanel(teams, players_by_team)
             else:
                 new_widget = PlaceholderWidget(
-                    "🏐 Formation Setup\n(No teams in database)"
+                    "🏐 Formazioni\n(Nessuna squadra nel database)"
                 )
 
             # Sostituisci il widget nella stack
@@ -472,9 +485,9 @@ def main():
     print("\n📋 Applicazione avviata!")
     print("   - Menu laterale con navigazione tra le sezioni")
     print("   - Dashboard: visualizza match e sessioni in bozza")
-    print("   - Formation Setup: seleziona titolari e libero")
-    print("   - Scout & Video: inserisci eventi live")
-    print("   - Statistics: visualizza statistiche partita\n")
+    print("   - Formazioni: seleziona titolari e libero")
+    print("   - Scouting Live: inserisci eventi live")
+    print("   - Statistiche: visualizza statistiche partita\n")
 
     return app.exec()
 

@@ -125,7 +125,7 @@ class PlayerButton(QPushButton):
         self.is_selected = False
         self.is_disabled = False
         self.is_titolare = is_titolare  # True se giocatore titolare
-        self.setFixedSize(70, 70)
+        self.setFixedSize(56, 56)
         self.setAcceptDrops(False)  # Non accetta drop
         self._update_style()
 
@@ -153,12 +153,12 @@ class PlayerButton(QPushButton):
                 self.setStyleSheet(
                     """
                     QPushButton {
-                        border-radius: 35px;
+                        border-radius: 21px;
                         font-weight: bold;
-                        font-size: 16px;
+                        font-size: 13px;
                         background-color: #FFD700;
                         color: #333;
-                        border: 3px solid #FFA500;
+                        border: 2px solid #FFA500;
                         cursor: move;
                     }
                     QPushButton:hover {
@@ -170,9 +170,9 @@ class PlayerButton(QPushButton):
                 self.setStyleSheet(
                     """
                     QPushButton {
-                        border-radius: 35px;
+                        border-radius: 21px;
                         font-weight: bold;
-                        font-size: 16px;
+                        font-size: 13px;
                         background-color: #5B8DEF;
                         color: white;
                         border: 2px solid #3A5DB5;
@@ -184,17 +184,17 @@ class PlayerButton(QPushButton):
                 """
                 )
         else:
-            # Stile liberi: cerchi blu standard
+            # Stile liberi: cerchi viola
             if self.is_selected:
                 self.setStyleSheet(
                     """
                     QPushButton {
-                        border-radius: 35px;
+                        border-radius: 21px;
                         font-weight: bold;
-                        font-size: 16px;
+                        font-size: 13px;
                         background-color: #f4c430;
                         color: #333;
-                        border: 3px solid #e6b800;
+                        border: 2px solid #e6b800;
                         cursor: move;
                     }
                     QPushButton:hover {
@@ -206,16 +206,16 @@ class PlayerButton(QPushButton):
                 self.setStyleSheet(
                     """
                     QPushButton {
-                        border-radius: 35px;
+                        border-radius: 21px;
                         font-weight: bold;
-                        font-size: 16px;
-                        background-color: #4a90e2;
+                        font-size: 13px;
+                        background-color: #9b59b6;
                         color: white;
-                        border: 2px solid #2e5cb8;
+                        border: 2px solid #7d3c98;
                         cursor: move;
                     }
                     QPushButton:hover {
-                        background-color: #6ba3f5;
+                        background-color: #af7ac5;
                     }
                 """
                 )
@@ -233,9 +233,9 @@ class PlayerButton(QPushButton):
             self.setStyleSheet(
                 """
                 QPushButton {
-                    border-radius: 30px;
+                    border-radius: 18px;
                     font-weight: bold;
-                    font-size: 14px;
+                    font-size: 12px;
                     background-color: #cccccc;
                     color: #999999;
                     border: 2px solid #aaaaaa;
@@ -267,7 +267,7 @@ class FormationSlot(QFrame):
         self.formation_widget = None  # Riferimento al TeamFormationWidget padre
         self.setAcceptDrops(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(80, 80)
+        self.setFixedSize(68, 68)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
@@ -275,7 +275,7 @@ class FormationSlot(QFrame):
         self.label = QLabel("-")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         font = QFont()
-        font.setPointSize(16)
+        font.setPointSize(14)
         font.setBold(True)
         self.label.setFont(font)
         self.label.setStyleSheet("color: #333;")
@@ -458,7 +458,7 @@ class LiberoSlot(QFrame):
         layout.addWidget(self.label)
         self.setLayout(layout)
 
-        self.setFixedSize(70, 70)
+        self.setFixedSize(74, 74)
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         self.setLineWidth(2)
         self._update_style()
@@ -631,9 +631,40 @@ class TeamFormationWidget(QWidget):
         formation_layout.setContentsMargins(15, 15, 15, 15)
         formation_layout.setSpacing(8)
 
-        # Grid dei giocatori titolari disponibili (cerchi blu brillanti in alto)
+        # Layout centrale: elenco numeri a sinistra + box formazione a destra
+        formation_body_layout = QHBoxLayout()
+        formation_body_layout.setSpacing(12)
+        formation_body_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Elenco numeri (laterale)
+        elenco_frame = QFrame()
+        elenco_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #4a4a4a;
+                border-radius: 6px;
+                background-color: #2b2b2b;
+            }
+        """)
+        elenco_layout = QVBoxLayout()
+        elenco_layout.setContentsMargins(8, 8, 8, 8)
+        elenco_layout.setSpacing(6)
+
+        elenco_title = QLabel("ELENCO")
+        elenco_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        elenco_title.setStyleSheet(
+            """
+            background-color: #1f6fdb;
+            color: white;
+            font-weight: bold;
+            border-radius: 6px;
+            padding: 6px;
+        """
+        )
+        elenco_layout.addWidget(elenco_title)
+
+        # Grid dei giocatori titolari disponibili (più compatta)
         titolari_grid = QGridLayout()
-        titolari_grid.setSpacing(10)
+        titolari_grid.setSpacing(6)
         titolari_grid.setContentsMargins(0, 0, 0, 0)
 
         row, col = 0, 0
@@ -645,32 +676,25 @@ class TeamFormationWidget(QWidget):
                 is_titolare=True,
             )
             btn.player_selected.connect(self._on_player_button_clicked)
-            btn.setFixedSize(50, 50)
+            btn.setFixedSize(42, 42)
             self.player_buttons[player["id"]] = btn
             titolari_grid.addWidget(btn, row, col)
 
             col += 1
-            if col >= 6:
+            if col >= 2:
                 col = 0
                 row += 1
 
-        formation_layout.addLayout(titolari_grid)
-
-        # Separatore visivo (linea nera 2px)
-        separator = QFrame()
-        separator.setStyleSheet("""
-            QFrame {
-                background-color: #000000;
-                border: none;
-            }
-        """)
-        separator.setFixedHeight(2)
-        formation_layout.addWidget(separator)
+        elenco_layout.addLayout(titolari_grid)
+        elenco_layout.addStretch()
+        elenco_frame.setLayout(elenco_layout)
+        elenco_frame.setMaximumWidth(130)
+        formation_body_layout.addWidget(elenco_frame, 0)
 
         # Grid della formazione in gioco (6 posizioni: P1-P6)
         formation_grid = QGridLayout()
-        formation_grid.setSpacing(15)
-        formation_grid.setContentsMargins(0, 10, 0, 0)
+        formation_grid.setSpacing(8)
+        formation_grid.setContentsMargins(0, 0, 0, 0)
 
         positions = ["P1", "P2", "P3", "P4", "P5", "P6"]
         idx = 0
@@ -686,7 +710,7 @@ class TeamFormationWidget(QWidget):
                     }
                 """)
                 position_layout = QVBoxLayout()
-                position_layout.setContentsMargins(8, 8, 8, 8)
+                position_layout.setContentsMargins(6, 6, 6, 6)
                 position_layout.setSpacing(0)
 
                 slot = FormationSlot(positions[idx])
@@ -696,14 +720,17 @@ class TeamFormationWidget(QWidget):
                 position_layout.addWidget(slot, alignment=Qt.AlignmentFlag.AlignCenter)
                 position_container.setLayout(position_layout)
 
-                # Imposta una dimensione fissa per i box
-                position_container.setMinimumSize(100, 85)
+                # Box formazione più compatti
+                position_container.setMinimumSize(84, 74)
 
                 formation_grid.addWidget(position_container, row, col)
                 idx += 1
 
-        formation_layout.addLayout(formation_grid)
+        formation_body_layout.addLayout(formation_grid, 1)
+
+        formation_layout.addLayout(formation_body_layout)
         formation_frame.setLayout(formation_layout)
+        formation_frame.setMaximumHeight(360)
         layout.addWidget(formation_frame)
 
         # --- SEZIONE LIBERI COMPATTA (ORIZZONTALE) ---
@@ -791,7 +818,7 @@ class TeamFormationWidget(QWidget):
         libero_layout.addLayout(liberi_disponibili_container)
 
         libero_group.setLayout(libero_layout)
-        libero_group.setMaximumHeight(85)
+        libero_group.setMaximumHeight(120)
         layout.addWidget(libero_group)
 
         self.setLayout(layout)
@@ -910,6 +937,12 @@ class FormationPanel(QWidget):
         self.match_id = None  # ID del match attualmente selezionato
         self.team_widgets = {}
         self.game_method = None  # P-S-C o P-C-S
+        self.left_team_header = None
+        self.right_team_header = None
+        self.teams_layout = None
+        self.left_team_container = None
+        self.right_team_container = None
+        self.separator_widget = None
 
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
@@ -945,9 +978,9 @@ class FormationPanel(QWidget):
         layout.addLayout(self.game_method_layout)
 
         # NUOVO LAYOUT ORIZZONTALE: due squadre affiancate con separatore
-        teams_layout = QHBoxLayout()
-        teams_layout.setContentsMargins(0, 0, 0, 0)
-        teams_layout.setSpacing(0)
+        self.teams_layout = QHBoxLayout()
+        self.teams_layout.setContentsMargins(0, 0, 0, 0)
+        self.teams_layout.setSpacing(0)
 
         team_widgets_list = []
         for team in teams:
@@ -966,6 +999,7 @@ class FormationPanel(QWidget):
             # Header team A
             header_a = QLabel(f"Squadra: {team_a['name']}")
             header_a.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+            self.left_team_header = header_a
             team_a_layout.addWidget(header_a)
 
             # Widget formazione team A
@@ -973,19 +1007,46 @@ class FormationPanel(QWidget):
 
             # Bottoni team A
             buttons_team_a = QHBoxLayout()
-            buttons_team_a.setSpacing(5)
-            btn_rotate_a = QPushButton(f"🔄 Ruota")
-            btn_rotate_a.setMaximumWidth(150)
+            buttons_team_a.setSpacing(4)
+
+            btn_reset_a = QPushButton("↺ Reset")
+            btn_reset_a.setMaximumWidth(95)
+            btn_reset_a.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #7f8c8d;
+                    color: white;
+                    font-weight: bold;
+                    padding: 6px 8px;
+                    border-radius: 5px;
+                    border: none;
+                    font-size: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #6f7a7b;
+                }
+                QPushButton:pressed {
+                    background-color: #5f6768;
+                }
+            """
+            )
+            btn_reset_a.clicked.connect(
+                lambda checked: self._reset_team_formation(team_a["id"])
+            )
+            buttons_team_a.addWidget(btn_reset_a)
+
+            btn_rotate_a = QPushButton("🔄 Ruota")
+            btn_rotate_a.setMaximumWidth(95)
             btn_rotate_a.setStyleSheet(
                 """
                 QPushButton {
                     background-color: #f39c12;
                     color: white;
                     font-weight: bold;
-                    padding: 8px 12px;
+                    padding: 6px 8px;
                     border-radius: 5px;
                     border: none;
-                    font-size: 11px;
+                    font-size: 10px;
                 }
                 QPushButton:hover {
                     background-color: #e67e22;
@@ -1000,18 +1061,18 @@ class FormationPanel(QWidget):
             )
             buttons_team_a.addWidget(btn_rotate_a)
 
-            btn_elenco_a = QPushButton(f"📋 Elenco")
-            btn_elenco_a.setMaximumWidth(150)
+            btn_elenco_a = QPushButton("📋 Elenco")
+            btn_elenco_a.setMaximumWidth(95)
             btn_elenco_a.setStyleSheet(
                 """
                 QPushButton {
                     background-color: #9b59b6;
                     color: white;
                     font-weight: bold;
-                    padding: 8px 12px;
+                    padding: 6px 8px;
                     border-radius: 5px;
                     border: none;
-                    font-size: 11px;
+                    font-size: 10px;
                 }
                 QPushButton:hover {
                     background-color: #8e44ad;
@@ -1029,10 +1090,12 @@ class FormationPanel(QWidget):
             team_a_layout.addLayout(buttons_team_a)
 
             team_a_container.setLayout(team_a_layout)
-            teams_layout.addWidget(team_a_container, 1)
+            self.left_team_container = team_a_container
+            self.teams_layout.addWidget(team_a_container, 1)
 
         # SEPARATORE RETE CON SWITCH AL CENTRO
         separator_widget = QWidget()
+        self.separator_widget = separator_widget
         separator_widget.setFixedWidth(70)
         separator_layout = QVBoxLayout()
         separator_layout.setContentsMargins(0, 0, 0, 0)
@@ -1067,7 +1130,7 @@ class FormationPanel(QWidget):
 
         separator_layout.addStretch()
         separator_widget.setLayout(separator_layout)
-        teams_layout.addWidget(separator_widget)
+        self.teams_layout.addWidget(separator_widget)
 
         # TEAM B (seconda squadra)
         if len(team_widgets_list) > 1:
@@ -1080,6 +1143,7 @@ class FormationPanel(QWidget):
             # Header team B
             header_b = QLabel(f"Squadra: {team_b['name']}")
             header_b.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+            self.right_team_header = header_b
             team_b_layout.addWidget(header_b)
 
             # Widget formazione team B
@@ -1087,19 +1151,46 @@ class FormationPanel(QWidget):
 
             # Bottoni team B
             buttons_team_b = QHBoxLayout()
-            buttons_team_b.setSpacing(5)
-            btn_rotate_b = QPushButton(f"🔄 Ruota")
-            btn_rotate_b.setMaximumWidth(150)
+            buttons_team_b.setSpacing(4)
+
+            btn_reset_b = QPushButton("↺ Reset")
+            btn_reset_b.setMaximumWidth(95)
+            btn_reset_b.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #7f8c8d;
+                    color: white;
+                    font-weight: bold;
+                    padding: 6px 8px;
+                    border-radius: 5px;
+                    border: none;
+                    font-size: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #6f7a7b;
+                }
+                QPushButton:pressed {
+                    background-color: #5f6768;
+                }
+            """
+            )
+            btn_reset_b.clicked.connect(
+                lambda checked: self._reset_team_formation(team_b["id"])
+            )
+            buttons_team_b.addWidget(btn_reset_b)
+
+            btn_rotate_b = QPushButton("🔄 Ruota")
+            btn_rotate_b.setMaximumWidth(95)
             btn_rotate_b.setStyleSheet(
                 """
                 QPushButton {
                     background-color: #f39c12;
                     color: white;
                     font-weight: bold;
-                    padding: 8px 12px;
+                    padding: 6px 8px;
                     border-radius: 5px;
                     border: none;
-                    font-size: 11px;
+                    font-size: 10px;
                 }
                 QPushButton:hover {
                     background-color: #e67e22;
@@ -1114,18 +1205,18 @@ class FormationPanel(QWidget):
             )
             buttons_team_b.addWidget(btn_rotate_b)
 
-            btn_elenco_b = QPushButton(f"📋 Elenco")
-            btn_elenco_b.setMaximumWidth(150)
+            btn_elenco_b = QPushButton("📋 Elenco")
+            btn_elenco_b.setMaximumWidth(95)
             btn_elenco_b.setStyleSheet(
                 """
                 QPushButton {
                     background-color: #9b59b6;
                     color: white;
                     font-weight: bold;
-                    padding: 8px 12px;
+                    padding: 6px 8px;
                     border-radius: 5px;
                     border: none;
-                    font-size: 11px;
+                    font-size: 10px;
                 }
                 QPushButton:hover {
                     background-color: #8e44ad;
@@ -1143,9 +1234,10 @@ class FormationPanel(QWidget):
             team_b_layout.addLayout(buttons_team_b)
 
             team_b_container.setLayout(team_b_layout)
-            teams_layout.addWidget(team_b_container, 1)
+            self.right_team_container = team_b_container
+            self.teams_layout.addWidget(team_b_container, 1)
 
-        layout.addLayout(teams_layout, 1)
+        layout.addLayout(self.teams_layout, 1)
 
         # Bottoni di controllo principali (sotto)
         buttons_layout = QHBoxLayout()
@@ -1205,64 +1297,59 @@ class FormationPanel(QWidget):
 
         self.setLayout(layout)
 
+    def _rotate_team_formation(self, team_id: int):
+        """Ruota la formazione della squadra specificata."""
+        if team_id not in self.team_widgets:
+            return
+        self.team_widgets[team_id].rotate_formation()
+        self.detect_game_method()
+
+    def _reset_team_formation(self, team_id: int):
+        """Resetta solo la formazione della squadra specificata."""
+        if team_id not in self.team_widgets:
+            return
+        self.team_widgets[team_id].reset_formation()
+        self.detect_game_method()
+
     def _switch_teams_formations(self):
-        """Scambia le formazioni fra le due squadre"""
+        """Scambia realmente i due campi (pannello sinistra/destra)."""
         if len(self.teams) != 2:
             return
 
-        team_a_id = self.teams[0]["id"]
-        team_b_id = self.teams[1]["id"]
+        if (
+            self.teams_layout is None
+            or self.left_team_container is None
+            or self.right_team_container is None
+            or self.separator_widget is None
+        ):
+            return
 
-        team_a_widget = self.team_widgets[team_a_id]
-        team_b_widget = self.team_widgets[team_b_id]
+        # Rimuovi i widget correnti dal layout
+        self.teams_layout.removeWidget(self.left_team_container)
+        self.teams_layout.removeWidget(self.separator_widget)
+        self.teams_layout.removeWidget(self.right_team_container)
 
-        # Salva lo stato di team A
-        team_a_state = {}
-        for idx in range(6):
-            slot = team_a_widget.formation_slots[idx]
-            if slot.player_id:
-                team_a_state[idx] = {
-                    "player_id": slot.player_id,
-                    "player_number": slot.player_number,
-                    "player_role": slot.player_role,
-                }
+        # Re-inserisci invertendo i lati
+        self.teams_layout.addWidget(self.right_team_container, 1)
+        self.teams_layout.addWidget(self.separator_widget)
+        self.teams_layout.addWidget(self.left_team_container, 1)
 
-        # Salva lo stato di team B
-        team_b_state = {}
-        for idx in range(6):
-            slot = team_b_widget.formation_slots[idx]
-            if slot.player_id:
-                team_b_state[idx] = {
-                    "player_id": slot.player_id,
-                    "player_number": slot.player_number,
-                    "player_role": slot.player_role,
-                }
+        # Aggiorna riferimenti interni
+        self.left_team_container, self.right_team_container = (
+            self.right_team_container,
+            self.left_team_container,
+        )
+        self.left_team_header, self.right_team_header = (
+            self.right_team_header,
+            self.left_team_header,
+        )
 
-        # Applica team A a team B
-        for idx in range(6):
-            slot = team_b_widget.formation_slots[idx]
-            if idx in team_a_state:
-                player = team_a_state[idx]
-                slot.set_player(
-                    player["player_number"],
-                    player["player_id"],
-                    player["player_role"],
-                )
-            else:
-                slot.clear()
+        # Mantieni allineato anche l'ordine logico delle squadre
+        self.teams[0], self.teams[1] = self.teams[1], self.teams[0]
 
-        # Applica team B a team A
-        for idx in range(6):
-            slot = team_a_widget.formation_slots[idx]
-            if idx in team_b_state:
-                player = team_b_state[idx]
-                slot.set_player(
-                    player["player_number"],
-                    player["player_id"],
-                    player["player_role"],
-                )
-            else:
-                slot.clear()
+        # Refresh visivo
+        self.teams_layout.activate()
+        self.update()
 
         # Ridetecta il metodo di gioco
         self.detect_game_method()
