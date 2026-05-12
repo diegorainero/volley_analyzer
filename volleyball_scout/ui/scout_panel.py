@@ -4,6 +4,7 @@ from copy import deepcopy
 from PyQt6.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -226,9 +227,26 @@ class ScoutPanel(QWidget):
     KEYPAD_SKILL_TOKENS = ["S", "R", "E", "A", "B", "D", "F"]
     KEYPAD_EVAL_TOKENS = ["#", "+", "!", "-", "=", "/"]
     KEYPAD_DIGIT_ROWS = [("7", "8", "9"), ("4", "5", "6"), ("1", "2", "3"), ("0",)]
+    KEYPAD_MACRO_PRESETS = [
+        ("Ace", "S#"),
+        ("Err. Battuta", "S="),
+        ("Pipe Punto", "A#P"),
+    ]
     SHORTCUTS_SETTINGS_ORG = "VolleyballScout"
     SHORTCUTS_SETTINGS_APP = "ScoutPanel"
     SHORTCUTS_SETTINGS_KEY = "code_shortcuts"
+    KEYPAD_SIZE_SETTINGS_KEY = "code_keypad_size"
+    KEYBOARD_MODE_SETTINGS_KEY = "keyboard_only_mode"
+    HOTKEY_MAP_SETTINGS_KEY = "keyboard_hotkey_map"
+    HOTKEY_DEFAULTS = {
+        "macro_1": "F1",
+        "macro_2": "F2",
+        "macro_3": "F3",
+        "team_a": "F7",
+        "team_b": "F8",
+        "clear_code": "F9",
+        "submit_code": "F10",
+    }
 
     # Alias minimi supportati in input (es. V per battuta)
     DATA_VOLLEY_SKILL_ALIASES = {
@@ -267,6 +285,9 @@ class ScoutPanel(QWidget):
         self.code_shortcut_buttons = []
         self.code_keypad_buttons = []
         self.code_shortcuts = self._load_shortcuts_config()
+        self.keypad_size_mode = self._load_keypad_size_mode()
+        self.keyboard_only_mode = self._load_keyboard_mode_enabled()
+        self.hotkey_map = self._load_hotkey_map()
         self.history_records = []
         self.timeouts_used = {"home": 0, "away": 0}
 
@@ -512,6 +533,40 @@ class ScoutPanel(QWidget):
         self.btn_reset_shortcuts.clicked.connect(self._reset_code_shortcuts)
         shortcuts_header_row.addWidget(self.btn_reset_shortcuts)
 
+        shortcuts_header_row.addWidget(QLabel("Layout:"))
+        self.keypad_size_selector = QComboBox()
+        self.keypad_size_selector.addItem("Compatto", "compact")
+        self.keypad_size_selector.addItem("Grande", "large")
+        self.keypad_size_selector.currentIndexChanged.connect(
+            self._on_keypad_size_changed
+        )
+        size_idx = self.keypad_size_selector.findData(self.keypad_size_mode)
+        if size_idx >= 0:
+            self.keypad_size_selector.setCurrentIndex(size_idx)
+        shortcuts_header_row.addWidget(self.keypad_size_selector)
+
+        shortcuts_header_row.addWidget(QLabel("Input:"))
+        self.keyboard_mode_selector = QComboBox()
+        self.keyboard_mode_selector.addItem("Standard", "normal")
+        self.keyboard_mode_selector.addItem("Solo tastiera", "keyboard")
+        self.keyboard_mode_selector.currentIndexChanged.connect(
+            self._on_keyboard_mode_changed
+        )
+        mode_idx = self.keyboard_mode_selector.findData(
+            "keyboard" if self.keyboard_only_mode else "normal"
+        )
+        if mode_idx >= 0:
+            self.keyboard_mode_selector.setCurrentIndex(mode_idx)
+        shortcuts_header_row.addWidget(self.keyboard_mode_selector)
+
+        self.btn_config_hotkeys = QPushButton("Mappa hotkeys")
+        self.btn_config_hotkeys.clicked.connect(self._configure_hotkeys_map)
+        shortcuts_header_row.addWidget(self.btn_config_hotkeys)
+
+        self.btn_reset_hotkeys = QPushButton("Reset hotkeys")
+        self.btn_reset_hotkeys.clicked.connect(self._reset_hotkeys_map)
+        shortcuts_header_row.addWidget(self.btn_reset_hotkeys)
+
         shortcuts_header_row.addStretch()
         datavolley_layout.addLayout(shortcuts_header_row)
 
@@ -523,6 +578,19 @@ class ScoutPanel(QWidget):
 
         self._rebuild_code_shortcut_buttons()
         self._create_datavolley_keypad(datavolley_layout)
+
+        self.keyboard_hotkeys_hint = QLabel("")
+        self.keyboard_hotkeys_hint.setStyleSheet("font-size: 10px; color: #D9CFC5;")
+        datavolley_layout.addWidget(self.keyboard_hotkeys_hint)
+
+        self.hotkeys_map_label = QLabel("")
+        self.hotkeys_map_label.setWordWrap(True)
+        self.hotkeys_map_label.setStyleSheet("font-size: 10px; color: #E5D6C8;")
+        datavolley_layout.addWidget(self.hotkeys_map_label)
+
+        self._update_keyboard_hotkeys_hint()
+        self._update_hotkeys_map_label()
+        self._apply_keyboard_mode_ui()
 
         layout.addWidget(datavolley_group)
 
@@ -609,6 +677,408 @@ class ScoutPanel(QWidget):
 
     def _shortcuts_settings(self) -> QSettings:
         return QSettings(self.SHORTCUTS_SETTINGS_ORG, self.SHORTCUTS_SETTINGS_APP)
+
+    def _load_keypad_size_mode(self) -> str:
+        settings = self._shortcuts_settings()
+        value = settings.value(self.KEYPAD_SIZE_SETTINGS_KEY, "compact", type=str)
+        mode = str(value or "compact").strip().lower()
+        return mode if mode in {"compact", "large"} else "compact"
+
+    def _save_keypad_size_mode(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(self.KEYPAD_SIZE_SETTINGS_KEY, self.keypad_size_mode)
+
+    def _keypad_button_height(self) -> int:
+        return 38 if self.keypad_size_mode == "large" else 30
+
+    def _scale_keypad_width(self, base_width: int | None) -> int | None:
+        if base_width is None:
+            return None
+        if self.keypad_size_mode == "large":
+            return int(base_width * 1.2)
+        return base_width
+
+    def _apply_keypad_size_mode(self):
+        min_h = self._keypad_button_height()
+        for btn in self.code_keypad_buttons:
+            btn.setMinimumHeight(min_h)
+            base_width = btn.property("base_max_width")
+            if isinstance(base_width, int) and base_width > 0:
+                btn.setMaximumWidth(self._scale_keypad_width(base_width) or base_width)
+
+    def _on_keypad_size_changed(self):
+        if not hasattr(self, "keypad_size_selector"):
+            return
+
+        selected = self.keypad_size_selector.currentData()
+        mode = "large" if selected == "large" else "compact"
+        self.keypad_size_mode = mode
+        self._save_keypad_size_mode()
+        self._apply_keypad_size_mode()
+
+    def _load_keyboard_mode_enabled(self) -> bool:
+        settings = self._shortcuts_settings()
+        value = settings.value(self.KEYBOARD_MODE_SETTINGS_KEY, "0", type=str)
+        return str(value or "0").strip() in {"1", "true", "True", "yes"}
+
+    def _save_keyboard_mode_enabled(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(
+            self.KEYBOARD_MODE_SETTINGS_KEY, "1" if self.keyboard_only_mode else "0"
+        )
+
+    def _hotkey_action_definitions(self) -> list[tuple[str, str, bool]]:
+        macro_1 = (
+            self.KEYPAD_MACRO_PRESETS[0][0]
+            if len(self.KEYPAD_MACRO_PRESETS) > 0
+            else "Macro 1"
+        )
+        macro_2 = (
+            self.KEYPAD_MACRO_PRESETS[1][0]
+            if len(self.KEYPAD_MACRO_PRESETS) > 1
+            else "Macro 2"
+        )
+        macro_3 = (
+            self.KEYPAD_MACRO_PRESETS[2][0]
+            if len(self.KEYPAD_MACRO_PRESETS) > 2
+            else "Macro 3"
+        )
+        return [
+            ("macro_1", f"Macro: {macro_1}", False),
+            ("macro_2", f"Macro: {macro_2}", False),
+            ("macro_3", f"Macro: {macro_3}", False),
+            ("team_a", "Team prefisso A", True),
+            ("team_b", "Team prefisso B", True),
+            ("clear_code", "Pulisci input codice", True),
+            ("submit_code", "Invia codice", True),
+        ]
+
+    def _normalize_hotkey_token(self, token: str | None) -> str | None:
+        value = str(token or "").strip().upper()
+        if re.fullmatch(r"F([1-9]|1[0-2])", value):
+            return value
+        return None
+
+    def _qt_key_to_hotkey_token(self, key: int) -> str | None:
+        for idx in range(1, 13):
+            qt_key = getattr(Qt.Key, f"Key_F{idx}", None)
+            if qt_key is not None and key == int(qt_key):
+                return f"F{idx}"
+        return None
+
+    def _default_hotkey_map(self) -> dict[str, str]:
+        defaults = {}
+        valid_actions = {action for action, _, _ in self._hotkey_action_definitions()}
+        for action, token in self.HOTKEY_DEFAULTS.items():
+            if action in valid_actions:
+                normalized = self._normalize_hotkey_token(token)
+                if normalized:
+                    defaults[action] = normalized
+        return defaults
+
+    def _load_hotkey_map(self) -> dict[str, str]:
+        settings = self._shortcuts_settings()
+        serialized = settings.value(self.HOTKEY_MAP_SETTINGS_KEY, "", type=str) or ""
+
+        result = self._default_hotkey_map()
+        valid_actions = {action for action, _, _ in self._hotkey_action_definitions()}
+
+        if serialized.strip():
+            for line in serialized.splitlines():
+                row = line.strip()
+                if not row or "|" not in row:
+                    continue
+                action, token = row.split("|", 1)
+                action = action.strip()
+                token_norm = self._normalize_hotkey_token(token)
+                if action in valid_actions and token_norm:
+                    result[action] = token_norm
+
+        return result
+
+    def _save_hotkey_map(self):
+        settings = self._shortcuts_settings()
+        lines = []
+        for action, _, _ in self._hotkey_action_definitions():
+            token = self.hotkey_map.get(action)
+            token_norm = self._normalize_hotkey_token(token)
+            if token_norm:
+                lines.append(f"{action}|{token_norm}")
+        settings.setValue(self.HOTKEY_MAP_SETTINGS_KEY, "\n".join(lines))
+
+    def _hotkey_conflicts(
+        self, hotkey_map: dict[str, str] | None = None
+    ) -> dict[str, list[str]]:
+        source_map = hotkey_map or self.hotkey_map
+        defaults = self._default_hotkey_map()
+
+        token_to_actions: dict[str, list[str]] = {}
+        for action, _, _ in self._hotkey_action_definitions():
+            token = source_map.get(action) or defaults.get(action)
+            token_norm = self._normalize_hotkey_token(token)
+            if not token_norm:
+                continue
+            token_to_actions.setdefault(token_norm, []).append(action)
+
+        return {
+            token: actions
+            for token, actions in token_to_actions.items()
+            if len(actions) > 1
+        }
+
+    def _format_hotkey_conflicts(self, conflicts: dict[str, list[str]]) -> str:
+        if not conflicts:
+            return ""
+
+        action_labels = {
+            action: label for action, label, _ in self._hotkey_action_definitions()
+        }
+        lines = []
+        for token in sorted(conflicts.keys(), key=lambda t: int(t[1:])):
+            labels = [action_labels.get(action, action) for action in conflicts[token]]
+            lines.append(f"- {token}: " + ", ".join(labels))
+        return "\n".join(lines)
+
+    def _active_hotkey_bindings(self) -> dict[str, str]:
+        bindings = {}
+        defaults = self._default_hotkey_map()
+        for action, _, _ in self._hotkey_action_definitions():
+            token = self.hotkey_map.get(action) or defaults.get(action)
+            token_norm = self._normalize_hotkey_token(token)
+            if token_norm and token_norm not in bindings:
+                bindings[token_norm] = action
+        return bindings
+
+    def _hotkeys_to_text(self, hotkey_map: dict[str, str]) -> str:
+        rows = [
+            "# Una riga per hotkey (formato: azione=Fx)",
+            "# Esempio: macro_1=F1",
+            "# IMPORTANTE: non assegnare lo stesso tasto a più azioni",
+        ]
+
+        for action, label, keyboard_only in self._hotkey_action_definitions():
+            token = self._normalize_hotkey_token(hotkey_map.get(action))
+            if token is None:
+                token = self._default_hotkey_map().get(action, "")
+            scope = "solo tastiera" if keyboard_only else "sempre"
+            rows.append(f"{action}={token}   # {label} ({scope})")
+
+        return "\n".join(rows)
+
+    def _parse_hotkeys_text(self, text: str) -> dict[str, str]:
+        action_aliases = {
+            "macro1": "macro_1",
+            "macro_1": "macro_1",
+            "macro2": "macro_2",
+            "macro_2": "macro_2",
+            "macro3": "macro_3",
+            "macro_3": "macro_3",
+            "teama": "team_a",
+            "team_a": "team_a",
+            "teamb": "team_b",
+            "team_b": "team_b",
+            "clear": "clear_code",
+            "clear_code": "clear_code",
+            "submit": "submit_code",
+            "submit_code": "submit_code",
+        }
+
+        valid_actions = {action for action, _, _ in self._hotkey_action_definitions()}
+        parsed = {}
+
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            line = re.sub(r"\s+#.*$", "", line).strip()
+            if not line or "=" not in line:
+                continue
+
+            action_part, token_part = line.split("=", 1)
+            action_raw = action_part.strip().lower()
+            token_raw = token_part.strip()
+
+            action = action_aliases.get(action_raw, action_raw)
+            if action not in valid_actions:
+                continue
+
+            token = self._normalize_hotkey_token(token_raw)
+            if not token:
+                continue
+
+            parsed[action] = token
+
+        return parsed
+
+    def _configure_hotkeys_map(self):
+        current_text = self._hotkeys_to_text(self.hotkey_map)
+        new_text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Mappa hotkeys",
+            "Configura la mappa hotkeys (azioni -> tasti funzione):",
+            current_text,
+        )
+        if not ok:
+            return
+
+        parsed = self._parse_hotkeys_text(new_text)
+        if not parsed:
+            QMessageBox.warning(
+                self,
+                "Mappa hotkeys non valida",
+                "Nessuna associazione valida trovata. Usa formato azione=F1.",
+            )
+            return
+
+        defaults = self._default_hotkey_map()
+        merged = dict(defaults)
+        merged.update(parsed)
+
+        conflicts = self._hotkey_conflicts(merged)
+        if conflicts:
+            conflict_text = self._format_hotkey_conflicts(conflicts)
+            QMessageBox.warning(
+                self,
+                "Conflitto hotkeys",
+                "Alcuni tasti funzione sono assegnati a più azioni:\n\n"
+                f"{conflict_text}\n\n"
+                "Correggi la mappa assegnando un tasto univoco per azione.",
+            )
+            return
+
+        self.hotkey_map = merged
+        self._save_hotkey_map()
+        self._update_keyboard_hotkeys_hint()
+        self._update_hotkeys_map_label()
+
+    def _reset_hotkeys_map(self):
+        self.hotkey_map = self._default_hotkey_map()
+        self._save_hotkey_map()
+        self._update_keyboard_hotkeys_hint()
+        self._update_hotkeys_map_label()
+
+    def _update_hotkeys_map_label(self):
+        if not hasattr(self, "hotkeys_map_label"):
+            return
+
+        bindings = self._active_hotkey_bindings()
+        token_to_action = {token: action for token, action in bindings.items()}
+        action_labels = {
+            action: label for action, label, _ in self._hotkey_action_definitions()
+        }
+
+        entries = []
+        for token in sorted(token_to_action.keys(), key=lambda t: int(t[1:])):
+            action = token_to_action[token]
+            label = action_labels.get(action, action)
+            entries.append(f"{token} → {label}")
+
+        base_text = "Mappa attiva: " + " | ".join(entries)
+        conflicts = self._hotkey_conflicts()
+        if conflicts:
+            base_text += "  |  ⚠ Conflitti: " + self._format_hotkey_conflicts(
+                conflicts
+            ).replace("\n", " ; ")
+
+        self.hotkeys_map_label.setText(base_text)
+
+    def _update_keyboard_hotkeys_hint(self):
+        if not hasattr(self, "keyboard_hotkeys_hint"):
+            return
+
+        action_labels = {
+            action: label for action, label, _ in self._hotkey_action_definitions()
+        }
+        bindings = self._active_hotkey_bindings()
+
+        ordered_tokens = sorted(bindings.keys(), key=lambda t: int(t[1:]))
+        preview = [
+            f"{token}={action_labels.get(bindings[token], bindings[token])}"
+            for token in ordered_tokens
+        ]
+
+        prefix = "Modo tastiera" if self.keyboard_only_mode else "Hotkeys"
+        self.keyboard_hotkeys_hint.setText(f"{prefix}: " + " | ".join(preview))
+
+    def _apply_keyboard_mode_ui(self):
+        self._update_keyboard_hotkeys_hint()
+        self._update_hotkeys_map_label()
+
+        if hasattr(self, "code_input"):
+            if self.keyboard_only_mode:
+                self.code_input.setPlaceholderText(
+                    "Modo tastiera: digita codice (Invio=Invia, F-keys=azioni)"
+                )
+            else:
+                self.code_input.setPlaceholderText(
+                    "Inserisci codice DataVolley (es: a12S#61)"
+                )
+
+    def _on_keyboard_mode_changed(self):
+        if not hasattr(self, "keyboard_mode_selector"):
+            return
+
+        selected = self.keyboard_mode_selector.currentData()
+        self.keyboard_only_mode = selected == "keyboard"
+        self._save_keyboard_mode_enabled()
+        self._apply_keyboard_mode_ui()
+
+        if self.keyboard_only_mode and hasattr(self, "code_input"):
+            self.code_input.setFocus()
+
+    def _execute_hotkey_action(self, action: str) -> bool:
+        if action.startswith("macro_"):
+            try:
+                idx = int(action.split("_", 1)[1]) - 1
+            except Exception:
+                return False
+            if 0 <= idx < len(self.KEYPAD_MACRO_PRESETS):
+                _, token = self.KEYPAD_MACRO_PRESETS[idx]
+                self._apply_macro_preset(token)
+                self._feedback_code_submission(True, f"Macro applicata: {token}")
+                return True
+            return False
+
+        if (
+            action in {"team_a", "team_b", "clear_code", "submit_code"}
+            and not self.keyboard_only_mode
+        ):
+            return False
+
+        if action == "team_a":
+            self._set_or_replace_team_prefix("A")
+            self._feedback_code_submission(True, "Team prefisso: A")
+            return True
+
+        if action == "team_b":
+            self._set_or_replace_team_prefix("B")
+            self._feedback_code_submission(True, "Team prefisso: B")
+            return True
+
+        if action == "clear_code":
+            if hasattr(self, "code_input"):
+                self.code_input.clear()
+            self._clear_player_highlight()
+            self._feedback_code_submission(True, "Input codice pulito")
+            return True
+
+        if action == "submit_code":
+            self._register_datavolley_code()
+            return True
+
+        return False
+
+    def _handle_function_hotkey(self, key: int) -> bool:
+        token = self._qt_key_to_hotkey_token(key)
+        if token is None:
+            return False
+
+        action = self._active_hotkey_bindings().get(token)
+        if not action:
+            return False
+
+        return self._execute_hotkey_action(action)
 
     def _shortcuts_to_text(self, shortcuts: list[tuple[str, str]]) -> str:
         rows = [
@@ -728,13 +1198,17 @@ class ScoutPanel(QWidget):
         text: str,
         on_click,
         *,
-        min_h: int = 30,
+        min_h: int | None = None,
         max_w: int | None = None,
     ) -> QPushButton:
         btn = QPushButton(text)
-        btn.setMinimumHeight(min_h)
-        if max_w is not None:
-            btn.setMaximumWidth(max_w)
+        btn.setMinimumHeight(min_h or self._keypad_button_height())
+
+        btn.setProperty("base_max_width", int(max_w or 0))
+        scaled_max_w = self._scale_keypad_width(max_w)
+        if scaled_max_w is not None:
+            btn.setMaximumWidth(scaled_max_w)
+
         btn.clicked.connect(on_click)
         self.code_keypad_buttons.append(btn)
         return btn
@@ -756,6 +1230,30 @@ class ScoutPanel(QWidget):
             return
         current = self.code_input.text()
         self.code_input.setText(current[:-1])
+        self.code_input.setFocus()
+        self.code_input.setCursorPosition(len(self.code_input.text()))
+
+    def _apply_macro_preset(self, token: str):
+        if not hasattr(self, "code_input"):
+            return
+
+        token = str(token or "").strip().upper()
+        if not token:
+            return
+
+        current = self.code_input.text().strip().upper()
+        base_match = re.match(r"^([AB\*]?\d{0,2})", current)
+        base_prefix = base_match.group(1) if base_match else ""
+
+        if base_prefix and len(base_prefix) < len(current):
+            self.code_input.setText(f"{base_prefix}{token}")
+        elif current and current.isdigit():
+            self.code_input.setText(f"{current}{token}")
+        elif current and current[0] in {"A", "B", "*"} and len(current) <= 2:
+            self.code_input.setText(f"{current}{token}")
+        else:
+            self.code_input.setText(token)
+
         self.code_input.setFocus()
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
@@ -810,6 +1308,19 @@ class ScoutPanel(QWidget):
         eval_row.addStretch()
         keypad_layout.addLayout(eval_row)
 
+        macro_row = QHBoxLayout()
+        macro_row.addWidget(QLabel("Macro:"))
+        for label, token in self.KEYPAD_MACRO_PRESETS:
+            btn = self._create_keypad_button(
+                label,
+                lambda checked=False, t=token: self._apply_macro_preset(t),
+                max_w=110,
+            )
+            btn.setToolTip(f"Imposta codice rapido: {token}")
+            macro_row.addWidget(btn)
+        macro_row.addStretch()
+        keypad_layout.addLayout(macro_row)
+
         digits_box = QHBoxLayout()
         digits_box.setSpacing(8)
 
@@ -846,6 +1357,7 @@ class ScoutPanel(QWidget):
         keypad_layout.addLayout(digits_box)
 
         parent_layout.addWidget(keypad_group)
+        self._apply_keypad_size_mode()
 
     def _insert_code_token(self, token: str):
         if not hasattr(self, "code_input"):
@@ -873,6 +1385,11 @@ class ScoutPanel(QWidget):
             super().keyPressEvent(event)
             return
 
+        key = event.key()
+        if self._handle_function_hotkey(key):
+            event.accept()
+            return
+
         mods = event.modifiers()
         if mods & (
             Qt.KeyboardModifier.ControlModifier
@@ -887,7 +1404,6 @@ class ScoutPanel(QWidget):
             super().keyPressEvent(event)
             return
 
-        key = event.key()
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._register_datavolley_code()
             event.accept()
@@ -961,6 +1477,25 @@ class ScoutPanel(QWidget):
             offset = 0.0
 
         return max(0.0, base_time + offset)
+
+    def _reset_code_input_feedback_style(self):
+        if hasattr(self, "code_input"):
+            self.code_input.setStyleSheet("")
+
+    def _feedback_code_submission(self, success: bool, message: str | None = None):
+        if hasattr(self, "code_input"):
+            border_color = "#16A34A" if success else "#DC2626"
+            self.code_input.setStyleSheet(
+                f"border: 2px solid {border_color}; border-radius: 6px; padding: 4px;"
+            )
+            QTimer.singleShot(260, self._reset_code_input_feedback_style)
+
+        if message:
+            self.subtitle.setText(message)
+
+        QApplication.beep()
+        if not success:
+            QTimer.singleShot(120, QApplication.beep)
 
     def _team_context(self, side: str) -> dict:
         key = "home_team" if side == "home" else "away_team"
@@ -1164,6 +1699,7 @@ class ScoutPanel(QWidget):
                 "Codice DataVolley non valido",
                 str(parsed.get("error") or "Formato non riconosciuto"),
             )
+            self._feedback_code_submission(False, "Codice non valido")
             if hasattr(self, "code_input"):
                 self.code_input.setFocus()
             return
@@ -1229,6 +1765,10 @@ class ScoutPanel(QWidget):
         )
 
         self._refresh_view()
+        self._feedback_code_submission(
+            True,
+            f"Codice registrato: {raw_code}",
+        )
 
         self.code_input.clear()
         self.code_input.setFocus()
@@ -1257,6 +1797,14 @@ class ScoutPanel(QWidget):
             self.btn_config_shortcuts.setEnabled(True)
         if hasattr(self, "btn_reset_shortcuts"):
             self.btn_reset_shortcuts.setEnabled(True)
+        if hasattr(self, "keypad_size_selector"):
+            self.keypad_size_selector.setEnabled(True)
+        if hasattr(self, "keyboard_mode_selector"):
+            self.keyboard_mode_selector.setEnabled(True)
+        if hasattr(self, "btn_config_hotkeys"):
+            self.btn_config_hotkeys.setEnabled(True)
+        if hasattr(self, "btn_reset_hotkeys"):
+            self.btn_reset_hotkeys.setEnabled(True)
 
         for btn in self.skill_buttons:
             btn.setEnabled(enabled)
