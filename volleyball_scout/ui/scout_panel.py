@@ -1,6 +1,11 @@
 import re
 from copy import deepcopy
 
+try:
+    from volleyball_scout.core.rotation import rotate_lineup_clockwise
+except ImportError:
+    from ..core.rotation import rotate_lineup_clockwise
+
 from PyQt6.QtCore import QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -230,6 +235,7 @@ class ScoutPanel(QWidget):
     KEYPAD_SIZE_SETTINGS_KEY = "code_keypad_size"
     KEYBOARD_MODE_SETTINGS_KEY = "keyboard_only_mode"
     HOTKEY_MAP_SETTINGS_KEY = "keyboard_hotkey_map"
+    VIDEO_MEMORY_SETTINGS_PREFIX = "video_resume_seconds_match_"
     HOTKEY_DEFAULTS = {
         "macro_1": "F1",
         "macro_2": "F2",
@@ -287,6 +293,8 @@ class ScoutPanel(QWidget):
         self.video_source_info = {}
         self.video_timestamp_seconds = None
         self.video_widget = None
+        self._resume_video_seconds: float | None = None
+        self._last_saved_video_second: int | None = None
 
         self.initial_service_selected = False
         self.setter_number_by_side: dict[str, str | None] = {
@@ -332,6 +340,16 @@ class ScoutPanel(QWidget):
         self.match_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.match_info.setStyleSheet("font-weight: bold; font-size: 12px;")
         layout.addWidget(self.match_info)
+
+        self.video_resume_badge = QLabel("")
+        self.video_resume_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_resume_badge.setVisible(False)
+        self.video_resume_badge.setStyleSheet(
+            "font-size: 10px; font-weight: bold; color: #FFF7ED;"
+            "background-color: #9A3412; border: 1px solid #C2410C;"
+            "border-radius: 8px; padding: 3px 8px;"
+        )
+        layout.addWidget(self.video_resume_badge)
 
         timer_layout = QHBoxLayout()
         timer_layout.setSpacing(8)
@@ -732,6 +750,70 @@ class ScoutPanel(QWidget):
 
     def _shortcuts_settings(self) -> QSettings:
         return QSettings(self.SHORTCUTS_SETTINGS_ORG, self.SHORTCUTS_SETTINGS_APP)
+
+    def _video_memory_key(self, match_id) -> str | None:
+        try:
+            parsed = int(match_id)
+            if parsed <= 0:
+                return None
+            return f"{self.VIDEO_MEMORY_SETTINGS_PREFIX}{parsed}"
+        except Exception:
+            return None
+
+    def _load_video_resume_seconds(self, match_id) -> float | None:
+        key = self._video_memory_key(match_id)
+        if key is None:
+            return None
+
+        settings = self._shortcuts_settings()
+        value = settings.value(key, None)
+        if value is None:
+            return None
+
+        try:
+            return max(0.0, float(value))
+        except Exception:
+            return None
+
+    def _save_video_resume_seconds(self, seconds: float | None):
+        if not self.current_context or seconds is None:
+            return
+
+        key = self._video_memory_key(self.current_context.get("match_id"))
+        if key is None:
+            return
+
+        try:
+            value = max(0.0, float(seconds))
+        except Exception:
+            return
+
+        settings = self._shortcuts_settings()
+        settings.setValue(key, f"{value:.3f}")
+
+    def get_video_resume_seconds(self) -> float | None:
+        return self._resume_video_seconds
+
+    def set_video_resume_badge(self, seconds: float | None):
+        if not hasattr(self, "video_resume_badge"):
+            return
+
+        if seconds is None:
+            self.video_resume_badge.clear()
+            self.video_resume_badge.setVisible(False)
+            return
+
+        try:
+            safe_seconds = max(0, int(float(seconds)))
+        except Exception:
+            self.video_resume_badge.clear()
+            self.video_resume_badge.setVisible(False)
+            return
+
+        self.video_resume_badge.setText(
+            f"Ripreso da {self._format_seconds(safe_seconds)}"
+        )
+        self.video_resume_badge.setVisible(True)
 
     def _load_keypad_size_mode(self) -> str:
         settings = self._shortcuts_settings()
@@ -1538,6 +1620,13 @@ class ScoutPanel(QWidget):
                 f"Video: {self._format_seconds(int(self.video_timestamp_seconds))}"
             )
 
+        if self.video_timestamp_seconds is not None and self.current_context:
+            self._resume_video_seconds = self.video_timestamp_seconds
+            whole_second = int(self.video_timestamp_seconds)
+            if whole_second != self._last_saved_video_second:
+                self._save_video_resume_seconds(self.video_timestamp_seconds)
+                self._last_saved_video_second = whole_second
+
     def _event_video_timestamp(self) -> float:
         """Timestamp evento: preferisce il tempo video, fallback sul timer set."""
         base_time = (
@@ -2243,32 +2332,13 @@ class ScoutPanel(QWidget):
         self._update_outer_service_hints()
 
     def _rotate_team_lineup(self, side: str):
-        """Rotazione oraria come in FormationPanel.
-
-        Mapping posizioni (old -> new):
-        P1->P6, P2->P1, P3->P2, P4->P3, P5->P4, P6->P5
-        """
+        """Ruota la lineup usando la utility condivisa core."""
         if not self.current_context:
             return
 
         team_key = "home_team" if side == "home" else "away_team"
         team_data = self.current_context.get(team_key, {})
-        lineup = dict(team_data.get("lineup", {}))
-
-        rotation_map = {
-            "P1": "P6",
-            "P2": "P1",
-            "P3": "P2",
-            "P4": "P3",
-            "P5": "P4",
-            "P6": "P5",
-        }
-
-        rotated = dict(lineup)
-        for old_pos, new_pos in rotation_map.items():
-            rotated[new_pos] = lineup.get(old_pos)
-
-        team_data["lineup"] = rotated
+        team_data["lineup"] = rotate_lineup_clockwise(team_data.get("lineup", {}))
 
     def _snapshot_state(self) -> dict:
         return {
@@ -2994,6 +3064,8 @@ class ScoutPanel(QWidget):
             self.history_records = []
             self.timeouts_used = {"home": 0, "away": 0}
             self.video_timestamp_seconds = None
+            self._resume_video_seconds = None
+            self._last_saved_video_second = None
             self.initial_service_selected = False
             self.setter_number_by_side = {"home": None, "away": None}
             self.reception_rotation_hint = {"home": "-", "away": "-"}
@@ -3016,6 +3088,7 @@ class ScoutPanel(QWidget):
             if hasattr(self, "code_input"):
                 self.code_input.clear()
             self._set_code_team_side("home")
+            self.set_video_resume_badge(None)
             self._update_initial_service_controls()
             self._update_outer_service_hints()
             self._set_controls_enabled(False)
@@ -3036,6 +3109,15 @@ class ScoutPanel(QWidget):
         self.rally_history.clear()
         self.timeouts_used = {"home": 0, "away": 0}
         self.video_timestamp_seconds = None
+        self._resume_video_seconds = self._load_video_resume_seconds(
+            self.current_context.get("match_id")
+        )
+        self._last_saved_video_second = (
+            int(self._resume_video_seconds)
+            if self._resume_video_seconds is not None
+            else None
+        )
+        self.set_video_resume_badge(self._resume_video_seconds)
         self.reception_rotation_hint = {"home": "-", "away": "-"}
         self.serving_side = self._resolve_serving_side(self.current_context)
         self._apply_serving_side(self.serving_side)

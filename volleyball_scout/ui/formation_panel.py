@@ -1,6 +1,11 @@
 from pathlib import Path
 from typing import Any
 
+try:
+    from volleyball_scout.core.rotation import rotate_slots_clockwise
+except ImportError:
+    from ..core.rotation import rotate_slots_clockwise
+
 from PyQt6.QtCore import QMimeData, Qt, pyqtSignal
 from PyQt6.QtGui import QDrag, QFont
 from PyQt6.QtWidgets import (
@@ -1016,27 +1021,7 @@ class TeamFormationWidget(QWidget):
         self.selected_players.clear()
 
     def rotate_formation(self):
-        """Ruota la formazione in senso orario"""
-        # Rotazione in campo senso orario: P1→P2→P3→P4→P5→P6→P1
-        # Prima:          Dopo rotazione:
-        # P4 P3 P2        P5 P4 P3
-        # P5 P6 P1        P6 P1 P2
-        # Mapping: P1(idx0)→P6(idx5), P2(idx1)→P1(idx0), P3(idx2)→P2(idx1), etc
-        # Indici: cosa che era in idx N va in idx N-1 (con wrap-around)
-        # {0→5, 1→0, 2→1, 3→24→3→2→1 (senso orario in campo)
-        # Layout campo attuale (4-3-2 sopra, 5-6-1 sotto):
-        #                       P4 P3 P2  (anteposizione)
-        #                       P5 P6 P1  (retroposizione - zona battuta)
-        # Dopo rotazione oraria (P1 muove a P6, P6 a P5, etc):
-        #                       P3 P2 P1  (anteposizione)
-        #                       P4 P5 P6  (retroposizione - zona battuta)
-        # Mapping indici slot (0=P1, 1=P2, 2=P3, 3=P4, 4=P5, 5=P6):
-        # 0(P1)→5(P6), 5(P6)→4(P5), 4(P5)→3(P4),
-        #                 3(P4)→2(P3), 2(P3)→1(P2), 1(P2)→0(P1)
-        # Mapping corretto: P1→P6, P2→P1, P3→P2, P4→P3, P5→P4, P6→P5
-        # In indici: 0→5, 1→0, 2→1, 3→2, 4→3, 5→4
-        rotation_map = {0: 5, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4}
-
+        """Ruota la formazione in senso orario (utility condivisa core)."""
         # Salva lo stato attuale
         current_players = {}
         for idx, slot in self.formation_slots.items():
@@ -1049,19 +1034,19 @@ class TeamFormationWidget(QWidget):
             else:
                 current_players[idx] = None
 
-        # Applica la rotazione
-        for old_idx, new_idx in rotation_map.items():
-            new_slot = self.formation_slots[new_idx]
-            old_player = current_players[old_idx]
+        rotated_players = rotate_slots_clockwise(current_players)
 
-            if old_player is not None:
-                new_slot.set_player(
-                    old_player["player_number"],
-                    old_player["player_id"],
-                    old_player["player_role"],
+        # Applica la rotazione
+        for idx, slot in self.formation_slots.items():
+            player = rotated_players.get(idx)
+            if player is not None:
+                slot.set_player(
+                    player["player_number"],
+                    player["player_id"],
+                    player["player_role"],
                 )
             else:
-                new_slot.clear()
+                slot.clear()
 
         # Avvisa il panel che la formazione è stata ruotata per aggiornare il metodo di gioco
         parent = self.parent()

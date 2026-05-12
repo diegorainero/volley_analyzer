@@ -35,6 +35,7 @@ class VideoPlayer(QWidget):
         self.last_frame = None
         self.frame_interval_seconds = 1.0 / 30.0
         self.stream_elapsed_seconds = 0.0
+        self.pending_resume_seconds: float | None = None
 
         self.frame_timer = QTimer(self)
         self.frame_timer.timeout.connect(self._read_next_frame)
@@ -128,6 +129,24 @@ class VideoPlayer(QWidget):
                 return source_value
         return source_value
 
+    def set_resume_position(self, seconds: float | None):
+        """Imposta/aggiorna il punto di ripartenza in secondi."""
+        if seconds is None:
+            return
+
+        try:
+            target = max(0.0, float(seconds))
+        except Exception:
+            return
+
+        self.pending_resume_seconds = target
+
+        source_kind = (self.current_source or {}).get("type")
+        if self.capture is not None and source_kind == "file":
+            self.capture.set(cv2.CAP_PROP_POS_MSEC, target * 1000.0)
+            self.stream_elapsed_seconds = target
+            self._read_next_frame()
+
     def _connect_source(self):
         if cv2 is None:
             QMessageBox.critical(
@@ -181,6 +200,14 @@ class VideoPlayer(QWidget):
         self.frame_interval_seconds = interval_ms / 1000.0
         self.stream_elapsed_seconds = 0.0
 
+        if source_kind == "file" and self.pending_resume_seconds is not None:
+            try:
+                target = max(0.0, float(self.pending_resume_seconds))
+                self.capture.set(cv2.CAP_PROP_POS_MSEC, target * 1000.0)
+                self.stream_elapsed_seconds = target
+            except Exception:
+                pass
+
         self.frame_timer.start(interval_ms)
         self._read_next_frame()
 
@@ -194,6 +221,7 @@ class VideoPlayer(QWidget):
         if cv2 is None or self.capture is None:
             return
 
+        source_kind = (self.current_source or {}).get("type")
         ok, frame = self.capture.read()
         if not ok or frame is None:
             source_kind = (self.current_source or {}).get("type")

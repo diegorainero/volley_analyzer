@@ -457,10 +457,13 @@ class VolleyballScoutApp(QMainWindow):
 
     def _on_scout_ready(self, scout_payload: dict):
         """Quando la formazione è confermata, carica il contesto in Scouting Live e naviga."""
+        resume_seconds = None
         if hasattr(self, "scout_panel") and hasattr(
             self.scout_panel, "load_match_context"
         ):
             self.scout_panel.load_match_context(scout_payload)
+            if hasattr(self.scout_panel, "get_video_resume_seconds"):
+                resume_seconds = self.scout_panel.get_video_resume_seconds()
 
         video_path = (
             scout_payload.get("video_path") if isinstance(scout_payload, dict) else None
@@ -476,6 +479,18 @@ class VolleyballScoutApp(QMainWindow):
                 self.video_player.source_type.setCurrentIndex(file_idx)
             if not self.video_player.source_input.text().strip():
                 self.video_player.source_input.setText(str(video_path))
+
+        if (
+            resume_seconds is not None
+            and hasattr(self, "video_player")
+            and hasattr(self.video_player, "set_resume_position")
+        ):
+            self.video_player.set_resume_position(resume_seconds)
+
+        if hasattr(self, "scout_panel") and hasattr(
+            self.scout_panel, "set_video_resume_badge"
+        ):
+            self.scout_panel.set_video_resume_badge(resume_seconds)
 
         self._on_section_selected("scout")
 
