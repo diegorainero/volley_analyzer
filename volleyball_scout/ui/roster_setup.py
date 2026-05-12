@@ -56,6 +56,8 @@ class RosterSetupWidget(QWidget):
 
     # Signal emesso quando il roster setup è completato
     roster_completed = pyqtSignal()
+    # Signal emesso quando va aperto direttamente lo scouting live
+    scout_resume_requested = pyqtSignal(dict)
 
     def __init__(
         self, db_manager: DatabaseManager, match_id: int | None = None, parent=None
@@ -148,9 +150,20 @@ class RosterSetupWidget(QWidget):
         self.btn_new_match.clicked.connect(self._on_new_match_clicked)
         layout.addWidget(self.btn_new_match)
 
-        # Matches list
+        # Matches list (non terminati)
         matches_section = QGroupBox("Partite Disponibili")
         matches_layout = QVBoxLayout()
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filtro stato:"))
+        self.matches_filter_combo = QComboBox()
+        self.matches_filter_combo.addItem("Tutte", "all")
+        self.matches_filter_combo.addItem("Bozza", "draft")
+        self.matches_filter_combo.addItem("In corso", "in_progress")
+        self.matches_filter_combo.currentIndexChanged.connect(self.load_matches)
+        filter_row.addWidget(self.matches_filter_combo)
+        filter_row.addStretch()
+        matches_layout.addLayout(filter_row)
 
         self.matches_list = QListWidget()
         self.matches_list.itemClicked.connect(self._on_match_selected)
@@ -158,6 +171,22 @@ class RosterSetupWidget(QWidget):
 
         matches_section.setLayout(matches_layout)
         layout.addWidget(matches_section)
+
+        # Box partite terminate (sola consultazione)
+        completed_section = QGroupBox("Partite Terminate")
+        completed_layout = QVBoxLayout()
+
+        self.completed_matches_list = QListWidget()
+        self.completed_matches_list.setToolTip(
+            "Elenco partite chiuse (clicca per aprire scouting in modifica)"
+        )
+        self.completed_matches_list.itemClicked.connect(
+            self._on_completed_match_selected
+        )
+        completed_layout.addWidget(self.completed_matches_list)
+
+        completed_section.setLayout(completed_layout)
+        layout.addWidget(completed_section)
 
         layout.addStretch()
 
@@ -468,18 +497,76 @@ class RosterSetupWidget(QWidget):
         return widget
 
     def load_matches(self):
-        """Carica le partite dal database (modalità selezione)"""
+        """Carica le partite dal database (modalità selezione)."""
         self.matches_list.clear()
+        if hasattr(self, "completed_matches_list"):
+            self.completed_matches_list.clear()
 
         try:
             with self.db.session_scope() as session:
-                # Nuovo flusso: solo match ancora da iniziare, ordinati per data decrescente
-                matches = (
-                    session.query(Match)
-                    .filter(Match.status == "draft")
-                    .order_by(Match.date.desc())
-                    .all()
+                selected_filter = "all"
+                if hasattr(self, "matches_filter_combo"):
+                    selected = self.matches_filter_combo.currentData()
+                    selected_filter = str(selected or "all")
+
+                from volleyball_scout.core.models import MatchSet, ScoutEvent
+
+                def compute_match_activity(match_id: int) -> tuple[int, int, bool]:
+                    set_rows = (
+                        session.query(MatchSet)
+                        .filter(MatchSet.match_id == match_id)
+                        .order_by(MatchSet.set_number.desc())
+                        .all()
+                    )
+
+                    latest_set_number = 1
+                    active_set_number = 1
+                    if set_rows:
+                        latest_set_number = int(set_rows[0].set_number or 1)
+                        active_set_number = latest_set_number
+                        for set_row in set_rows:
+                            if getattr(set_row, "winner", None) is None:
+                                active_set_number = int(set_row.set_number or 1)
+                                break
+
+                    has_events = (
+                        session.query(ScoutEvent.id)
+                        .filter(ScoutEvent.match_id == match_id)
+                        .first()
+                        is not None
+                    )
+                    has_score_activity = any(
+                        int(getattr(s, "score_home", 0) or 0)
+                        + int(getattr(s, "score_away", 0) or 0)
+                        > 0
+                        for s in set_rows
+                    )
+                    has_duration_activity = any(
+                        int(getattr(s, "duration", 0) or 0) > 0 for s in set_rows
+                    )
+                    has_winner = any(
+                        getattr(s, "winner", None) is not None for s in set_rows
+                    )
+
+                    scout_started = bool(
+                        has_events
+                        or has_score_activity
+                        or has_duration_activity
+                        or has_winner
+                    )
+                    return active_set_number, latest_set_number, scout_started
+
+                # Match non terminati (box principale)
+                query = session.query(Match).filter(
+                    Match.status.in_(["draft", "in_progress"])
                 )
+
+                if selected_filter == "draft":
+                    query = query.filter(Match.status == "draft")
+                elif selected_filter == "in_progress":
+                    query = query.filter(Match.status == "in_progress")
+
+                matches = query.order_by(Match.date.desc()).all()
 
                 if not matches:
                     item = QListWidgetItem("(Nessuna partita)")
@@ -492,20 +579,260 @@ class RosterSetupWidget(QWidget):
                         date_str = (
                             match.date.strftime("%Y-%m-%d %H:%M") if match.date else "-"
                         )
-                        display_text = f"{home} vs {away} ({date_str})"
+                        status = str(getattr(match, "status", "draft") or "draft")
+                        status_label = "Bozza" if status == "draft" else "In corso"
+
+                        active_set_number, _latest_set_number, scout_started = (
+                            compute_match_activity(int(match.id))
+                        )
+
+                        display_text = f"{home} vs {away} ({date_str}) • {status_label}"
+                        if status == "in_progress" and scout_started:
+                            display_text += " • Scout iniziato"
+
                         item = QListWidgetItem(display_text)
-                        item.setData(Qt.ItemDataRole.UserRole, match.id)
+                        item.setData(
+                            Qt.ItemDataRole.UserRole,
+                            {
+                                "match_id": int(match.id),
+                                "status": status,
+                                "scout_started": scout_started,
+                                "set_number": int(active_set_number),
+                                "allow_completed_edit": False,
+                            },
+                        )
                         self.matches_list.addItem(item)
+
+                # Match terminati (box dedicato, apribili in modifica)
+                completed_matches = (
+                    session.query(Match)
+                    .filter(Match.status == "completed")
+                    .order_by(Match.date.desc())
+                    .all()
+                )
+
+                if hasattr(self, "completed_matches_list"):
+                    if not completed_matches:
+                        item = QListWidgetItem("(Nessuna partita terminata)")
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                        self.completed_matches_list.addItem(item)
+                    else:
+                        for match in completed_matches:
+                            home = match.home_team.name if match.home_team else "?"
+                            away = match.away_team.name if match.away_team else "?"
+                            date_str = (
+                                match.date.strftime("%Y-%m-%d %H:%M")
+                                if match.date
+                                else "-"
+                            )
+                            _active_set, latest_set, scout_started = (
+                                compute_match_activity(int(match.id))
+                            )
+
+                            display_text = (
+                                f"{home} vs {away} ({date_str}) • Terminata • Modifica"
+                            )
+                            item = QListWidgetItem(display_text)
+                            item.setData(
+                                Qt.ItemDataRole.UserRole,
+                                {
+                                    "match_id": int(match.id),
+                                    "status": "completed",
+                                    "scout_started": bool(scout_started),
+                                    "set_number": int(latest_set),
+                                    "allow_completed_edit": True,
+                                },
+                            )
+                            self.completed_matches_list.addItem(item)
 
         except Exception as e:
             print(f"❌ Errore caricamento partite: {e}")
 
+    def _build_scout_resume_payload(
+        self,
+        match_id: int,
+        set_number: int | None = None,
+        *,
+        editing_completed_match: bool = False,
+    ) -> dict:
+        """Costruisce payload scouting rapido per ripresa diretta da Gestione Incontri."""
+        payload = {}
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import Match, MatchPlayer, MatchSet
+
+                match = session.query(Match).filter_by(id=match_id).first()
+                if match is None:
+                    return {}
+
+                target_set_number = max(1, int(set_number or 1))
+                set_row = (
+                    session.query(MatchSet)
+                    .filter_by(match_id=match_id, set_number=target_set_number)
+                    .first()
+                )
+
+                if set_row is None:
+                    latest_open_set = (
+                        session.query(MatchSet)
+                        .filter(MatchSet.match_id == match_id)
+                        .filter(MatchSet.winner.is_(None))
+                        .order_by(MatchSet.set_number.desc())
+                        .first()
+                    )
+                    if latest_open_set is not None:
+                        set_row = latest_open_set
+                        target_set_number = int(latest_open_set.set_number or 1)
+
+                def build_team_context(team_id: int | None, default_name: str) -> dict:
+                    roster_rows = (
+                        session.query(MatchPlayer)
+                        .filter_by(match_id=match_id, team_id=team_id)
+                        .all()
+                        if team_id is not None
+                        else []
+                    )
+
+                    starters = [r for r in roster_rows if bool(r.is_starter)]
+                    starters_sorted = sorted(
+                        starters,
+                        key=lambda r: int(getattr(r, "number", 0) or 0),
+                    )
+
+                    lineup = {}
+                    for idx, row in enumerate(starters_sorted[:6]):
+                        lineup[f"P{idx + 1}"] = (
+                            int(row.number) if row.number is not None else None
+                        )
+
+                    libero_num = None
+                    for row in roster_rows:
+                        if (
+                            bool(getattr(row, "is_libero", False))
+                            and row.number is not None
+                        ):
+                            libero_num = int(row.number)
+                            break
+
+                    number_to_player_id = {}
+                    for row in roster_rows:
+                        if row.number is None or row.player_id is None:
+                            continue
+                        num = str(int(row.number))
+                        number_to_player_id[num] = int(row.player_id)
+                        number_to_player_id[num.zfill(2)] = int(row.player_id)
+
+                    return {
+                        "id": team_id,
+                        "name": default_name,
+                        "lineup": lineup,
+                        "libero": libero_num,
+                        "number_to_player_id": number_to_player_id,
+                    }
+
+                home_name = match.home_team.name if match.home_team else "Casa"
+                away_name = match.away_team.name if match.away_team else "Ospiti"
+
+                status = str(getattr(match, "status", "draft") or "draft")
+                payload = {
+                    "match_id": int(match.id),
+                    "set_number": int(target_set_number),
+                    "score_home": int(set_row.score_home or 0) if set_row else 0,
+                    "score_away": int(set_row.score_away or 0) if set_row else 0,
+                    "video_offset_seconds": float(match.video_offset or 0.0),
+                    "video_path": match.video_path,
+                    "game_method": str(
+                        getattr(match, "game_method", "P-S-C") or "P-S-C"
+                    ),
+                    "game_method_by_team": {},
+                    "home_team": build_team_context(match.home_team_id, home_name),
+                    "away_team": build_team_context(match.away_team_id, away_name),
+                    "serving_team_id": match.home_team_id,
+                    "match_status": status,
+                    "editing_completed_match": bool(
+                        editing_completed_match and status == "completed"
+                    ),
+                }
+        except Exception as e:
+            print(f"⚠️ Errore build payload resume scouting: {e}")
+            return {}
+
+        return payload
+
+    def _extract_match_item_metadata(self, item: QListWidgetItem) -> dict:
+        raw_data = item.data(Qt.ItemDataRole.UserRole)
+
+        metadata = {
+            "match_id": None,
+            "status": "draft",
+            "scout_started": False,
+            "set_number": 1,
+            "allow_completed_edit": False,
+        }
+
+        if isinstance(raw_data, dict):
+            metadata["match_id"] = raw_data.get("match_id")
+            metadata["status"] = str(raw_data.get("status", "draft") or "draft")
+            metadata["scout_started"] = bool(raw_data.get("scout_started"))
+            metadata["allow_completed_edit"] = bool(
+                raw_data.get("allow_completed_edit", False)
+            )
+            try:
+                metadata["set_number"] = max(1, int(raw_data.get("set_number", 1) or 1))
+            except Exception:
+                metadata["set_number"] = 1
+        else:
+            metadata["match_id"] = raw_data
+
+        return metadata
+
     def _on_match_selected(self, item: QListWidgetItem):
-        """Quando viene selezionata una partita dalla lista"""
-        match_id = item.data(Qt.ItemDataRole.UserRole)
-        if match_id:
-            self.match_id = match_id
-            self._load_match(match_id)
+        """Quando viene selezionata una partita dalla lista non terminate."""
+        metadata = self._extract_match_item_metadata(item)
+        match_id = metadata.get("match_id")
+        if not match_id:
+            return
+
+        status = str(metadata.get("status", "draft") or "draft")
+        scout_started = bool(metadata.get("scout_started"))
+        set_number = int(metadata.get("set_number", 1) or 1)
+
+        if status == "in_progress" and scout_started:
+            payload = self._build_scout_resume_payload(
+                int(match_id),
+                set_number,
+                editing_completed_match=False,
+            )
+            if payload:
+                self.scout_resume_requested.emit(payload)
+                return
+
+        self.match_id = int(match_id)
+        self._load_match(int(match_id))
+
+    def _on_completed_match_selected(self, item: QListWidgetItem):
+        """Apre partite terminate in scouting live per modifiche/correzioni."""
+        metadata = self._extract_match_item_metadata(item)
+        match_id = metadata.get("match_id")
+        if not match_id:
+            return
+
+        set_number = int(metadata.get("set_number", 1) or 1)
+        payload = self._build_scout_resume_payload(
+            int(match_id),
+            set_number,
+            editing_completed_match=True,
+        )
+        if payload:
+            self.scout_resume_requested.emit(payload)
+            return
+
+        QMessageBox.warning(
+            self,
+            "Apertura scouting non riuscita",
+            "Impossibile aprire la partita terminata in modalità modifica.",
+        )
 
     def _on_new_match_clicked(self):
         """Apri il dialog per creare una nuova partita"""

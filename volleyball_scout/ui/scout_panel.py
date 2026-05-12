@@ -1,3 +1,4 @@
+import json
 import re
 from copy import deepcopy
 
@@ -6,11 +7,13 @@ try:
 except ImportError:
     from ..core.rotation import rotate_lineup_clockwise
 
-from PyQt6.QtCore import QSettings, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QRectF, QSettings, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -33,7 +36,8 @@ from PyQt6.QtWidgets import (
 class TeamCourtWidget(QGroupBox):
     """Rappresentazione semplificata del campo per una squadra."""
 
-    VISUAL_GRID = (("P4", "P3", "P2"), ("P5", "P6", "P1"))
+    VISUAL_GRID_HOME = (("P5", "P4"), ("P6", "P3"), ("P1", "P2"))
+    VISUAL_GRID_AWAY = (("P2", "P1"), ("P3", "P6"), ("P4", "P5"))
 
     def __init__(self, team_side: str, team_name="Squadra", parent=None):
         super().__init__(parent)
@@ -43,6 +47,11 @@ class TeamCourtWidget(QGroupBox):
         self._libero_label = QLabel()
         self._highlight_number = None
         self._setup_ui(team_name)
+
+    def _visual_grid(self) -> tuple[tuple[str, ...], ...]:
+        return (
+            self.VISUAL_GRID_AWAY if self.team_side == "away" else self.VISUAL_GRID_HOME
+        )
 
     def _setup_ui(self, team_name: str):
         self.setTitle(team_name)
@@ -55,56 +64,68 @@ class TeamCourtWidget(QGroupBox):
                 padding-top: 10px;
                 font-weight: bold;
                 color: #F6EFE9;
-                background-color: #3A2D27;
+                background-color: #2F241F;
             }
             """
         )
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self._serving_badge = QLabel("RICEZIONE")
         self._serving_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._serving_badge.setVisible(False)
         layout.addWidget(self._serving_badge)
 
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        court_frame = QFrame()
+        court_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #5D8CD8;
+                border-radius: 10px;
+                border: 1px solid #8BAFE7;
+            }
+            """
+        )
+        court_layout = QVBoxLayout(court_frame)
+        court_layout.setContentsMargins(6, 6, 6, 6)
 
-        for row, row_positions in enumerate(self.VISUAL_GRID):
+        grid = QGridLayout()
+        grid.setSpacing(6)
+
+        for row, row_positions in enumerate(self._visual_grid()):
             for col, pos_code in enumerate(row_positions):
                 cell = QFrame()
-                cell.setMinimumSize(76, 70)
+                cell.setMinimumSize(72, 58)
                 cell.setStyleSheet(
                     """
                     QFrame {
-                        border: 1px solid #E2B37A;
-                        border-radius: 8px;
-                        background-color: #DDAA5B;
+                        border: none;
+                        background: transparent;
                     }
                     """
                 )
                 cell_layout = QVBoxLayout(cell)
-                cell_layout.setContentsMargins(4, 4, 4, 4)
+                cell_layout.setContentsMargins(3, 3, 3, 3)
                 cell_layout.setSpacing(0)
 
                 number_label = QLabel("-")
                 number_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                number_label.setFixedSize(44, 44)
                 number_label.setStyleSheet(
-                    "font-size: 24px; font-weight: bold; color: #2B211C;"
+                    "font-size: 18px; font-weight: bold; color: #111827;"
+                    "background-color: #E5E7EB; border: 1px solid #CBD5E1; border-radius: 22px;"
                 )
 
-                pos_label = QLabel(pos_code)
-                pos_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                pos_label.setStyleSheet("font-size: 10px; color: #2B211C;")
-
-                cell_layout.addWidget(number_label, 1)
-                cell_layout.addWidget(pos_label)
+                cell_layout.addStretch(1)
+                cell_layout.addWidget(number_label, 0, Qt.AlignmentFlag.AlignCenter)
+                cell_layout.addStretch(1)
 
                 self._number_labels[pos_code] = number_label
                 grid.addWidget(cell, row, col)
 
-        layout.addLayout(grid)
+        court_layout.addLayout(grid)
+        layout.addWidget(court_frame)
 
         self._libero_label = QLabel("Libero: -")
         self._libero_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -116,7 +137,9 @@ class TeamCourtWidget(QGroupBox):
     def _normalize_player_number(self, value) -> str | None:
         if value is None:
             return None
-        raw = str(value).strip()
+        raw = str(value).strip().upper()
+        if raw.endswith("P"):
+            raw = raw[:-1]
         if not raw or raw == "-":
             return None
         try:
@@ -127,10 +150,14 @@ class TeamCourtWidget(QGroupBox):
     def _apply_number_style(self, label: QLabel, highlighted: bool):
         if highlighted:
             label.setStyleSheet(
-                "font-size: 24px; font-weight: bold; color: #F8FAFC; background-color: #DC2626; border-radius: 8px;"
+                "font-size: 18px; font-weight: bold; color: #F8FAFC;"
+                "background-color: #DC2626; border: 1px solid #7F1D1D; border-radius: 22px;"
             )
         else:
-            label.setStyleSheet("font-size: 24px; font-weight: bold; color: #2B211C;")
+            label.setStyleSheet(
+                "font-size: 18px; font-weight: bold; color: #111827;"
+                "background-color: #E5E7EB; border: 1px solid #CBD5E1; border-radius: 22px;"
+            )
 
     def set_highlight_player(self, player_number):
         self._highlight_number = self._normalize_player_number(player_number)
@@ -146,13 +173,26 @@ class TeamCourtWidget(QGroupBox):
             self._apply_number_style(label, False)
 
     def update_lineup(
-        self, team_name: str, positions: dict, libero=None, serving=False
+        self,
+        team_name: str,
+        positions: dict,
+        libero=None,
+        serving=False,
+        setter_number: str | None = None,
     ):
         self.setTitle(team_name or "Squadra")
 
+        setter_norm = self._normalize_player_number(setter_number)
+
         for pos_code, label in self._number_labels.items():
             value = positions.get(pos_code) if positions else None
-            label.setText(str(value) if value is not None else "-")
+            current_norm = self._normalize_player_number(value)
+            if current_norm is None:
+                label.setText("-")
+            elif setter_norm is not None and current_norm == setter_norm:
+                label.setText(f"{current_norm}P")
+            else:
+                label.setText(str(current_norm))
             current = self._normalize_player_number(label.text())
             self._apply_number_style(
                 label,
@@ -195,6 +235,281 @@ class TeamCourtWidget(QGroupBox):
             )
 
 
+class ReceptionCourtEditor(QWidget):
+    """Editor visuale per posizionare manualmente i giocatori in ricezione."""
+
+    MARKER_RADIUS = 18.0
+
+    def __init__(self, team_side: str, parent=None):
+        super().__init__(parent)
+        self.team_side = "away" if team_side == "away" else "home"
+        self.selected_player: str | None = None
+        self._dragging_player: str | None = None
+        self._positions: dict[str, tuple[float, float]] = {}
+        self.setMinimumSize(520, 280)
+
+    def set_selected_player(self, player_number: str | None):
+        self.selected_player = str(player_number) if player_number else None
+        self.update()
+
+    def set_positions(self, positions: dict | None):
+        self._positions = {}
+        for key, value in dict(positions or {}).items():
+            try:
+                x, y = value
+                self._positions[str(key)] = (
+                    min(1.0, max(0.0, float(x))),
+                    min(1.0, max(0.0, float(y))),
+                )
+            except Exception:
+                continue
+        self.update()
+
+    def positions(self) -> dict[str, tuple[float, float]]:
+        return dict(self._positions)
+
+    def clear_positions(self):
+        self._positions = {}
+        self.update()
+
+    def _outer_rect(self) -> QRectF:
+        margin = 12.0
+        return QRectF(
+            margin,
+            margin,
+            max(10.0, self.width() - margin * 2),
+            max(10.0, self.height() - margin * 2),
+        )
+
+    def _team_half_rect(self) -> QRectF:
+        outer = self._outer_rect()
+        half_w = outer.width() / 2.0
+        if self.team_side == "home":
+            return QRectF(outer.left(), outer.top(), half_w, outer.height())
+        return QRectF(outer.left() + half_w, outer.top(), half_w, outer.height())
+
+    def _canvas_point(self, player_number: str) -> tuple[float, float] | None:
+        value = self._positions.get(str(player_number))
+        if value is None:
+            return None
+
+        half = self._team_half_rect()
+        nx, ny = value
+        return (
+            float(half.left() + nx * half.width()),
+            float(half.top() + ny * half.height()),
+        )
+
+    def _player_at_point(self, px: float, py: float) -> str | None:
+        radius_sq = self.MARKER_RADIUS * self.MARKER_RADIUS
+        for number in reversed(list(self._positions.keys())):
+            center = self._canvas_point(number)
+            if center is None:
+                continue
+            cx, cy = center
+            dx = px - cx
+            dy = py - cy
+            if dx * dx + dy * dy <= radius_sq:
+                return number
+        return None
+
+    def _set_player_position_from_canvas(
+        self, player_number: str, px: float, py: float
+    ):
+        half = self._team_half_rect()
+        clamped_x = min(half.right(), max(half.left(), px))
+        clamped_y = min(half.bottom(), max(half.top(), py))
+
+        nx = (clamped_x - half.left()) / max(1.0, half.width())
+        ny = (clamped_y - half.top()) / max(1.0, half.height())
+
+        self._positions[str(player_number)] = (
+            min(1.0, max(0.0, float(nx))),
+            min(1.0, max(0.0, float(ny))),
+        )
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+
+        pos = event.position()
+        px = float(pos.x())
+        py = float(pos.y())
+        half = self._team_half_rect()
+
+        clicked_player = self._player_at_point(px, py)
+        if clicked_player is not None:
+            self.selected_player = clicked_player
+            self._dragging_player = clicked_player
+            self.update()
+            return
+
+        if self.selected_player is None or not half.contains(pos):
+            return super().mousePressEvent(event)
+
+        self._dragging_player = self.selected_player
+        self._set_player_position_from_canvas(self.selected_player, px, py)
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        if self._dragging_player is None:
+            return super().mouseMoveEvent(event)
+
+        pos = event.position()
+        self._set_player_position_from_canvas(
+            self._dragging_player,
+            float(pos.x()),
+            float(pos.y()),
+        )
+        self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging_player = None
+            self.update()
+            return
+        return super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        outer = self._outer_rect()
+        half = self._team_half_rect()
+
+        painter.setPen(QPen(QColor("#8BAFE7"), 1))
+        painter.setBrush(QColor("#5D8CD8"))
+        painter.drawRoundedRect(outer, 8, 8)
+
+        painter.setPen(QPen(QColor("#0F172A"), 4))
+        net_x = outer.left() + outer.width() / 2.0
+        painter.drawLine(int(net_x), int(outer.top()), int(net_x), int(outer.bottom()))
+
+        painter.setPen(QPen(QColor("#F2D2A8"), 1))
+        painter.setBrush(QColor("#E8A85F"))
+        painter.drawRect(half)
+
+        painter.setPen(QPen(QColor("#F6C98F"), 1, Qt.PenStyle.DashLine))
+        for i in (1, 2):
+            y = half.top() + (half.height() / 3.0) * i
+            painter.drawLine(int(half.left()), int(y), int(half.right()), int(y))
+        for i in (1, 2):
+            x = half.left() + (half.width() / 3.0) * i
+            painter.drawLine(int(x), int(half.top()), int(x), int(half.bottom()))
+
+        painter.setPen(QPen(QColor("#0F172A"), 1))
+        for number, pos in self._positions.items():
+            nx, ny = pos
+            cx = half.left() + nx * half.width()
+            cy = half.top() + ny * half.height()
+
+            radius = int(self.MARKER_RADIUS)
+            is_selected = self.selected_player == number
+            color = QColor("#FACC15") if is_selected else QColor("#E5E7EB")
+            painter.setBrush(color)
+            painter.drawEllipse(
+                int(cx - radius), int(cy - radius), radius * 2, radius * 2
+            )
+            painter.drawText(
+                QRectF(cx - radius, cy - radius, radius * 2, radius * 2),
+                Qt.AlignmentFlag.AlignCenter,
+                str(number),
+            )
+
+
+class ReceptionPositionDialog(QDialog):
+    def __init__(
+        self,
+        team_name: str,
+        team_side: str,
+        players: list[str],
+        initial_positions: dict | None = None,
+        lineup_positions: dict | None = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.team_side = "away" if team_side == "away" else "home"
+        self._lineup_positions = dict(lineup_positions or {})
+        self.setWindowTitle(f"Posizionamento ricezione - {team_name}")
+        self.setMinimumSize(680, 430)
+
+        self.editor = ReceptionCourtEditor(team_side, self)
+        self.editor.set_positions(initial_positions)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        hint = QLabel(
+            "Seleziona il giocatore e clicca/trascina sul campo per posizionare il pallino."
+        )
+        hint.setStyleSheet("font-size: 11px;")
+        layout.addWidget(hint)
+
+        select_row = QHBoxLayout()
+        select_row.addWidget(QLabel("Giocatore:"))
+        self.player_selector = QComboBox()
+        for number in players:
+            self.player_selector.addItem(str(number), str(number))
+        self.player_selector.currentIndexChanged.connect(self._on_player_changed)
+        select_row.addWidget(self.player_selector)
+
+        self.btn_preset_rotation = QPushButton("Preset rotazione")
+        self.btn_preset_rotation.clicked.connect(self._apply_rotation_preset)
+        select_row.addWidget(self.btn_preset_rotation)
+
+        self.btn_clear_positions = QPushButton("Reset posizioni")
+        self.btn_clear_positions.clicked.connect(self.editor.clear_positions)
+        select_row.addWidget(self.btn_clear_positions)
+        select_row.addStretch()
+        layout.addLayout(select_row)
+
+        layout.addWidget(self.editor, 1)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self._on_player_changed(0)
+
+    def _on_player_changed(self, _index: int):
+        current = self.player_selector.currentData()
+        self.editor.set_selected_player(str(current) if current is not None else None)
+
+    def _apply_rotation_preset(self):
+        base_home = {
+            "P4": (0.74, 0.20),
+            "P3": (0.74, 0.50),
+            "P2": (0.74, 0.80),
+            "P5": (0.26, 0.20),
+            "P6": (0.26, 0.50),
+            "P1": (0.26, 0.80),
+        }
+
+        preset = {}
+        for pos_code, number in self._lineup_positions.items():
+            if number is None:
+                continue
+            code = str(pos_code).strip().upper()
+            if code not in base_home:
+                continue
+
+            x, y = base_home[code]
+            if self.team_side == "away":
+                x = 1.0 - x
+            preset[str(number)] = (x, y)
+
+        if preset:
+            self.editor.set_positions(preset)
+
+    def positions(self) -> dict[str, tuple[float, float]]:
+        return self.editor.positions()
+
+
 class ScoutPanel(QWidget):
     """Schermata Scouting Live con doppio campo allineato."""
 
@@ -235,7 +550,12 @@ class ScoutPanel(QWidget):
     KEYPAD_SIZE_SETTINGS_KEY = "code_keypad_size"
     KEYBOARD_MODE_SETTINGS_KEY = "keyboard_only_mode"
     HOTKEY_MAP_SETTINGS_KEY = "keyboard_hotkey_map"
+    POINT_OUTCOME_MAP_SETTINGS_KEY = "point_outcome_map"
+    POINT_OUTCOME_SCOPE_SETTINGS_KEY = "point_outcome_scope"
+    POINT_OUTCOME_MAP_MATCH_PREFIX = "point_outcome_map_match_"
+    POINT_OUTCOME_MAP_SET_PREFIX = "point_outcome_map_set_"
     VIDEO_MEMORY_SETTINGS_PREFIX = "video_resume_seconds_match_"
+    RECEPTION_MEMORY_SETTINGS_PREFIX = "rx_manual_match_"
     HOTKEY_DEFAULTS = {
         "macro_1": "F1",
         "macro_2": "F2",
@@ -286,6 +606,8 @@ class ScoutPanel(QWidget):
         self.keypad_size_mode = self._load_keypad_size_mode()
         self.keyboard_only_mode = self._load_keyboard_mode_enabled()
         self.hotkey_map = self._load_hotkey_map()
+        self.point_outcome_scope = self._load_point_outcome_scope()
+        self.point_outcome_map = self._load_point_outcome_map()
         self.history_records = []
         self.timeouts_used = {"home": 0, "away": 0}
 
@@ -302,6 +624,10 @@ class ScoutPanel(QWidget):
             "away": None,
         }
         self.reception_rotation_hint: dict[str, str] = {"home": "-", "away": "-"}
+        self.reception_manual_positions: dict[str, dict[str, tuple[float, float]]] = {
+            "home": {},
+            "away": {},
+        }
 
         self._setup_ui()
         self._set_controls_enabled(False)
@@ -350,6 +676,16 @@ class ScoutPanel(QWidget):
             "border-radius: 8px; padding: 3px 8px;"
         )
         layout.addWidget(self.video_resume_badge)
+
+        self.match_mode_badge = QLabel("")
+        self.match_mode_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.match_mode_badge.setVisible(False)
+        self.match_mode_badge.setStyleSheet(
+            "font-size: 10px; font-weight: bold; color: #ECFDF5;"
+            "background-color: #065F46; border: 1px solid #047857;"
+            "border-radius: 8px; padding: 3px 8px;"
+        )
+        layout.addWidget(self.match_mode_badge)
 
         timer_layout = QHBoxLayout()
         timer_layout.setSpacing(8)
@@ -595,14 +931,6 @@ class ScoutPanel(QWidget):
         shortcuts_header_row = QHBoxLayout()
         shortcuts_header_row.addWidget(QLabel("Tasti rapidi:"))
 
-        self.btn_config_shortcuts = QPushButton("Configura tasti")
-        self.btn_config_shortcuts.clicked.connect(self._configure_code_shortcuts)
-        shortcuts_header_row.addWidget(self.btn_config_shortcuts)
-
-        self.btn_reset_shortcuts = QPushButton("Reset")
-        self.btn_reset_shortcuts.clicked.connect(self._reset_code_shortcuts)
-        shortcuts_header_row.addWidget(self.btn_reset_shortcuts)
-
         shortcuts_header_row.addWidget(QLabel("Layout:"))
         self.keypad_size_selector = QComboBox()
         self.keypad_size_selector.addItem("Compatto", "compact")
@@ -629,14 +957,6 @@ class ScoutPanel(QWidget):
             self.keyboard_mode_selector.setCurrentIndex(mode_idx)
         shortcuts_header_row.addWidget(self.keyboard_mode_selector)
 
-        self.btn_config_hotkeys = QPushButton("Mappa hotkeys")
-        self.btn_config_hotkeys.clicked.connect(self._configure_hotkeys_map)
-        shortcuts_header_row.addWidget(self.btn_config_hotkeys)
-
-        self.btn_reset_hotkeys = QPushButton("Reset hotkeys")
-        self.btn_reset_hotkeys.clicked.connect(self._reset_hotkeys_map)
-        shortcuts_header_row.addWidget(self.btn_reset_hotkeys)
-
         self.btn_toggle_keypad = QPushButton("Mostra tastierino")
         self.btn_toggle_keypad.setCheckable(True)
         self.btn_toggle_keypad.toggled.connect(self._toggle_keypad_panel)
@@ -654,17 +974,6 @@ class ScoutPanel(QWidget):
         self._rebuild_code_shortcut_buttons()
         self._create_datavolley_keypad(datavolley_layout)
 
-        self.keyboard_hotkeys_hint = QLabel("")
-        self.keyboard_hotkeys_hint.setStyleSheet("font-size: 10px; color: #D9CFC5;")
-        datavolley_layout.addWidget(self.keyboard_hotkeys_hint)
-
-        self.hotkeys_map_label = QLabel("")
-        self.hotkeys_map_label.setWordWrap(True)
-        self.hotkeys_map_label.setStyleSheet("font-size: 10px; color: #E5D6C8;")
-        datavolley_layout.addWidget(self.hotkeys_map_label)
-
-        self._update_keyboard_hotkeys_hint()
-        self._update_hotkeys_map_label()
         self._apply_keyboard_mode_ui()
 
         layout.addWidget(datavolley_group)
@@ -794,6 +1103,156 @@ class ScoutPanel(QWidget):
     def get_video_resume_seconds(self) -> float | None:
         return self._resume_video_seconds
 
+    def _reception_memory_key(self, side: str) -> str | None:
+        if not self.current_context:
+            return None
+
+        match_id = self.current_context.get("match_id")
+        set_number = self.current_context.get("set_number")
+        if match_id is None or set_number is None:
+            return None
+
+        try:
+            parsed_match = int(str(match_id))
+            parsed_set = int(str(set_number))
+            if parsed_match <= 0 or parsed_set <= 0:
+                return None
+        except Exception:
+            return None
+
+        safe_side = "away" if side == "away" else "home"
+        return (
+            f"{self.RECEPTION_MEMORY_SETTINGS_PREFIX}{parsed_match}"
+            f"_set_{parsed_set}_{safe_side}"
+        )
+
+    def _normalize_reception_positions(self, parsed) -> dict[str, tuple[float, float]]:
+        if not isinstance(parsed, dict):
+            return {}
+
+        result: dict[str, tuple[float, float]] = {}
+        for number, value in parsed.items():
+            try:
+                x, y = value
+                result[str(number)] = (
+                    min(1.0, max(0.0, float(x))),
+                    min(1.0, max(0.0, float(y))),
+                )
+            except Exception:
+                continue
+        return result
+
+    def _load_reception_positions_for_side_from_db(
+        self, side: str
+    ) -> dict[str, tuple[float, float]]:
+        if self.db is None or not self.current_context:
+            return {}
+
+        match_id = self.current_context.get("match_id")
+        set_number = self.current_context.get("set_number")
+        if match_id is None or set_number is None:
+            return {}
+
+        safe_side = "away" if side == "away" else "home"
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSetReceptionLayout
+
+                row = (
+                    session.query(MatchSetReceptionLayout)
+                    .filter_by(
+                        match_id=int(match_id),
+                        set_number=int(set_number),
+                        team_side=safe_side,
+                    )
+                    .first()
+                )
+                if row is None or not getattr(row, "positions_json", None):
+                    return {}
+
+                parsed = json.loads(str(row.positions_json))
+                return self._normalize_reception_positions(parsed)
+        except Exception:
+            return {}
+
+    def _load_reception_positions_for_side(
+        self, side: str
+    ) -> dict[str, tuple[float, float]]:
+        db_positions = self._load_reception_positions_for_side_from_db(side)
+        if db_positions:
+            return db_positions
+
+        key = self._reception_memory_key(side)
+        if key is None:
+            return {}
+
+        settings = self._shortcuts_settings()
+        raw = settings.value(key, None)
+        if raw is None:
+            return {}
+
+        try:
+            parsed = json.loads(str(raw))
+        except Exception:
+            return {}
+
+        normalized = self._normalize_reception_positions(parsed)
+        if normalized and self.db is not None and self.current_context:
+            self._save_reception_positions_for_side(side, normalized)
+        return normalized
+
+    def _save_reception_positions_for_side(
+        self, side: str, positions: dict[str, tuple[float, float]]
+    ):
+        key = self._reception_memory_key(side)
+
+        serializable = {
+            str(number): [float(value[0]), float(value[1])]
+            for number, value in dict(positions or {}).items()
+        }
+
+        if key is not None:
+            settings = self._shortcuts_settings()
+            settings.setValue(key, json.dumps(serializable, ensure_ascii=False))
+
+        if self.db is None or not self.current_context:
+            return
+
+        match_id = self.current_context.get("match_id")
+        set_number = self.current_context.get("set_number")
+        if match_id is None or set_number is None:
+            return
+
+        safe_side = "away" if side == "away" else "home"
+        payload = json.dumps(serializable, ensure_ascii=False)
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSetReceptionLayout
+
+                row = (
+                    session.query(MatchSetReceptionLayout)
+                    .filter_by(
+                        match_id=int(match_id),
+                        set_number=int(set_number),
+                        team_side=safe_side,
+                    )
+                    .first()
+                )
+                if row is None:
+                    row = MatchSetReceptionLayout(
+                        match_id=int(match_id),
+                        set_number=int(set_number),
+                        team_side=safe_side,
+                        positions_json=payload,
+                    )
+                    session.add(row)
+                else:
+                    row.positions_json = payload
+        except Exception as e:
+            print(f"⚠️ Errore salvataggio layout ricezione su DB: {e}")
+
     def set_video_resume_badge(self, seconds: float | None):
         if not hasattr(self, "video_resume_badge"):
             return
@@ -814,6 +1273,29 @@ class ScoutPanel(QWidget):
             f"Ripreso da {self._format_seconds(safe_seconds)}"
         )
         self.video_resume_badge.setVisible(True)
+
+    def set_match_mode_badge(
+        self,
+        *,
+        editing_completed_match: bool = False,
+        match_status: str | None = None,
+    ):
+        if not hasattr(self, "match_mode_badge"):
+            return
+
+        if editing_completed_match:
+            self.match_mode_badge.setText("Modalità modifica match terminato")
+            self.match_mode_badge.setVisible(True)
+            return
+
+        status = str(match_status or "").strip().lower()
+        if status == "completed":
+            self.match_mode_badge.setText("Match terminato")
+            self.match_mode_badge.setVisible(True)
+            return
+
+        self.match_mode_badge.clear()
+        self.match_mode_badge.setVisible(False)
 
     def _load_keypad_size_mode(self) -> str:
         settings = self._shortcuts_settings()
@@ -1094,6 +1576,325 @@ class ScoutPanel(QWidget):
         self._save_hotkey_map()
         self._update_keyboard_hotkeys_hint()
         self._update_hotkeys_map_label()
+
+    def _default_point_outcome_map(self) -> dict[str, str]:
+        return {
+            "*#": "self",
+            "*=": "opponent",
+            "S#": "self",
+            "S=": "opponent",
+            "R#": "self",
+            "R=": "opponent",
+        }
+
+    def _point_outcome_scope_options(self) -> list[tuple[str, str]]:
+        return [
+            ("global", "Globale"),
+            ("match", "Solo match corrente"),
+            ("set", "Solo set corrente"),
+        ]
+
+    def _load_point_outcome_scope(self) -> str:
+        settings = self._shortcuts_settings()
+        value = settings.value(
+            self.POINT_OUTCOME_SCOPE_SETTINGS_KEY, "global", type=str
+        )
+        scope = str(value or "global").strip().lower()
+        valid = {key for key, _ in self._point_outcome_scope_options()}
+        return scope if scope in valid else "global"
+
+    def _save_point_outcome_scope(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(
+            self.POINT_OUTCOME_SCOPE_SETTINGS_KEY, self.point_outcome_scope
+        )
+
+    def _point_outcome_storage_key(self, scope: str | None = None) -> str:
+        chosen = str(scope or self.point_outcome_scope or "global").strip().lower()
+        if chosen == "match" and self.current_context:
+            match_id = self.current_context.get("match_id")
+            if match_id is not None:
+                return f"{self.POINT_OUTCOME_MAP_MATCH_PREFIX}{match_id}"
+        if chosen == "set" and self.current_context:
+            match_id = self.current_context.get("match_id")
+            set_number = self.current_context.get("set_number")
+            if match_id is not None and set_number is not None:
+                return f"{self.POINT_OUTCOME_MAP_SET_PREFIX}{match_id}_{set_number}"
+        return self.POINT_OUTCOME_MAP_SETTINGS_KEY
+
+    def _decode_point_outcome_map(self, serialized: str | None) -> dict[str, str]:
+        result = dict(self._default_point_outcome_map())
+        if not str(serialized or "").strip():
+            return result
+
+        for line in str(serialized).splitlines():
+            row = line.strip()
+            if not row or "|" not in row:
+                continue
+            key, value = row.split("|", 1)
+            key = str(key).strip().upper()
+            value = str(value).strip().lower()
+            if re.fullmatch(r"[SREABDF\*][#\+!\-=/]", key) and value in {
+                "self",
+                "opponent",
+                "none",
+            }:
+                result[key] = value
+        return result
+
+    def _load_point_outcome_map(self, scope: str | None = None) -> dict[str, str]:
+        settings = self._shortcuts_settings()
+        key = self._point_outcome_storage_key(scope)
+        serialized = settings.value(key, "", type=str)
+        return self._decode_point_outcome_map(serialized)
+
+    def _save_point_outcome_map(self, scope: str | None = None):
+        settings = self._shortcuts_settings()
+        lines = []
+        for key in sorted(self.point_outcome_map.keys()):
+            value = str(self.point_outcome_map.get(key, "none")).strip().lower()
+            if value in {"self", "opponent", "none"} and re.fullmatch(
+                r"[SREABDF\*][#\+!\-=/]", key
+            ):
+                lines.append(f"{key}|{value}")
+
+        storage_key = self._point_outcome_storage_key(scope)
+        settings.setValue(storage_key, "\n".join(lines))
+
+    def _point_outcome_map_to_text(self, rules: dict[str, str]) -> str:
+        rows = [
+            "# Formato: SkillValutazione=esito",
+            "# Esito: self | opponent | none",
+            "# Esempi:",
+            "# S#=self      -> punto a chi esegue la battuta",
+            "# R==opponent  -> errore ricezione, punto all'avversario",
+            "# *#=self      -> fallback per qualsiasi skill con #",
+            "",
+        ]
+
+        for key in sorted(rules.keys()):
+            rows.append(f"{key}={rules[key]}")
+        return "\n".join(rows)
+
+    def _parse_point_outcome_map_text(self, text: str) -> dict[str, str]:
+        parsed: dict[str, str] = {}
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            line = re.sub(r"\s+#.*$", "", line).strip()
+            if not line or "=" not in line:
+                continue
+
+            m = re.fullmatch(
+                r"([SREABDF\*])([#\+!\-=/])\s*=\s*(self|opponent|none)",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if not m:
+                continue
+
+            skill_token = m.group(1).upper()
+            eval_token = m.group(2)
+            outcome = m.group(3).lower()
+            parsed[f"{skill_token}{eval_token}"] = outcome
+
+        return parsed
+
+    def _configure_point_outcome_map(self):
+        current_text = self._point_outcome_map_to_text(self.point_outcome_map)
+        new_text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Mappa punto vinto/perso",
+            "Configura le regole punto (Skill+Valutazione -> esito)",
+            current_text,
+        )
+        if not ok:
+            return
+
+        parsed = self._parse_point_outcome_map_text(new_text)
+        if not parsed:
+            QMessageBox.warning(
+                self,
+                "Mappa non valida",
+                "Nessuna regola valida trovata. Usa formato S#=self o R==opponent.",
+            )
+            return
+
+        self.point_outcome_map = parsed
+        self._save_point_outcome_map()
+
+    def _shortcuts_preview_text(self) -> str:
+        if not self.code_shortcuts:
+            return "Tasti rapidi codifica: -"
+        preview = [f"{label}→{token}" for label, token in self.code_shortcuts[:6]]
+        suffix = " ..." if len(self.code_shortcuts) > 6 else ""
+        return "Tasti rapidi codifica: " + " | ".join(preview) + suffix
+
+    def _hotkeys_preview_text(self) -> str:
+        bindings = self._active_hotkey_bindings()
+        if not bindings:
+            return "Hotkeys: -"
+        action_labels = {
+            action: label for action, label, _ in self._hotkey_action_definitions()
+        }
+        ordered = sorted(bindings.keys(), key=lambda t: int(t[1:]))
+        items = [
+            f"{tok}={action_labels.get(bindings[tok], bindings[tok])}"
+            for tok in ordered
+        ]
+        return "Hotkeys: " + " | ".join(items)
+
+    def _point_outcome_preview_text(self) -> str:
+        scope_label = dict(self._point_outcome_scope_options()).get(
+            self.point_outcome_scope, self.point_outcome_scope
+        )
+        keys = sorted(self.point_outcome_map.keys())
+        if not keys:
+            return f"Mappa punti ({scope_label}): -"
+        sample = [f"{k}={self.point_outcome_map[k]}" for k in keys[:8]]
+        suffix = " ..." if len(keys) > 8 else ""
+        return f"Mappa punti ({scope_label}): " + " | ".join(sample) + suffix
+
+    def open_settings_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Impostazioni Scouting")
+        dialog.setMinimumWidth(520)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(8)
+
+        title = QLabel("Configura scorciatoie e logica punteggio")
+        title.setStyleSheet("font-weight: bold;")
+        layout.addWidget(title)
+
+        lbl_shortcuts = QLabel("")
+        lbl_shortcuts.setWordWrap(True)
+        lbl_shortcuts.setStyleSheet("font-size: 10px; color: #D9CFC5;")
+        layout.addWidget(lbl_shortcuts)
+
+        lbl_hotkeys = QLabel("")
+        lbl_hotkeys.setWordWrap(True)
+        lbl_hotkeys.setStyleSheet("font-size: 10px; color: #D9CFC5;")
+        layout.addWidget(lbl_hotkeys)
+
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(QLabel("Scope mappa punti:"))
+        cmb_scope = QComboBox()
+        for scope_key, scope_label in self._point_outcome_scope_options():
+            cmb_scope.addItem(scope_label, scope_key)
+        idx_scope = cmb_scope.findData(self.point_outcome_scope)
+        if idx_scope >= 0:
+            cmb_scope.setCurrentIndex(idx_scope)
+        scope_row.addWidget(cmb_scope)
+        scope_row.addStretch()
+        layout.addLayout(scope_row)
+
+        copy_row = QHBoxLayout()
+        copy_row.addStretch()
+        btn_copy_global = QPushButton("Duplica regole globali → scope corrente")
+        copy_row.addWidget(btn_copy_global)
+        copy_row.addStretch()
+        layout.addLayout(copy_row)
+
+        lbl_points = QLabel("")
+        lbl_points.setWordWrap(True)
+        lbl_points.setStyleSheet("font-size: 10px; color: #D9CFC5;")
+        layout.addWidget(lbl_points)
+
+        def refresh_preview_labels():
+            lbl_shortcuts.setText(self._shortcuts_preview_text())
+            lbl_hotkeys.setText(self._hotkeys_preview_text())
+            lbl_points.setText(self._point_outcome_preview_text())
+
+            is_global_scope = self.point_outcome_scope == "global"
+            btn_copy_global.setEnabled(not is_global_scope)
+            btn_copy_global.setToolTip(
+                "Seleziona prima scope Match o Set"
+                if is_global_scope
+                else "Copia la mappa globale nello scope corrente"
+            )
+
+        def on_scope_changed():
+            selected = cmb_scope.currentData()
+            new_scope = str(selected or "global").strip().lower()
+            self.point_outcome_scope = new_scope
+            self._save_point_outcome_scope()
+            self.point_outcome_map = self._load_point_outcome_map()
+            refresh_preview_labels()
+
+        def duplicate_global_rules_to_current_scope():
+            if self.point_outcome_scope == "global":
+                QMessageBox.information(
+                    dialog,
+                    "Scope globale selezionato",
+                    "Seleziona prima scope Match o Set per duplicare le regole globali.",
+                )
+                return
+
+            global_rules = self._load_point_outcome_map("global")
+            self.point_outcome_map = dict(global_rules)
+            self._save_point_outcome_map()
+            refresh_preview_labels()
+
+            scope_label = dict(self._point_outcome_scope_options()).get(
+                self.point_outcome_scope, self.point_outcome_scope
+            )
+            QMessageBox.information(
+                dialog,
+                "Regole duplicate",
+                f"Regole globali copiate nello scope: {scope_label}.",
+            )
+
+        cmb_scope.currentIndexChanged.connect(lambda _i: on_scope_changed())
+        btn_copy_global.clicked.connect(duplicate_global_rules_to_current_scope)
+
+        def run_and_refresh(callback):
+            callback()
+            refresh_preview_labels()
+
+        btn_shortcuts = QPushButton("Configura tasti rapidi codifica")
+        btn_shortcuts.clicked.connect(
+            lambda: run_and_refresh(self._configure_code_shortcuts)
+        )
+        layout.addWidget(btn_shortcuts)
+
+        btn_shortcuts_reset = QPushButton("Reset tasti rapidi codifica")
+        btn_shortcuts_reset.clicked.connect(
+            lambda: run_and_refresh(self._reset_code_shortcuts)
+        )
+        layout.addWidget(btn_shortcuts_reset)
+
+        btn_hotkeys = QPushButton("Mappa hotkeys tastiera")
+        btn_hotkeys.clicked.connect(
+            lambda: run_and_refresh(self._configure_hotkeys_map)
+        )
+        layout.addWidget(btn_hotkeys)
+
+        btn_hotkeys_reset = QPushButton("Reset hotkeys tastiera")
+        btn_hotkeys_reset.clicked.connect(
+            lambda: run_and_refresh(self._reset_hotkeys_map)
+        )
+        layout.addWidget(btn_hotkeys_reset)
+
+        btn_points = QPushButton("Mappa punto vinto/perso")
+        btn_points.clicked.connect(
+            lambda: run_and_refresh(self._configure_point_outcome_map)
+        )
+        layout.addWidget(btn_points)
+
+        refresh_preview_labels()
+
+        close_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_box.rejected.connect(dialog.reject)
+        close_box.accepted.connect(dialog.accept)
+        close_box.button(QDialogButtonBox.StandardButton.Close).clicked.connect(
+            dialog.accept
+        )
+        layout.addWidget(close_box)
+
+        dialog.exec()
 
     def _update_hotkeys_map_label(self):
         if not hasattr(self, "hotkeys_map_label"):
@@ -1622,6 +2423,9 @@ class ScoutPanel(QWidget):
 
         if self.video_timestamp_seconds is not None and self.current_context:
             self._resume_video_seconds = self.video_timestamp_seconds
+            self.elapsed_seconds = int(self.video_timestamp_seconds)
+            self.timer_label.setText(self._format_elapsed())
+
             whole_second = int(self.video_timestamp_seconds)
             if whole_second != self._last_saved_video_second:
                 self._save_video_resume_seconds(self.video_timestamp_seconds)
@@ -1815,11 +2619,29 @@ class ScoutPanel(QWidget):
         }
 
     def _resolve_point_team_from_evaluation(
-        self, side: str, evaluation: str | None
+        self,
+        side: str,
+        skill: str | None,
+        evaluation: str | None,
     ) -> str | None:
-        if evaluation == "#":
+        eval_token = str(evaluation or "").strip()
+        if not eval_token:
+            return None
+
+        skill_token = str(skill or "").strip().upper()
+        if skill_token not in self.DATA_VOLLEY_SKILL_ALIASES:
+            skill_token = "*"
+
+        key_specific = f"{skill_token}{eval_token}"
+        key_fallback = f"*{eval_token}"
+        outcome = self.point_outcome_map.get(key_specific)
+        if outcome is None:
+            outcome = self.point_outcome_map.get(key_fallback)
+
+        outcome = str(outcome or "none").strip().lower()
+        if outcome == "self":
             return side
-        if evaluation == "=":
+        if outcome == "opponent":
             return "away" if side == "home" else "home"
         return None
 
@@ -1885,8 +2707,9 @@ class ScoutPanel(QWidget):
             else self.current_context.get("away_team", {}).get("name", "Ospiti")
         )
 
+        skill = parsed.get("skill")
         evaluation = parsed.get("evaluation")
-        point_side = self._resolve_point_team_from_evaluation(side, evaluation)
+        point_side = self._resolve_point_team_from_evaluation(side, skill, evaluation)
 
         snapshot = None
         point_result = None
@@ -1913,7 +2736,7 @@ class ScoutPanel(QWidget):
         event_id = self._persist_event(
             team_side=side,
             player_id=player_id,
-            skill=parsed.get("skill"),
+            skill=skill,
             evaluation=evaluation,
             notes=" | ".join(note_parts),
             kind=history_kind,
@@ -2222,6 +3045,15 @@ class ScoutPanel(QWidget):
         )
         return False
 
+    def _lineup_numbers_for_side(self, side: str) -> list[str]:
+        lineup = self._team_context(side).get("lineup", {})
+        ordered = []
+        for pos in ("P1", "P2", "P3", "P4", "P5", "P6"):
+            normalized = self._normalize_lineup_number(lineup.get(pos))
+            if normalized and normalized not in ordered:
+                ordered.append(normalized)
+        return ordered
+
     def _position_reception_with_prompt(self):
         if not self.current_context:
             return
@@ -2243,58 +3075,58 @@ class ScoutPanel(QWidget):
         elif selected == "Ospiti":
             side = "away"
         else:
-            side = None
-
-        self._position_reception_from_rotation(side)
-
-    def _position_reception_from_rotation(self, receiving_side: str | None = None):
-        if not self.current_context:
-            return
-
-        if receiving_side is None:
             if not self._require_initial_service_selected():
                 return
-            receiving_side = "away" if self.serving_side == "home" else "home"
-        else:
-            receiving_side = "away" if receiving_side == "away" else "home"
+            side = "away" if self.serving_side == "home" else "home"
 
-        setter_number = self.setter_number_by_side.get(receiving_side)
-        if setter_number is None:
-            setter_number = self._detect_setter_number_for_side(receiving_side)
-            self.setter_number_by_side[receiving_side] = setter_number
-
-        if setter_number is None:
+        side = "away" if side == "away" else "home"
+        players = self._lineup_numbers_for_side(side)
+        if not players:
             QMessageBox.warning(
                 self,
-                "Palleggiatore non trovato",
-                "Non riesco a identificare il palleggiatore in campo per posizionare la ricezione.",
+                "Formazione non disponibile",
+                "Non ci sono giocatori in campo da posizionare.",
             )
             return
-
-        setter_pos = self._find_player_position_in_lineup(receiving_side, setter_number)
-        if setter_pos is None:
-            QMessageBox.warning(
-                self,
-                "Posizione palleggiatore non trovata",
-                "Il palleggiatore non risulta in una posizione valida (P1..P6).",
-            )
-            return
-
-        self.reception_rotation_hint[receiving_side] = (
-            f"Rx rot. {setter_pos} (P #{setter_number})"
-        )
-        self._highlight_player_on_courts(receiving_side, setter_number)
 
         team_name = (
             self.current_context.get("home_team", {}).get("name", "Casa")
-            if receiving_side == "home"
+            if side == "home"
             else self.current_context.get("away_team", {}).get("name", "Ospiti")
         )
-        note = f"Posizionata ricezione {team_name}: rotazione {setter_pos} (palleggiatore #{setter_number})"
+        existing_positions = self.reception_manual_positions.get(side, {})
+        lineup_positions = self._team_context(side).get("lineup", {})
+
+        dialog = ReceptionPositionDialog(
+            team_name=team_name,
+            team_side=side,
+            players=players,
+            initial_positions=existing_positions,
+            lineup_positions=lineup_positions,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        placed_positions = dialog.positions()
+        self.reception_manual_positions[side] = dict(placed_positions)
+        self._save_reception_positions_for_side(
+            side, self.reception_manual_positions[side]
+        )
+        if self.current_context is not None:
+            self.current_context["reception_manual_positions"] = {
+                "home": dict(self.reception_manual_positions.get("home", {})),
+                "away": dict(self.reception_manual_positions.get("away", {})),
+            }
+
+        placed_count = len(placed_positions)
+        self.reception_rotation_hint[side] = f"Rx manuale ({placed_count})"
+
+        note = f"Posizionata ricezione {team_name}: {placed_count} giocatori posizionati manualmente"
         self.subtitle.setText(note)
 
         event_id = self._persist_event(
-            team_side=receiving_side,
+            team_side=side,
             skill="R",
             notes=note,
             kind=self.HISTORY_KIND_SYSTEM,
@@ -2554,12 +3386,14 @@ class ScoutPanel(QWidget):
             home.get("lineup", {}),
             libero=home.get("libero"),
             serving=self.serving_side == "home",
+            setter_number=self.setter_number_by_side.get("home"),
         )
         self.away_court.update_lineup(
             away.get("name", "Trasferta"),
             away.get("lineup", {}),
             libero=away.get("libero"),
             serving=self.serving_side == "away",
+            setter_number=self.setter_number_by_side.get("away"),
         )
 
         self._update_initial_service_controls()
@@ -3069,6 +3903,8 @@ class ScoutPanel(QWidget):
             self.initial_service_selected = False
             self.setter_number_by_side = {"home": None, "away": None}
             self.reception_rotation_hint = {"home": "-", "away": "-"}
+            self.reception_manual_positions = {"home": {}, "away": {}}
+            self.point_outcome_map = self._load_point_outcome_map("global")
             self.events_list.clear()
             if self.timer_running:
                 self._toggle_timer()
@@ -3089,6 +3925,7 @@ class ScoutPanel(QWidget):
                 self.code_input.clear()
             self._set_code_team_side("home")
             self.set_video_resume_badge(None)
+            self.set_match_mode_badge(editing_completed_match=False, match_status=None)
             self._update_initial_service_controls()
             self._update_outer_service_hints()
             self._set_controls_enabled(False)
@@ -3105,6 +3942,18 @@ class ScoutPanel(QWidget):
         self.current_context["away_team"].setdefault("lineup", {})
         self.current_context["home_team"].setdefault("number_to_player_id", {})
         self.current_context["away_team"].setdefault("number_to_player_id", {})
+        self.current_context.setdefault("reception_manual_positions", {})
+
+        self.point_outcome_map = self._load_point_outcome_map()
+
+        editing_completed_match = bool(
+            self.current_context.get("editing_completed_match", False)
+        )
+        match_status = self.current_context.get("match_status")
+        self.set_match_mode_badge(
+            editing_completed_match=editing_completed_match,
+            match_status=match_status,
+        )
 
         self.rally_history.clear()
         self.timeouts_used = {"home": 0, "away": 0}
@@ -3119,6 +3968,23 @@ class ScoutPanel(QWidget):
         )
         self.set_video_resume_badge(self._resume_video_seconds)
         self.reception_rotation_hint = {"home": "-", "away": "-"}
+        loaded_manual = self.current_context.get("reception_manual_positions", {})
+        home_manual = dict(loaded_manual.get("home", {}))
+        away_manual = dict(loaded_manual.get("away", {}))
+
+        if not home_manual:
+            home_manual = self._load_reception_positions_for_side("home")
+        if not away_manual:
+            away_manual = self._load_reception_positions_for_side("away")
+
+        self.reception_manual_positions = {
+            "home": home_manual,
+            "away": away_manual,
+        }
+        self.current_context["reception_manual_positions"] = {
+            "home": dict(self.reception_manual_positions.get("home", {})),
+            "away": dict(self.reception_manual_positions.get("away", {})),
+        }
         self.serving_side = self._resolve_serving_side(self.current_context)
         self._apply_serving_side(self.serving_side)
         if hasattr(self, "code_input"):
@@ -3126,6 +3992,8 @@ class ScoutPanel(QWidget):
         self._clear_player_highlight()
 
         self._load_set_state_from_db()
+        if self._resume_video_seconds is not None:
+            self.elapsed_seconds = int(self._resume_video_seconds)
         self._refresh_setter_numbers()
 
         started_set = bool(self.history_records) or (

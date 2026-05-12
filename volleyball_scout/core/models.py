@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -190,6 +191,35 @@ class MatchSet(Base):
 
     def __repr__(self):
         return f"<Set {self.set_number}: {self.score_home}-{self.score_away}>"
+
+
+class MatchSetReceptionLayout(Base):
+    """Layout manuale ricezione per match/set/squadra."""
+
+    __tablename__ = "match_set_reception_layouts"
+    __table_args__ = (
+        UniqueConstraint(
+            "match_id",
+            "set_number",
+            "team_side",
+            name="uq_match_set_reception_layout",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    match_id = Column(Integer, ForeignKey("matches.id"), nullable=False, index=True)
+    set_number = Column(Integer, nullable=False)
+    team_side = Column(String(10), nullable=False)  # home | away
+    positions_json = Column(Text, nullable=False, default="{}")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    match = relationship("Match")
+
+    def __repr__(self):
+        return (
+            f"<ReceptionLayout match={self.match_id} "
+            f"set={self.set_number} side={self.team_side}>"
+        )
 
 
 class ScoutEvent(Base):

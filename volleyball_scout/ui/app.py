@@ -353,6 +353,8 @@ class VolleyballScoutApp(QMainWindow):
         # 3. Gestione incontri
         if RosterSetupWidget:
             self.roster_widget = RosterSetupWidget(self.db)
+            if hasattr(self.roster_widget, "scout_resume_requested"):
+                self.roster_widget.scout_resume_requested.connect(self._on_scout_ready)
         else:
             self.roster_widget = PlaceholderWidget("🧾 Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)

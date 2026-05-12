@@ -859,6 +859,15 @@ class VolleyballScoutApp(QMainWindow):
         theme_menu.addAction(action_light_mode)
         self.theme_actions["light"] = action_light_mode
 
+        preferences_menu.addSeparator()
+
+        action_scout_settings = QAction("Impostazioni Scouting", self)
+        action_scout_settings.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        )
+        action_scout_settings.triggered.connect(self._open_scout_settings)
+        preferences_menu.addAction(action_scout_settings)
+
         # Menu Aiuto
         help_menu = menubar.addMenu("Aiuto")
         help_menu.setIcon(
@@ -902,6 +911,8 @@ class VolleyballScoutApp(QMainWindow):
                 self.roster_widget.roster_completed.connect(
                     self._on_roster_setup_completed
                 )
+            if hasattr(self.roster_widget, "scout_resume_requested"):
+                self.roster_widget.scout_resume_requested.connect(self._on_scout_ready)
         else:
             self.roster_widget = PlaceholderWidget("Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)
@@ -1095,6 +1106,19 @@ class VolleyballScoutApp(QMainWindow):
                 print(
                     f"⚠️ Impossibile aprire automaticamente la formation per match {match_id}"
                 )
+
+    def _open_scout_settings(self):
+        if hasattr(self, "scout_panel") and hasattr(
+            self.scout_panel, "open_settings_dialog"
+        ):
+            self.scout_panel.open_settings_dialog()
+            return
+
+        QMessageBox.information(
+            self,
+            "Impostazioni Scouting",
+            "Pannello scouting non disponibile.",
+        )
 
     def _toggle_theme(self, is_dark: bool):
         """Cambia il tema dell'applicazione"""
