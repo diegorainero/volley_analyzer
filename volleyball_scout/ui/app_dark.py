@@ -1028,8 +1028,9 @@ class VolleyballScoutApp(QMainWindow):
             file_idx = self.video_player.source_type.findData("file")
             if file_idx >= 0:
                 self.video_player.source_type.setCurrentIndex(file_idx)
-            if not self.video_player.source_input.text().strip():
-                self.video_player.source_input.setText(str(video_path))
+            self.video_player.source_input.setText(str(video_path))
+            if hasattr(self.video_player, "connect_current_source"):
+                self.video_player.connect_current_source()
 
         if (
             resume_seconds is not None

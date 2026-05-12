@@ -11,6 +11,7 @@ from PyQt6.QtCore import QRectF, QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -554,6 +555,7 @@ class ScoutPanel(QWidget):
     POINT_OUTCOME_SCOPE_SETTINGS_KEY = "point_outcome_scope"
     POINT_OUTCOME_MAP_MATCH_PREFIX = "point_outcome_map_match_"
     POINT_OUTCOME_MAP_SET_PREFIX = "point_outcome_map_set_"
+    TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY = "timer_sync_with_video"
     VIDEO_MEMORY_SETTINGS_PREFIX = "video_resume_seconds_match_"
     RECEPTION_MEMORY_SETTINGS_PREFIX = "rx_manual_match_"
     HOTKEY_DEFAULTS = {
@@ -608,6 +610,7 @@ class ScoutPanel(QWidget):
         self.hotkey_map = self._load_hotkey_map()
         self.point_outcome_scope = self._load_point_outcome_scope()
         self.point_outcome_map = self._load_point_outcome_map()
+        self.sync_timer_with_video = self._load_timer_sync_with_video()
         self.history_records = []
         self.timeouts_used = {"home": 0, "away": 0}
 
@@ -1346,6 +1349,18 @@ class ScoutPanel(QWidget):
             self.KEYBOARD_MODE_SETTINGS_KEY, "1" if self.keyboard_only_mode else "0"
         )
 
+    def _load_timer_sync_with_video(self) -> bool:
+        settings = self._shortcuts_settings()
+        value = settings.value(self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY, "1", type=str)
+        return str(value or "1").strip().lower() in {"1", "true", "yes"}
+
+    def _save_timer_sync_with_video(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(
+            self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY,
+            "1" if self.sync_timer_with_video else "0",
+        )
+
     def _hotkey_action_definitions(self) -> list[tuple[str, str, bool]]:
         macro_1 = (
             self.KEYPAD_MACRO_PRESETS[0][0]
@@ -1791,6 +1806,10 @@ class ScoutPanel(QWidget):
         scope_row.addStretch()
         layout.addLayout(scope_row)
 
+        chk_sync_timer = QCheckBox("Sincronizza sempre timer scouting con tempo video")
+        chk_sync_timer.setChecked(bool(self.sync_timer_with_video))
+        layout.addWidget(chk_sync_timer)
+
         copy_row = QHBoxLayout()
         copy_row.addStretch()
         btn_copy_global = QPushButton("Duplica regole globali → scope corrente")
@@ -1853,6 +1872,12 @@ class ScoutPanel(QWidget):
         def run_and_refresh(callback):
             callback()
             refresh_preview_labels()
+
+        def on_sync_timer_changed(state: int):
+            self.sync_timer_with_video = state == int(Qt.CheckState.Checked)
+            self._save_timer_sync_with_video()
+
+        chk_sync_timer.stateChanged.connect(on_sync_timer_changed)
 
         btn_shortcuts = QPushButton("Configura tasti rapidi codifica")
         btn_shortcuts.clicked.connect(
@@ -2395,13 +2420,48 @@ class ScoutPanel(QWidget):
         if idx >= 0:
             self.code_team_selector.setCurrentIndex(idx)
 
+    def _persist_current_match_video_path(self, video_path: str | None):
+        if self.db is None or not self.current_context or not video_path:
+            return
+
+        match_id = self.current_context.get("match_id")
+        if match_id is None:
+            return
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import Match
+
+                match = session.query(Match).filter_by(id=int(match_id)).first()
+                if match is not None:
+                    match.video_path = str(video_path)
+        except Exception as e:
+            print(f"⚠️ Errore salvataggio video_path match: {e}")
+
     def set_video_source(self, source_info: dict | None):
         """Riceve info sorgente video dal player (file/webcam/ip)."""
         self.video_source_info = dict(source_info or {})
 
+        recorded_path_raw = self.video_source_info.get("recorded_path")
+        recorded_path = str(recorded_path_raw).strip() if recorded_path_raw else ""
+        if recorded_path:
+            if self.current_context is not None:
+                self.current_context["video_path"] = recorded_path
+            self._persist_current_match_video_path(recorded_path)
+
+        source_type = str(self.video_source_info.get("type", "")).strip() or "-"
+        is_recording = bool(self.video_source_info.get("recording", False))
+        if is_recording:
+            self.video_timestamp_seconds = 0.0
+            if self.sync_timer_with_video:
+                self.elapsed_seconds = 0
+                self.timer_label.setText(self._format_elapsed())
+            self._resume_video_seconds = 0.0
+            self._last_saved_video_second = 0
+
         if hasattr(self, "video_placeholder") and self.video_widget is None:
-            source_type = str(self.video_source_info.get("type", "")).strip() or "-"
-            self.video_placeholder.setText(f"Video: {source_type}")
+            suffix = " (REC)" if is_recording else ""
+            self.video_placeholder.setText(f"Video: {source_type}{suffix}")
 
     def set_video_time(self, seconds: float | None):
         """Aggiorna il timestamp video corrente usato per gli eventi."""
@@ -2423,8 +2483,9 @@ class ScoutPanel(QWidget):
 
         if self.video_timestamp_seconds is not None and self.current_context:
             self._resume_video_seconds = self.video_timestamp_seconds
-            self.elapsed_seconds = int(self.video_timestamp_seconds)
-            self.timer_label.setText(self._format_elapsed())
+            if self.sync_timer_with_video:
+                self.elapsed_seconds = int(self.video_timestamp_seconds)
+                self.timer_label.setText(self._format_elapsed())
 
             whole_second = int(self.video_timestamp_seconds)
             if whole_second != self._last_saved_video_second:
@@ -2771,12 +2832,19 @@ class ScoutPanel(QWidget):
         if hasattr(self, "btn_toggle_keypad") and self.btn_toggle_keypad.isChecked():
             self.btn_toggle_keypad.setChecked(False)
 
+    def _is_editing_completed_match(self) -> bool:
+        if not self.current_context:
+            return False
+        return bool(self.current_context.get("editing_completed_match", False))
+
     def _set_controls_enabled(self, enabled: bool):
         self.btn_point_home.setEnabled(enabled)
         self.btn_point_away.setEnabled(enabled)
         self.btn_undo.setEnabled(enabled)
         self.btn_finish_set.setEnabled(enabled)
-        self.btn_finish_match.setEnabled(enabled)
+        self.btn_finish_match.setEnabled(
+            enabled and not self._is_editing_completed_match()
+        )
         self.btn_set_actions.setEnabled(enabled)
         self.home_court.setEnabled(enabled)
         self.away_court.setEnabled(enabled)
@@ -3711,6 +3779,14 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return
 
+        if self._is_editing_completed_match():
+            QMessageBox.information(
+                self,
+                "Azione bloccata",
+                "Fine Incontro è disabilitato in modalità modifica match terminato.",
+            )
+            return
+
         was_running = self.timer_running
         if self.timer_running:
             self._toggle_timer()
@@ -3731,6 +3807,19 @@ class ScoutPanel(QWidget):
             QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
+            if was_running:
+                self._toggle_timer()
+            return
+
+        confirm_final = QMessageBox.question(
+            self,
+            "Conferma finale",
+            "Conferma DEFINITIVA chiusura incontro?\n"
+            "Questa azione imposta lo stato partita su terminata.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm_final != QMessageBox.StandardButton.Yes:
             if was_running:
                 self._toggle_timer()
             return

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -37,11 +38,17 @@ class VideoPlayer(QWidget):
         self.stream_elapsed_seconds = 0.0
         self.pending_resume_seconds: float | None = None
 
+        self.recording_enabled = False
+        self.video_writer = None
+        self.recording_output_path: str | None = None
+        self.recording_frame_size: tuple[int, int] | None = None
+
         self.frame_timer = QTimer(self)
         self.frame_timer.timeout.connect(self._read_next_frame)
 
         self._setup_ui()
         self._on_source_type_changed()
+        self._update_record_button_state()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -82,6 +89,11 @@ class VideoPlayer(QWidget):
         self.btn_disconnect.setEnabled(False)
         controls_row.addWidget(self.btn_disconnect)
 
+        self.btn_record = QPushButton("Inizia registrazione")
+        self.btn_record.clicked.connect(self._toggle_recording)
+        self.btn_record.setEnabled(False)
+        controls_row.addWidget(self.btn_record)
+
         controls_row.addStretch()
         layout.addLayout(controls_row)
 
@@ -111,6 +123,8 @@ class VideoPlayer(QWidget):
             self.source_input.setPlaceholderText("URL stream IP (rtsp/http)")
             self.btn_browse.setEnabled(False)
 
+        self._update_record_button_state()
+
     def _browse_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -128,6 +142,144 @@ class VideoPlayer(QWidget):
             except ValueError:
                 return source_value
         return source_value
+
+    def _recordings_dir(self) -> Path:
+        target = Path.home() / "VolleyballScoutRecordings"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def _can_record_live_source(self) -> bool:
+        source_kind = (self.current_source or {}).get("type")
+        return bool(
+            cv2 is not None
+            and self.capture is not None
+            and source_kind in {"webcam", "ip"}
+        )
+
+    def _update_record_button_state(self):
+        if not hasattr(self, "btn_record"):
+            return
+
+        can_record = self._can_record_live_source()
+        self.btn_record.setEnabled(can_record or self.recording_enabled)
+        self.btn_record.setText(
+            "Stop registrazione" if self.recording_enabled else "Inizia registrazione"
+        )
+
+    def _emit_source_changed(self):
+        payload = dict(self.current_source or {})
+        if self.recording_output_path:
+            payload["recorded_path"] = self.recording_output_path
+        payload["recording"] = bool(self.recording_enabled)
+        self.source_changed.emit(payload)
+
+    def _toggle_recording(self):
+        if self.recording_enabled:
+            self._stop_recording(silent=False)
+        else:
+            self._start_recording()
+
+    def _start_recording(self):
+        if cv2 is None:
+            return
+        if not self._can_record_live_source():
+            QMessageBox.information(
+                self,
+                "Registrazione non disponibile",
+                "La registrazione è disponibile solo per webcam locale o stream IP connessi.",
+            )
+            return
+
+        width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        if (width <= 0 or height <= 0) and self.last_frame is not None:
+            try:
+                height, width = self.last_frame.shape[:2]
+            except Exception:
+                width, height = 0, 0
+
+        if width <= 0 or height <= 0:
+            QMessageBox.warning(
+                self,
+                "Dimensioni video non valide",
+                "Impossibile determinare la risoluzione della sorgente.",
+            )
+            return
+
+        fps = float(self.capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        if fps <= 1.0 or fps > 120.0:
+            fps = 30.0
+
+        source_kind = str((self.current_source or {}).get("type") or "live")
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = self._recordings_dir() / f"scout_{source_kind}_{stamp}.mp4"
+
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(
+            str(output_path), fourcc, fps, (int(width), int(height))
+        )
+        if writer is None or not writer.isOpened():
+            QMessageBox.warning(
+                self,
+                "Errore registrazione",
+                "Impossibile iniziare la registrazione locale del video.",
+            )
+            return
+
+        self.video_writer = writer
+        self.recording_frame_size = (int(width), int(height))
+        self.recording_output_path = str(output_path)
+        self.recording_enabled = True
+
+        # Sincronizza il tempo scouting al nuovo video registrato (t=0)
+        self.stream_elapsed_seconds = 0.0
+        self.pending_resume_seconds = 0.0
+        self.playback_position_changed.emit(0.0)
+
+        source_kind_text = str((self.current_source or {}).get("type") or "live")
+        self.status_label.setText(f"Stato: connesso ({source_kind_text}) • REC")
+        self._update_record_button_state()
+        self._emit_source_changed()
+
+    def _stop_recording(self, silent: bool = False):
+        if self.video_writer is not None:
+            try:
+                self.video_writer.release()
+            except Exception:
+                pass
+
+        was_recording = self.recording_enabled
+        self.video_writer = None
+        self.recording_frame_size = None
+        self.recording_enabled = False
+
+        source_kind = str((self.current_source or {}).get("type") or "")
+        if self.capture is not None:
+            if self.recording_output_path and was_recording:
+                self.status_label.setText(
+                    f"Stato: connesso ({source_kind}) • registrazione salvata"
+                )
+            else:
+                self.status_label.setText(f"Stato: connesso ({source_kind})")
+
+        self._update_record_button_state()
+        if was_recording and not silent:
+            self._emit_source_changed()
+
+    def connect_current_source(self, force_reconnect: bool = False) -> bool:
+        """Connette la sorgente attualmente impostata nei controlli."""
+        source_kind = self.source_type.currentData()
+        source_value = self.source_input.text().strip()
+
+        if not force_reconnect and self.capture is not None and self.current_source:
+            if (
+                str(self.current_source.get("type") or "") == str(source_kind or "")
+                and str(self.current_source.get("value") or "") == source_value
+            ):
+                return True
+
+        self._connect_source()
+        return self.capture is not None
 
     def set_resume_position(self, seconds: float | None):
         """Imposta/aggiorna il punto di ripartenza in secondi."""
@@ -177,6 +329,8 @@ class VideoPlayer(QWidget):
 
         self._disconnect_source(silent=True)
 
+        self.recording_output_path = None
+
         cap_source = self._build_capture_source(source_kind, source_value)
         capture = cv2.VideoCapture(cap_source)
 
@@ -215,7 +369,8 @@ class VideoPlayer(QWidget):
         self.btn_disconnect.setEnabled(True)
         self.status_label.setText(f"Stato: connesso ({source_kind})")
 
-        self.source_changed.emit(dict(self.current_source))
+        self._update_record_button_state()
+        self._emit_source_changed()
 
     def _read_next_frame(self):
         if cv2 is None or self.capture is None:
@@ -237,6 +392,17 @@ class VideoPlayer(QWidget):
                     f"Stato: connesso ({source_kind}) - nessun frame"
                 )
                 return
+
+        if self.recording_enabled and self.video_writer is not None:
+            frame_to_save = frame
+            if self.recording_frame_size is not None:
+                rec_w, rec_h = self.recording_frame_size
+                if frame.shape[1] != rec_w or frame.shape[0] != rec_h:
+                    frame_to_save = cv2.resize(frame, (rec_w, rec_h))
+            try:
+                self.video_writer.write(frame_to_save)
+            except Exception:
+                pass
 
         current_seconds = 0.0
         if source_kind == "file":
@@ -280,6 +446,9 @@ class VideoPlayer(QWidget):
     def _disconnect_source(self, silent: bool = False):
         self.frame_timer.stop()
 
+        if self.recording_enabled:
+            self._stop_recording(silent=silent)
+
         if self.capture is not None:
             try:
                 self.capture.release()
@@ -292,12 +461,16 @@ class VideoPlayer(QWidget):
 
         self.btn_connect.setEnabled(True)
         self.btn_disconnect.setEnabled(False)
+        self._update_record_button_state()
         self.status_label.setText("Stato: inattivo")
         self.preview_label.clear()
         self.preview_label.setText("Anteprima video non ancora disponibile")
 
         if not silent:
-            self.source_changed.emit({"type": None, "value": None})
+            payload = {"type": None, "value": None, "recording": False}
+            if self.recording_output_path:
+                payload["recorded_path"] = self.recording_output_path
+            self.source_changed.emit(payload)
             self.playback_position_changed.emit(0.0)
 
     def resizeEvent(self, event):
