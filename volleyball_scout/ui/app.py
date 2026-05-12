@@ -400,9 +400,21 @@ class VolleyballScoutApp(QMainWindow):
                         self.scout_panel.set_video_time
                     )
 
-            scout_layout.addWidget(self.video_player, 2)
+            embedded_in_panel = False
+            if hasattr(self, "scout_panel") and hasattr(
+                self.scout_panel, "set_video_widget"
+            ):
+                self.scout_panel.set_video_widget(self.video_player)
+                embedded_in_panel = True
+
+            if not embedded_in_panel:
+                scout_layout.addWidget(self.video_player, 2)
         else:
-            scout_layout.addWidget(QLabel("Video Player not available"), 2)
+            if not (
+                hasattr(self, "scout_panel")
+                and hasattr(self.scout_panel, "set_video_widget")
+            ):
+                scout_layout.addWidget(QLabel("Video Player not available"), 2)
 
         scout_container.setLayout(scout_layout)
         self.content_stack.addWidget(scout_container)
