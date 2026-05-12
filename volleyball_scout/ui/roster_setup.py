@@ -43,6 +43,11 @@ try:
 except Exception:
     get_role_icon = None
 
+try:
+    from volleyball_scout.ui.new_match_dialog import NewMatchDialog
+except Exception:
+    NewMatchDialog = None
+
 
 class RosterSetupWidget(QWidget):
     """Widget per configurare la Gestione Squadre di una partita con sistema frecce"""
@@ -133,6 +138,15 @@ class RosterSetupWidget(QWidget):
         layout = QVBoxLayout(self.match_selection_widget)
 
         layout.addWidget(QLabel("Seleziona una partita per configurare il roster"))
+
+        # Pulsante "Nuova Partita" sopra la lista match
+        self.btn_new_match = QPushButton("Nuova Partita")
+        self.btn_new_match.setMaximumWidth(170)
+        self.btn_new_match.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder)
+        )
+        self.btn_new_match.clicked.connect(self._on_new_match_clicked)
+        layout.addWidget(self.btn_new_match)
 
         # Matches list
         matches_section = QGroupBox("Partite Disponibili")
@@ -459,8 +473,13 @@ class RosterSetupWidget(QWidget):
 
         try:
             with self.db.session_scope() as session:
-                # Nuovo flusso: solo match ancora da iniziare
-                matches = session.query(Match).filter(Match.status == "draft").all()
+                # Nuovo flusso: solo match ancora da iniziare, ordinati per data decrescente
+                matches = (
+                    session.query(Match)
+                    .filter(Match.status == "draft")
+                    .order_by(Match.date.desc())
+                    .all()
+                )
 
                 if not matches:
                     item = QListWidgetItem("(Nessuna partita)")
@@ -487,6 +506,26 @@ class RosterSetupWidget(QWidget):
         if match_id:
             self.match_id = match_id
             self._load_match(match_id)
+
+    def _on_new_match_clicked(self):
+        """Apri il dialog per creare una nuova partita"""
+        if NewMatchDialog is None:
+            QMessageBox.critical(
+                self,
+                "Errore",
+                "Componente Nuova Partita non disponibile.",
+            )
+            return
+
+        dialog = NewMatchDialog(self.db, self)
+        dialog.match_created.connect(self._on_new_match_created)
+        dialog.exec()
+
+    def _on_new_match_created(self, match_id: int):
+        """Aggiorna la lista match e apre la partita appena creata"""
+        self.load_matches()
+        self.match_id = match_id
+        self._load_match(match_id)
 
     def _load_match(self, match_id: int):
         """Carica i dati del match e mostra la pagina di setup"""

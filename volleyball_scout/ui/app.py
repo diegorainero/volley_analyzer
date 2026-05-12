@@ -149,7 +149,7 @@ if RosterSetupWidget is None:
         def __init__(self, db_manager, parent=None):
             super().__init__(parent)
             layout = QVBoxLayout()
-            layout.addWidget(QLabel("🧾 Gestione Squadre (non ancora implementato)"))
+            layout.addWidget(QLabel("🧾 Gestione incontri (non ancora implementato)"))
             layout.addStretch()
             self.setLayout(layout)
 
@@ -241,7 +241,7 @@ class NavigationMenu(QWidget):
         sections = [
             ("🏠 Dashboard", "dashboard"),
             ("👥 Squadre e Giocatori", "teams"),
-            ("🧾 Gestione Squadre", "roster"),
+            ("🧾 Gestione incontri", "roster"),
             ("🏐 Formazioni", "formation"),
             ("📡 Scouting Live", "scout"),
             ("📈 Statistiche", "stats"),
@@ -350,11 +350,11 @@ class VolleyballScoutApp(QMainWindow):
             self.teams_widget = PlaceholderWidget("👥 Squadre e Giocatori")
         self.content_stack.addWidget(self.teams_widget)
 
-        # 3. Gestione Squadre
+        # 3. Gestione incontri
         if RosterSetupWidget:
             self.roster_widget = RosterSetupWidget(self.db)
         else:
-            self.roster_widget = PlaceholderWidget("🧾 Gestione Squadre")
+            self.roster_widget = PlaceholderWidget("🧾 Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)
 
         # 4. Formation Setup Complete (with match selector)
@@ -372,7 +372,12 @@ class VolleyballScoutApp(QMainWindow):
         scout_container = QWidget()
         scout_layout = QHBoxLayout()
 
-        if ScoutPanel:
+        if ScoutPanel and self.db is not None:
+            self.scout_panel = ScoutPanel(self.db)
+            if hasattr(self.scout_panel, "set_finished"):
+                self.scout_panel.set_finished.connect(self._on_set_finished)
+            scout_layout.addWidget(self.scout_panel, 1)
+        elif ScoutPanel:
             self.scout_panel = ScoutPanel()
             scout_layout.addWidget(self.scout_panel, 1)
         else:
@@ -380,12 +385,33 @@ class VolleyballScoutApp(QMainWindow):
 
         if VideoPlayer:
             self.video_player = VideoPlayer()
+
+            if hasattr(self, "scout_panel"):
+                if hasattr(self.video_player, "source_changed") and hasattr(
+                    self.scout_panel, "set_video_source"
+                ):
+                    self.video_player.source_changed.connect(
+                        self.scout_panel.set_video_source
+                    )
+                if hasattr(self.video_player, "playback_position_changed") and hasattr(
+                    self.scout_panel, "set_video_time"
+                ):
+                    self.video_player.playback_position_changed.connect(
+                        self.scout_panel.set_video_time
+                    )
+
             scout_layout.addWidget(self.video_player, 2)
         else:
             scout_layout.addWidget(QLabel("Video Player not available"), 2)
 
         scout_container.setLayout(scout_layout)
         self.content_stack.addWidget(scout_container)
+
+        # Collega il completamento formazione al passaggio in scouting live
+        if hasattr(self, "formation_widget") and hasattr(
+            self.formation_widget, "scout_ready"
+        ):
+            self.formation_widget.scout_ready.connect(self._on_scout_ready)
 
         # 6. Statistics
         if StatsView:
@@ -416,6 +442,69 @@ class VolleyballScoutApp(QMainWindow):
             # Refresh della formation quando viene visualizzata
             if section_id == "formation" and self.db:
                 self._refresh_formation_panel()
+
+    def _on_scout_ready(self, scout_payload: dict):
+        """Quando la formazione è confermata, carica il contesto in Scouting Live e naviga."""
+        if hasattr(self, "scout_panel") and hasattr(
+            self.scout_panel, "load_match_context"
+        ):
+            self.scout_panel.load_match_context(scout_payload)
+
+        video_path = (
+            scout_payload.get("video_path") if isinstance(scout_payload, dict) else None
+        )
+        if (
+            video_path
+            and hasattr(self, "video_player")
+            and hasattr(self.video_player, "source_type")
+            and hasattr(self.video_player, "source_input")
+        ):
+            file_idx = self.video_player.source_type.findData("file")
+            if file_idx >= 0:
+                self.video_player.source_type.setCurrentIndex(file_idx)
+            if not self.video_player.source_input.text().strip():
+                self.video_player.source_input.setText(str(video_path))
+
+        self._on_section_selected("scout")
+
+    def _on_set_finished(self, payload: dict):
+        """Dopo Fine Set, torna alla formazione o chiude il match se concluso."""
+        match_id = payload.get("match_id") if isinstance(payload, dict) else None
+        next_set_number = (
+            payload.get("next_set_number") if isinstance(payload, dict) else None
+        )
+        match_completed = (
+            bool(payload.get("match_completed")) if isinstance(payload, dict) else False
+        )
+
+        self._on_section_selected("formation")
+
+        if match_completed:
+            if hasattr(self, "formation_widget") and hasattr(
+                self.formation_widget, "stacked_widget"
+            ):
+                self.formation_widget.stacked_widget.setCurrentIndex(0)
+            if hasattr(self, "formation_widget") and hasattr(
+                self.formation_widget, "matches_widget"
+            ):
+                self.formation_widget.matches_widget._load_matches()
+
+            return
+
+        if (
+            match_id is not None
+            and next_set_number is not None
+            and hasattr(self, "formation_widget")
+            and hasattr(self.formation_widget, "open_match_by_id")
+        ):
+            opened = self.formation_widget.open_match_by_id(
+                match_id,
+                set_number=next_set_number,
+            )
+            if not opened:
+                print(
+                    f"⚠️ Impossibile aprire automaticamente la formation per match {match_id} (set {next_set_number})"
+                )
 
     def _refresh_formation_panel(self):
         """Ricarica il FormationPanel con i dati attuali dal database"""

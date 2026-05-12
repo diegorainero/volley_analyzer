@@ -8,6 +8,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QStyle,
@@ -101,6 +102,7 @@ class FormationSetupMatches(QWidget):
                 matches_data = (
                     session.query(Match)
                     .filter(Match.status.in_(["draft", "in_progress"]))
+                    .order_by(Match.date.desc())
                     .all()
                 )
 
@@ -175,11 +177,15 @@ class FormationSetupComplete(QWidget):
     Index 1: FormationPanel (dettagli formazione)
     """
 
+    # Emesso quando la formazione è confermata e pronta per avviare lo scouting live
+    scout_ready = pyqtSignal(dict)
+
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self.db = db_manager
         self.current_match = None
         self.current_formation_panel = None
+        self.target_set_number = 1
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -202,11 +208,42 @@ class FormationSetupComplete(QWidget):
         # Mostra la lista di match all'inizio
         self.stacked_widget.setCurrentIndex(0)
 
+    def _guess_next_set_number(self, match_id: int) -> int:
+        """Stima il set da configurare in base allo stato corrente del match."""
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSet
+
+                sets = (
+                    session.query(MatchSet)
+                    .filter(MatchSet.match_id == match_id)
+                    .order_by(MatchSet.set_number.desc())
+                    .all()
+                )
+
+                if not sets:
+                    return 1
+
+                # Se esiste un set senza winner e ancora a 0-0, considera quello come attivo
+                for set_obj in sets:
+                    if (
+                        set_obj.winner is None
+                        and (set_obj.score_home or 0) == 0
+                        and (set_obj.score_away or 0) == 0
+                    ):
+                        return max(1, int(set_obj.set_number or 1))
+
+                last_set_number = int(sets[0].set_number or 1)
+                return min(last_set_number + 1, 5)
+        except Exception:
+            return 1
+
     def _on_match_selected(self, match):
         """
         Quando l'utente seleziona una partita, carica la formazione e naviga
         """
         self.current_match = match
+        self.target_set_number = self._guess_next_set_number(match["id"])
         self._load_and_show_formation(match)
 
     def _load_and_show_formation(self, match):
@@ -324,9 +361,12 @@ class FormationSetupComplete(QWidget):
                 )
                 self.current_formation_panel.match_id = match["id"]
 
-                # Connetti il segnale per tornare alla lista
+                # Connetti i segnali della formation panel
                 self.current_formation_panel.back_requested.connect(
                     self._on_back_to_matches
+                )
+                self.current_formation_panel.formation_confirmed.connect(
+                    self._on_formation_confirmed
                 )
 
                 # Inserisci il widget in index 1 e mostralo
@@ -341,6 +381,192 @@ class FormationSetupComplete(QWidget):
 
             traceback.print_exc()
 
+    def _extract_team_lineup(self, team_id: int) -> dict:
+        """Estrae la formazione in campo (P1..P6 + libero) per una squadra."""
+        if not self.current_formation_panel:
+            return {"positions": {}, "libero": None}
+
+        team_widget = self.current_formation_panel.team_widgets.get(team_id)
+        if team_widget is None:
+            return {"positions": {}, "libero": None}
+
+        positions = {}
+        for idx in range(6):
+            slot = team_widget.formation_slots.get(idx)
+            position_code = f"P{idx + 1}"
+            positions[position_code] = slot.player_number if slot else None
+
+        libero_number = None
+        for slot in team_widget.libero_slots.values():
+            if slot.player_number is not None:
+                libero_number = slot.player_number
+                break
+
+        return {"positions": positions, "libero": libero_number}
+
+    def _persist_confirmed_formation(self, formation_data: dict):
+        """Persisti la formazione confermata come line-up iniziale del set target."""
+        if not self.current_match:
+            raise ValueError("Nessun match selezionato")
+
+        match_id = self.current_match["id"]
+        set_number = max(1, int(self.target_set_number or 1))
+        titolari_by_team = formation_data.get("titolari", {})
+
+        with self.db.session_scope() as session:
+            from volleyball_scout.core.models import Match, MatchPlayer, MatchSet
+
+            match_obj = session.query(Match).filter_by(id=match_id).first()
+            if match_obj is None:
+                raise ValueError(f"Match {match_id} non trovato")
+
+            # Reset titolari sul roster del match e applica i nuovi titolari
+            for team_id, starter_ids in titolari_by_team.items():
+                session.query(MatchPlayer).filter_by(
+                    match_id=match_id, team_id=team_id
+                ).update({MatchPlayer.is_starter: False}, synchronize_session=False)
+
+                if starter_ids:
+                    session.query(MatchPlayer).filter(
+                        MatchPlayer.match_id == match_id,
+                        MatchPlayer.team_id == team_id,
+                        MatchPlayer.player_id.in_(starter_ids),
+                    ).update({MatchPlayer.is_starter: True}, synchronize_session=False)
+
+            # Garantisce l'esistenza del set target
+            target_set = (
+                session.query(MatchSet)
+                .filter_by(match_id=match_id, set_number=set_number)
+                .first()
+            )
+            if target_set is None:
+                target_set = MatchSet(
+                    match_id=match_id,
+                    set_number=set_number,
+                    score_home=0,
+                    score_away=0,
+                )
+                session.add(target_set)
+            else:
+                # Reset stato set quando si reimposta la formazione iniziale
+                target_set.score_home = 0
+                target_set.score_away = 0
+                target_set.duration = None
+                target_set.winner = None
+
+            # Aggiorna stato match e metodo di gioco
+            match_obj.status = "in_progress"
+            match_obj.game_method = formation_data.get("game_method", "P-S-C")
+
+    def _build_scout_payload(self, formation_data: dict) -> dict:
+        """Costruisce il payload da inviare alla schermata Scouting Live."""
+        if not self.current_match:
+            return {}
+
+        home_team_id = self.current_match.get("home_team_id")
+        away_team_id = self.current_match.get("away_team_id")
+        match_id = self.current_match.get("id")
+        set_number = max(1, int(self.target_set_number or 1))
+        score_home = 0
+        score_away = 0
+        video_offset_seconds = 0.0
+        video_path = None
+
+        def build_number_map(session, team_id: int | None) -> dict:
+            if team_id is None or match_id is None:
+                return {}
+
+            from volleyball_scout.core.models import MatchPlayer
+
+            mapping = {}
+            rows = (
+                session.query(MatchPlayer)
+                .filter_by(match_id=match_id, team_id=team_id)
+                .all()
+            )
+            for row in rows:
+                if row.number is None or row.player_id is None:
+                    continue
+                num = str(int(row.number))
+                mapping[num] = int(row.player_id)
+                mapping[num.zfill(2)] = int(row.player_id)
+            return mapping
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import Match, MatchSet
+
+                target_set = (
+                    session.query(MatchSet)
+                    .filter_by(match_id=match_id, set_number=set_number)
+                    .first()
+                )
+                if target_set is not None:
+                    score_home = int(target_set.score_home or 0)
+                    score_away = int(target_set.score_away or 0)
+
+                match_obj = session.query(Match).filter_by(id=match_id).first()
+                if match_obj is not None:
+                    video_offset_seconds = float(match_obj.video_offset or 0.0)
+                    video_path = match_obj.video_path
+
+                home_number_to_player_id = build_number_map(session, home_team_id)
+                away_number_to_player_id = build_number_map(session, away_team_id)
+        except Exception:
+            score_home = 0
+            score_away = 0
+            video_offset_seconds = 0.0
+            video_path = None
+            home_number_to_player_id = {}
+            away_number_to_player_id = {}
+
+        home_lineup = self._extract_team_lineup(home_team_id) if home_team_id else {}
+        away_lineup = self._extract_team_lineup(away_team_id) if away_team_id else {}
+
+        return {
+            "match_id": match_id,
+            "set_number": set_number,
+            "score_home": score_home,
+            "score_away": score_away,
+            "video_offset_seconds": video_offset_seconds,
+            "video_path": video_path,
+            "game_method": formation_data.get("game_method", "P-S-C"),
+            "game_method_by_team": formation_data.get("game_method_by_team", {}),
+            "home_team": {
+                "id": home_team_id,
+                "name": self.current_match.get("home_team", "Home"),
+                "lineup": home_lineup.get("positions", {}),
+                "libero": home_lineup.get("libero"),
+                "number_to_player_id": home_number_to_player_id,
+            },
+            "away_team": {
+                "id": away_team_id,
+                "name": self.current_match.get("away_team", "Away"),
+                "lineup": away_lineup.get("positions", {}),
+                "libero": away_lineup.get("libero"),
+                "number_to_player_id": away_number_to_player_id,
+            },
+            # Default: squadra di casa al servizio a inizio set
+            "serving_team_id": home_team_id,
+        }
+
+    def _on_formation_confirmed(self, formation_data: dict):
+        """Persisti la formazione confermata e avvia il flusso di scouting live."""
+        try:
+            self._persist_confirmed_formation(formation_data)
+            scout_payload = self._build_scout_payload(formation_data)
+            self.scout_ready.emit(scout_payload)
+        except Exception as e:
+            print(f"⚠️ Error confirming formation: {e}")
+            import traceback
+
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "Errore salvataggio formazione",
+                f"Impossibile salvare la formazione confermata: {e}",
+            )
+
     def _on_back_to_matches(self):
         """
         Quando l'utente clicca il pulsante "Indietro", torna alla lista di match
@@ -349,12 +575,17 @@ class FormationSetupComplete(QWidget):
         # Aggiorna la lista
         self.matches_widget._load_matches()
 
-    def open_match_by_id(self, match_id: int) -> bool:
+    def open_match_by_id(self, match_id: int, set_number: int | None = None) -> bool:
         """Apre la formation panel per un match_id specifico se disponibile."""
         self.matches_widget._load_matches()
         for match in self.matches_widget.matches:
             if match["id"] == match_id:
-                self._on_match_selected(match)
+                self.current_match = match
+                if set_number is not None:
+                    self.target_set_number = max(1, int(set_number))
+                else:
+                    self.target_set_number = self._guess_next_set_number(match_id)
+                self._load_and_show_formation(match)
                 return True
         return False
 
