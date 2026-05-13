@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
+from queue import Empty, Full, Queue
+from threading import Lock
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -13,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +27,269 @@ try:
     import cv2
 except Exception:
     cv2 = None
+
+
+class CaptureWorker(QThread):
+    """Acquisizione frame in thread separato con supporto seek per file."""
+
+    frame_captured = pyqtSignal(object, float, float, str)
+    capture_warning = pyqtSignal(str)
+
+    def __init__(
+        self,
+        capture,
+        source_kind: str,
+        frame_interval_seconds: float,
+        *,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.capture = capture
+        self.source_kind = str(source_kind or "")
+        self.frame_interval_seconds = float(max(0.001, frame_interval_seconds))
+
+        self._stop_requested = False
+        self._warning_emitted = False
+        self._stream_elapsed_seconds = 0.0
+        self._lock = Lock()
+        self._seek_seconds: float | None = None
+
+    def request_stop(self):
+        with self._lock:
+            self._stop_requested = True
+
+    def request_seek(self, seconds: float):
+        if self.source_kind != "file":
+            return
+        with self._lock:
+            self._seek_seconds = max(0.0, float(seconds))
+
+    def _consume_seek(self) -> float | None:
+        with self._lock:
+            target = self._seek_seconds
+            self._seek_seconds = None
+        return target
+
+    def _is_stop_requested(self) -> bool:
+        with self._lock:
+            return bool(self._stop_requested)
+
+    def run(self):
+        if cv2 is None or self.capture is None:
+            return
+
+        while not self._is_stop_requested():
+            seek_target = self._consume_seek()
+            if seek_target is not None and self.source_kind == "file":
+                try:
+                    self.capture.set(cv2.CAP_PROP_POS_MSEC, float(seek_target) * 1000.0)
+                    self._stream_elapsed_seconds = float(seek_target)
+                except Exception:
+                    pass
+
+            decode_started = time.perf_counter()
+            ok, frame = self.capture.read()
+            decode_ms = (time.perf_counter() - decode_started) * 1000.0
+
+            if not ok or frame is None:
+                if self.source_kind == "file":
+                    try:
+                        self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    except Exception:
+                        pass
+                    continue
+
+                if not self._warning_emitted:
+                    self.capture_warning.emit(
+                        f"Stato: connesso ({self.source_kind}) - nessun frame"
+                    )
+                    self._warning_emitted = True
+                time.sleep(min(0.1, self.frame_interval_seconds))
+                continue
+
+            self._warning_emitted = False
+
+            if self.source_kind == "file":
+                current_seconds = (
+                    float(self.capture.get(cv2.CAP_PROP_POS_MSEC) or 0.0) / 1000.0
+                )
+                if current_seconds <= 0.0:
+                    current_seconds = self._stream_elapsed_seconds
+                self._stream_elapsed_seconds = float(current_seconds)
+            else:
+                self._stream_elapsed_seconds += self.frame_interval_seconds
+                current_seconds = self._stream_elapsed_seconds
+
+            self.frame_captured.emit(
+                frame,
+                float(max(0.0, current_seconds)),
+                float(max(0.0, decode_ms)),
+                self.source_kind,
+            )
+
+            if self.source_kind == "file":
+                time.sleep(self.frame_interval_seconds)
+
+
+class RecordingWorker(QThread):
+    """Writer asincrono: salva video principale + segmenti crash-safe senza bloccare UI."""
+
+    worker_error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        output_path: Path,
+        crashsafe_segment_dir: Path,
+        fps: float,
+        frame_size: tuple[int, int],
+        *,
+        crashsafe_segment_duration_seconds: float = 8.0,
+        queue_size: int = 180,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.output_path = Path(output_path)
+        self.crashsafe_segment_dir = Path(crashsafe_segment_dir)
+        self.fps = float(max(1.0, fps))
+        self.frame_size = (int(frame_size[0]), int(frame_size[1]))
+        self.crashsafe_segment_duration_seconds = float(
+            max(1.0, crashsafe_segment_duration_seconds)
+        )
+
+        self._queue = Queue(maxsize=max(10, int(queue_size)))
+        self._stop_requested = False
+        self._dropped_frames = 0
+
+        self._main_writer = self._create_writer(
+            self.output_path,
+            ["mp4v", "XVID", "MJPG"],
+        )
+
+        self._segment_writer = None
+        self._segment_index = 0
+        self._segment_start_seconds = 0.0
+
+        self.startup_error: str | None = None
+        if self._main_writer is None:
+            self.startup_error = "Impossibile creare il writer video principale."
+        else:
+            self.crashsafe_segment_dir.mkdir(parents=True, exist_ok=True)
+            if not self._open_new_segment(0.0):
+                self.startup_error = (
+                    "Impossibile creare il writer crash-safe a segmenti."
+                )
+
+    @property
+    def dropped_frames(self) -> int:
+        return int(self._dropped_frames)
+
+    def is_ready(self) -> bool:
+        return self.startup_error is None and self._main_writer is not None
+
+    def enqueue_frame(self, frame, current_seconds: float) -> bool:
+        if not self.is_ready():
+            return False
+
+        try:
+            frame_to_queue = frame.copy()
+        except Exception:
+            frame_to_queue = frame
+
+        try:
+            self._queue.put_nowait((float(current_seconds), frame_to_queue))
+            return True
+        except Full:
+            self._dropped_frames += 1
+            return False
+
+    def request_stop(self):
+        self._stop_requested = True
+
+    def _create_writer(self, path: Path, codec_candidates: list[str]):
+        if cv2 is None:
+            return None
+
+        width, height = self.frame_size
+        for codec in codec_candidates:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                writer = cv2.VideoWriter(
+                    str(path),
+                    fourcc,
+                    float(self.fps),
+                    (int(width), int(height)),
+                )
+                if writer is not None and writer.isOpened():
+                    return writer
+                if writer is not None:
+                    writer.release()
+            except Exception:
+                continue
+        return None
+
+    def _open_new_segment(self, start_seconds: float) -> bool:
+        if self._segment_writer is not None:
+            try:
+                self._segment_writer.release()
+            except Exception:
+                pass
+            self._segment_writer = None
+
+        self._segment_index += 1
+        self._segment_start_seconds = float(max(0.0, start_seconds))
+        segment_path = (
+            self.crashsafe_segment_dir / f"segment_{self._segment_index:06d}.avi"
+        )
+        self._segment_writer = self._create_writer(
+            segment_path, ["MJPG", "XVID", "mp4v"]
+        )
+        return self._segment_writer is not None
+
+    def _rotate_segment_if_needed(self, current_seconds: float):
+        if self._segment_writer is None:
+            return
+
+        if float(current_seconds) - float(self._segment_start_seconds) >= float(
+            self.crashsafe_segment_duration_seconds
+        ):
+            self._open_new_segment(current_seconds)
+
+    def run(self):
+        while True:
+            if self._stop_requested and self._queue.empty():
+                break
+
+            try:
+                current_seconds, frame = self._queue.get(timeout=0.1)
+            except Empty:
+                continue
+
+            try:
+                if self._main_writer is not None:
+                    self._main_writer.write(frame)
+            except Exception as exc:
+                self.worker_error.emit(f"Writer principale errore: {exc}")
+
+            try:
+                self._rotate_segment_if_needed(float(current_seconds))
+                if self._segment_writer is not None:
+                    self._segment_writer.write(frame)
+            except Exception as exc:
+                self.worker_error.emit(f"Writer crash-safe errore: {exc}")
+
+        if self._main_writer is not None:
+            try:
+                self._main_writer.release()
+            except Exception:
+                pass
+            self._main_writer = None
+
+        if self._segment_writer is not None:
+            try:
+                self._segment_writer.release()
+            except Exception:
+                pass
+            self._segment_writer = None
 
 
 class VideoPlayer(QWidget):
@@ -33,22 +302,76 @@ class VideoPlayer(QWidget):
         super().__init__(parent)
         self.current_source = None
         self.capture = None
+        self.capture_worker: CaptureWorker | None = None
         self.last_frame = None
+        self.pending_preview_frame = None
+        self.pending_preview_seconds = 0.0
+        self.pending_preview_source_kind = ""
+        self.pending_preview_dirty = False
         self.frame_interval_seconds = 1.0 / 30.0
         self.stream_elapsed_seconds = 0.0
+        self.source_fps = 30.0
+        self.source_width = 0
+        self.source_height = 0
         self.pending_resume_seconds: float | None = None
 
         self.recording_enabled = False
-        self.video_writer = None
+        self.recording_worker: RecordingWorker | None = None
         self.recording_output_path: str | None = None
         self.recording_frame_size: tuple[int, int] | None = None
+        self.recording_queue_size = 180
+        self.recording_queue_dropped_frames = 0
 
-        self.frame_timer = QTimer(self)
-        self.frame_timer.timeout.connect(self._read_next_frame)
+        self.crashsafe_segment_dir: Path | None = None
+        self.crashsafe_segment_duration_seconds = 8.0
+
+        self.preview_delay_seconds = 0.0
+        self.delay_buffer = deque()
+
+        # Performance profile (live preview)
+        self.performance_profile = "low_latency"
+        self.preview_target_fps = 25.0
+        self.preview_max_width = 960
+        self.live_capture_buffer_size = 1
+        self.drop_old_live_frames = True
+        self.last_preview_render_ts = 0.0
+
+        # Metriche runtime (finestra mobile di 1s)
+        self.metrics_window_start_ts = time.perf_counter()
+        self.metrics_input_frames = 0
+        self.metrics_rendered_frames = 0
+        self.metrics_dropped_frames = 0
+        self.metrics_decode_ms_sum = 0.0
+        self.metrics_decode_samples = 0
+        self.metrics_render_ms_sum = 0.0
+        self.metrics_render_samples = 0
+        self.metrics_warning_threshold_fps = 18.0
+        self.metrics_warning_threshold_drop_pct = 20.0
+
+        # Riconnessione automatica stream IP
+        self.ip_reconnect_enabled = True
+        self.ip_reconnect_attempt = 0
+        self.ip_reconnect_base_delay_seconds = 1.0
+        self.ip_reconnect_max_delay_seconds = 10.0
+        self.ip_reconnect_reason = ""
+
+        self.render_timer = QTimer(self)
+        self.render_timer.setInterval(15)
+        self.render_timer.timeout.connect(self._render_pending_frame)
+
+        self.metrics_timer = QTimer(self)
+        self.metrics_timer.setInterval(1000)
+        self.metrics_timer.timeout.connect(self._refresh_metrics_label)
+
+        self.ip_reconnect_timer = QTimer(self)
+        self.ip_reconnect_timer.setSingleShot(True)
+        self.ip_reconnect_timer.timeout.connect(self._attempt_ip_reconnect)
 
         self._setup_ui()
+        self._apply_performance_profile(self.performance_profile)
         self._on_source_type_changed()
         self._update_record_button_state()
+        self.metrics_timer.start()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -71,17 +394,30 @@ class VideoPlayer(QWidget):
 
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText("Seleziona un file video")
+        self.source_input.editingFinished.connect(self._on_source_input_edited)
         source_row.addWidget(self.source_input, 1)
+
+        self.webcam_sources = QComboBox()
+        self.webcam_sources.setVisible(False)
+        self.webcam_sources.currentIndexChanged.connect(self._on_webcam_source_changed)
+        source_row.addWidget(self.webcam_sources, 1)
 
         self.btn_browse = QPushButton("Sfoglia")
         self.btn_browse.clicked.connect(self._browse_file)
         source_row.addWidget(self.btn_browse)
 
+        self.btn_refresh_webcams = QPushButton("Aggiorna webcam")
+        self.btn_refresh_webcams.setVisible(False)
+        self.btn_refresh_webcams.clicked.connect(self._refresh_webcam_sources)
+        source_row.addWidget(self.btn_refresh_webcams)
+
         layout.addLayout(source_row)
 
         controls_row = QHBoxLayout()
         self.btn_connect = QPushButton("Connetti")
-        self.btn_connect.clicked.connect(self._connect_source)
+        self.btn_connect.clicked.connect(
+            lambda _checked=False: self._connect_source(show_errors=True)
+        )
         controls_row.addWidget(self.btn_connect)
 
         self.btn_disconnect = QPushButton("Disconnetti")
@@ -93,6 +429,73 @@ class VideoPlayer(QWidget):
         self.btn_record.clicked.connect(self._toggle_recording)
         self.btn_record.setEnabled(False)
         controls_row.addWidget(self.btn_record)
+
+        controls_row.addWidget(QLabel("Preset:"))
+
+        self.performance_preset = QComboBox()
+        self.performance_preset.addItem("Bassa latenza", "low_latency")
+        self.performance_preset.addItem("Bilanciato", "balanced")
+        self.performance_preset.addItem("Qualità", "quality")
+        self.performance_preset.currentIndexChanged.connect(
+            self._on_performance_profile_changed
+        )
+        controls_row.addWidget(self.performance_preset)
+
+        controls_row.addWidget(QLabel("Delay:"))
+
+        self.btn_delay_reset = QPushButton("0")
+        self.btn_delay_reset.setToolTip("Azzera il delay preview")
+        self.btn_delay_reset.clicked.connect(lambda: self._set_preview_delay(0.0))
+        controls_row.addWidget(self.btn_delay_reset)
+
+        self.btn_delay_plus_1 = QPushButton("+1")
+        self.btn_delay_plus_1.clicked.connect(lambda: self._change_preview_delay(1.0))
+        controls_row.addWidget(self.btn_delay_plus_1)
+
+        self.btn_delay_plus_2 = QPushButton("+2")
+        self.btn_delay_plus_2.clicked.connect(lambda: self._change_preview_delay(2.0))
+        controls_row.addWidget(self.btn_delay_plus_2)
+
+        self.btn_delay_plus_3 = QPushButton("+3")
+        self.btn_delay_plus_3.clicked.connect(lambda: self._change_preview_delay(3.0))
+        controls_row.addWidget(self.btn_delay_plus_3)
+
+        self.spin_delay_custom = QSpinBox()
+        self.spin_delay_custom.setRange(1, 120)
+        self.spin_delay_custom.setValue(5)
+        self.spin_delay_custom.setSuffix(" s")
+        self.spin_delay_custom.setToolTip("Delay personalizzato (secondi)")
+        controls_row.addWidget(self.spin_delay_custom)
+
+        self.btn_delay_plus_n = QPushButton("+n")
+        self.btn_delay_plus_n.clicked.connect(
+            lambda: self._change_preview_delay(float(self.spin_delay_custom.value()))
+        )
+        controls_row.addWidget(self.btn_delay_plus_n)
+
+        self.delay_label = QLabel("Delay attivo: 0.0s")
+        self.delay_label.setStyleSheet("font-size: 11px;")
+        controls_row.addWidget(self.delay_label)
+
+        self.ip_reconnect_label = QLabel("IP reconnect:")
+        controls_row.addWidget(self.ip_reconnect_label)
+
+        self.chk_ip_auto_reconnect = QCheckBox("Auto")
+        self.chk_ip_auto_reconnect.setChecked(bool(self.ip_reconnect_enabled))
+        self.chk_ip_auto_reconnect.stateChanged.connect(self._on_ip_reconnect_toggle)
+        controls_row.addWidget(self.chk_ip_auto_reconnect)
+
+        self.spin_ip_reconnect_max = QSpinBox()
+        self.spin_ip_reconnect_max.setRange(1, 60)
+        self.spin_ip_reconnect_max.setValue(int(self.ip_reconnect_max_delay_seconds))
+        self.spin_ip_reconnect_max.setSuffix(" s max")
+        self.spin_ip_reconnect_max.setToolTip(
+            "Ritardo massimo tra tentativi di reconnessione stream IP"
+        )
+        self.spin_ip_reconnect_max.valueChanged.connect(
+            self._on_ip_reconnect_max_changed
+        )
+        controls_row.addWidget(self.spin_ip_reconnect_max)
 
         controls_row.addStretch()
         layout.addLayout(controls_row)
@@ -109,19 +512,50 @@ class VideoPlayer(QWidget):
         self.status_label = QLabel("Stato: inattivo")
         layout.addWidget(self.status_label)
 
+        self.metrics_label = QLabel("Metriche: inattivo")
+        self.metrics_label.setStyleSheet("font-size: 11px; color: #777;")
+        layout.addWidget(self.metrics_label)
+
     def _on_source_type_changed(self):
         source_kind = self.source_type.currentData()
-        if source_kind == "file":
+
+        current_kind = str((self.current_source or {}).get("type") or "")
+        selected_kind = str(source_kind or "")
+
+        if selected_kind != "ip":
+            self._cancel_ip_reconnect(reset_attempts=True)
+
+        if self.capture is not None and current_kind and current_kind != selected_kind:
+            self._disconnect_source(silent=True, user_requested=False)
+
+        is_file = source_kind == "file"
+        is_webcam = source_kind == "webcam"
+        is_ip = source_kind == "ip"
+
+        self.source_input.setVisible(not is_webcam)
+        self.webcam_sources.setVisible(is_webcam)
+        self.btn_browse.setVisible(is_file)
+        self.btn_refresh_webcams.setVisible(is_webcam)
+
+        self.ip_reconnect_label.setVisible(is_ip)
+        self.chk_ip_auto_reconnect.setVisible(is_ip)
+        self.spin_ip_reconnect_max.setVisible(is_ip)
+
+        # Per i file da filesystem non serve connetti/disconnetti/registrazione manuale
+        # In webcam la connessione è automatica, quindi mostriamo Connetti solo per stream IP.
+        self.btn_connect.setVisible(source_kind == "ip")
+        self.btn_disconnect.setVisible(not is_file)
+        self.btn_record.setVisible(not is_file)
+
+        if is_file:
             self.source_input.setPlaceholderText("Seleziona un file video")
-            self.btn_browse.setEnabled(True)
-        elif source_kind == "webcam":
-            self.source_input.setPlaceholderText("Indice webcam (es: 0)")
-            self.btn_browse.setEnabled(False)
-            if not self.source_input.text().strip():
-                self.source_input.setText("0")
+            source_value = self.source_input.text().strip()
+            if source_value and Path(source_value).exists():
+                self.connect_current_source(force_reconnect=True)
+        elif is_webcam:
+            self._refresh_webcam_sources()
         else:
             self.source_input.setPlaceholderText("URL stream IP (rtsp/http)")
-            self.btn_browse.setEnabled(False)
 
         self._update_record_button_state()
 
@@ -134,6 +568,306 @@ class VideoPlayer(QWidget):
         )
         if file_path:
             self.source_input.setText(file_path)
+            self.connect_current_source(force_reconnect=True)
+
+    def _on_source_input_edited(self):
+        source_kind = self.source_type.currentData()
+        if source_kind != "file":
+            return
+
+        source_value = self.source_input.text().strip()
+        if source_value and Path(source_value).exists():
+            self.connect_current_source(force_reconnect=True)
+
+    def _scan_webcam_sources(self, max_indices: int = 10) -> list[tuple[str, str]]:
+        if cv2 is None:
+            return []
+
+        detected: list[tuple[str, str]] = []
+        for index in range(max_indices):
+            capture = cv2.VideoCapture(index)
+            if capture is None:
+                continue
+
+            try:
+                if not capture.isOpened():
+                    continue
+
+                ok, _ = capture.read()
+                if ok:
+                    detected.append((f"Webcam {index}", str(index)))
+            finally:
+                try:
+                    capture.release()
+                except Exception:
+                    pass
+
+        return detected
+
+    def _refresh_webcam_sources(self):
+        previous_value = self.source_input.text().strip()
+        devices = self._scan_webcam_sources()
+
+        self.webcam_sources.blockSignals(True)
+        self.webcam_sources.clear()
+
+        for label, value in devices:
+            self.webcam_sources.addItem(label, value)
+
+        self.webcam_sources.blockSignals(False)
+
+        if not devices:
+            self.webcam_sources.addItem("Nessuna webcam rilevata", "")
+            self.source_input.clear()
+            return
+
+        selected_index = self.webcam_sources.findData(previous_value)
+        if selected_index < 0:
+            selected_index = 0
+
+        self.webcam_sources.setCurrentIndex(selected_index)
+        self._on_webcam_source_changed(selected_index)
+
+    def _on_webcam_source_changed(self, index: int):
+        if index < 0:
+            return
+
+        value = str(self.webcam_sources.currentData() or "").strip()
+        self.source_input.setText(value)
+
+        # Autoconnessione immediata quando selezioni una webcam valida
+        if value:
+            self.connect_current_source(force_reconnect=True)
+
+    def _on_performance_profile_changed(self, _index: int | None = None):
+        profile = str(self.performance_preset.currentData() or "low_latency")
+        self._apply_performance_profile(profile)
+
+        source_kind = str((self.current_source or {}).get("type") or "")
+        if (
+            self.capture is not None
+            and source_kind in {"webcam", "ip"}
+            and hasattr(cv2, "CAP_PROP_BUFFERSIZE")
+        ):
+            try:
+                self.capture.set(
+                    cv2.CAP_PROP_BUFFERSIZE,
+                    int(max(1, self.live_capture_buffer_size)),
+                )
+            except Exception:
+                pass
+
+    def _on_ip_reconnect_toggle(self, _state: int | None = None):
+        self.ip_reconnect_enabled = bool(self.chk_ip_auto_reconnect.isChecked())
+        if not self.ip_reconnect_enabled:
+            self._cancel_ip_reconnect(reset_attempts=True)
+
+    def _on_ip_reconnect_max_changed(self, value: int):
+        self.ip_reconnect_max_delay_seconds = float(max(1, int(value)))
+
+    def _apply_performance_profile(self, profile: str):
+        selected = str(profile or "low_latency")
+        if selected == "quality":
+            self.preview_target_fps = 0.0
+            self.preview_max_width = 0
+            self.live_capture_buffer_size = 4
+            self.drop_old_live_frames = False
+        elif selected == "balanced":
+            self.preview_target_fps = 30.0
+            self.preview_max_width = 1280
+            self.live_capture_buffer_size = 2
+            self.drop_old_live_frames = True
+        else:
+            selected = "low_latency"
+            self.preview_target_fps = 25.0
+            self.preview_max_width = 960
+            self.live_capture_buffer_size = 1
+            self.drop_old_live_frames = True
+
+        self.performance_profile = selected
+
+    def _cancel_ip_reconnect(self, reset_attempts: bool = True):
+        if hasattr(self, "ip_reconnect_timer") and self.ip_reconnect_timer.isActive():
+            self.ip_reconnect_timer.stop()
+
+        if reset_attempts:
+            self.ip_reconnect_attempt = 0
+            self.ip_reconnect_reason = ""
+
+    def _schedule_ip_reconnect(self, reason: str = ""):
+        if not self.ip_reconnect_enabled:
+            return
+
+        if str(self.source_type.currentData() or "") != "ip":
+            return
+
+        source_value = self._current_source_value()
+        if not source_value:
+            return
+
+        if self.ip_reconnect_timer.isActive():
+            return
+
+        self.ip_reconnect_attempt += 1
+        self.ip_reconnect_reason = str(reason or "").strip()
+
+        attempt_idx = max(1, int(self.ip_reconnect_attempt))
+        delay_seconds = min(
+            float(self.ip_reconnect_max_delay_seconds),
+            float(self.ip_reconnect_base_delay_seconds) * (2 ** (attempt_idx - 1)),
+        )
+        reason_suffix = (
+            f" • {self.ip_reconnect_reason}" if self.ip_reconnect_reason else ""
+        )
+        self.status_label.setText(
+            f"Stato: stream IP instabile, riconnessione in {delay_seconds:.1f}s "
+            f"(tentativo {attempt_idx}){reason_suffix}"
+        )
+        self.ip_reconnect_timer.start(max(1, int(delay_seconds * 1000.0)))
+
+    def _attempt_ip_reconnect(self):
+        if not self.ip_reconnect_enabled:
+            return
+
+        if str(self.source_type.currentData() or "") != "ip":
+            self._cancel_ip_reconnect(reset_attempts=True)
+            return
+
+        source_value = self._current_source_value()
+        if not source_value:
+            self._cancel_ip_reconnect(reset_attempts=True)
+            return
+
+        worker_running = bool(
+            self.capture is not None
+            and self.capture_worker is not None
+            and self.capture_worker.isRunning()
+        )
+        if worker_running:
+            self._cancel_ip_reconnect(reset_attempts=True)
+            return
+
+        attempt_idx = max(1, int(self.ip_reconnect_attempt))
+        self.status_label.setText(
+            f"Stato: riconnessione stream IP in corso (tentativo {attempt_idx})"
+        )
+
+        connected = self.connect_current_source(
+            force_reconnect=True,
+            show_errors=False,
+        )
+        if connected:
+            self.status_label.setText("Stato: connesso (ip) • riconnesso")
+            self._cancel_ip_reconnect(reset_attempts=True)
+        else:
+            self._schedule_ip_reconnect("retry")
+
+    def _reset_runtime_metrics(self):
+        self.metrics_window_start_ts = time.perf_counter()
+        self.metrics_input_frames = 0
+        self.metrics_rendered_frames = 0
+        self.metrics_dropped_frames = 0
+        self.metrics_decode_ms_sum = 0.0
+        self.metrics_decode_samples = 0
+        self.metrics_render_ms_sum = 0.0
+        self.metrics_render_samples = 0
+
+    def _track_runtime_metrics(
+        self,
+        *,
+        input_frames: int = 0,
+        rendered_frames: int = 0,
+        dropped_frames: int = 0,
+        decode_ms: float | None = None,
+        render_ms: float | None = None,
+    ):
+        self.metrics_input_frames += max(0, int(input_frames))
+        self.metrics_rendered_frames += max(0, int(rendered_frames))
+        self.metrics_dropped_frames += max(0, int(dropped_frames))
+
+        if decode_ms is not None:
+            self.metrics_decode_ms_sum += max(0.0, float(decode_ms))
+            self.metrics_decode_samples += 1
+
+        if render_ms is not None:
+            self.metrics_render_ms_sum += max(0.0, float(render_ms))
+            self.metrics_render_samples += 1
+
+    def _refresh_metrics_label(self):
+        if not hasattr(self, "metrics_label"):
+            return
+
+        if self.capture is None:
+            self.metrics_label.setText("Metriche: inattivo")
+            self.metrics_label.setStyleSheet("font-size: 11px; color: #777;")
+            self._reset_runtime_metrics()
+            return
+
+        worker = self.recording_worker
+        if worker is not None:
+            self.recording_queue_dropped_frames = int(worker.dropped_frames)
+
+        elapsed = max(0.001, time.perf_counter() - self.metrics_window_start_ts)
+        input_fps = self.metrics_input_frames / elapsed
+        render_fps = self.metrics_rendered_frames / elapsed
+        drop_pct = (
+            (self.metrics_dropped_frames / self.metrics_input_frames) * 100.0
+            if self.metrics_input_frames > 0
+            else 0.0
+        )
+
+        decode_ms_avg = (
+            self.metrics_decode_ms_sum / self.metrics_decode_samples
+            if self.metrics_decode_samples > 0
+            else 0.0
+        )
+        render_ms_avg = (
+            self.metrics_render_ms_sum / self.metrics_render_samples
+            if self.metrics_render_samples > 0
+            else 0.0
+        )
+
+        enough_samples = self.metrics_input_frames >= 10
+        warn = enough_samples and (
+            render_fps < self.metrics_warning_threshold_fps
+            or drop_pct > self.metrics_warning_threshold_drop_pct
+        )
+        prefix = "⚠ " if warn else ""
+
+        self.metrics_label.setText(
+            f"{prefix}Metriche [{self.performance_profile}]: "
+            f"in {input_fps:.1f} fps | out {render_fps:.1f} fps | "
+            f"decode {decode_ms_avg:.1f} ms | render {render_ms_avg:.1f} ms | "
+            f"drop {drop_pct:.1f}% | rec_q_drop {self.recording_queue_dropped_frames}"
+        )
+        self.metrics_label.setStyleSheet(
+            "font-size: 11px; color: #C0392B;"
+            if warn
+            else "font-size: 11px; color: #2D6A4F;"
+        )
+
+        self._reset_runtime_metrics()
+
+    def _resize_preview_frame_if_needed(self, source_kind: str | None, frame):
+        kind = str(source_kind or "")
+        max_width = int(self.preview_max_width or 0)
+        if kind not in {"webcam", "ip"} or max_width <= 0:
+            return frame
+
+        try:
+            height, width = frame.shape[:2]
+        except Exception:
+            return frame
+
+        if width <= max_width:
+            return frame
+
+        target_width = max_width
+        target_height = max(1, int((height * target_width) / width))
+        try:
+            return cv2.resize(frame, (target_width, target_height))
+        except Exception:
+            return frame
 
     def _build_capture_source(self, source_kind: str, source_value: str):
         if source_kind == "webcam":
@@ -142,6 +876,27 @@ class VideoPlayer(QWidget):
             except ValueError:
                 return source_value
         return source_value
+
+    def _set_preview_delay(self, seconds: float):
+        try:
+            value = max(0.0, min(120.0, float(seconds)))
+        except Exception:
+            value = 0.0
+
+        self.preview_delay_seconds = value
+        self.delay_buffer.clear()
+        self._refresh_delay_label()
+
+    def _change_preview_delay(self, delta_seconds: float):
+        try:
+            delta = float(delta_seconds)
+        except Exception:
+            delta = 0.0
+        self._set_preview_delay(self.preview_delay_seconds + delta)
+
+    def _refresh_delay_label(self):
+        if hasattr(self, "delay_label"):
+            self.delay_label.setText(f"Delay attivo: {self.preview_delay_seconds:.1f}s")
 
     def _recordings_dir(self) -> Path:
         target = Path.home() / "VolleyballScoutRecordings"
@@ -170,8 +925,20 @@ class VideoPlayer(QWidget):
         payload = dict(self.current_source or {})
         if self.recording_output_path:
             payload["recorded_path"] = self.recording_output_path
+        if self.crashsafe_segment_dir is not None:
+            payload["recorded_backup_dir"] = str(self.crashsafe_segment_dir)
         payload["recording"] = bool(self.recording_enabled)
         self.source_changed.emit(payload)
+
+    def _compute_recording_queue_size(self, fps: float) -> int:
+        safe_fps = max(1.0, float(fps))
+        if self.performance_profile == "quality":
+            window_seconds = 6.0
+        elif self.performance_profile == "balanced":
+            window_seconds = 4.0
+        else:
+            window_seconds = 3.0
+        return int(max(60, min(900, safe_fps * window_seconds)))
 
     def _toggle_recording(self):
         if self.recording_enabled:
@@ -190,8 +957,14 @@ class VideoPlayer(QWidget):
             )
             return
 
-        width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-        height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        width = int(self.source_width or 0)
+        height = int(self.source_height or 0)
+        if (width <= 0 or height <= 0) and self.capture is not None:
+            try:
+                width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+            except Exception:
+                width, height = 0, 0
         if (width <= 0 or height <= 0) and self.last_frame is not None:
             try:
                 height, width = self.last_frame.shape[:2]
@@ -206,7 +979,12 @@ class VideoPlayer(QWidget):
             )
             return
 
-        fps = float(self.capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        fps = float(self.source_fps or 0.0)
+        if (fps <= 1.0 or fps > 120.0) and self.capture is not None:
+            try:
+                fps = float(self.capture.get(cv2.CAP_PROP_FPS) or 0.0)
+            except Exception:
+                fps = 0.0
         if fps <= 1.0 or fps > 120.0:
             fps = 30.0
 
@@ -214,50 +992,101 @@ class VideoPlayer(QWidget):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = self._recordings_dir() / f"scout_{source_kind}_{stamp}.mp4"
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(
-            str(output_path), fourcc, fps, (int(width), int(height))
+        self.crashsafe_segment_dir = (
+            self._recordings_dir() / f"scout_{source_kind}_{stamp}_segments"
         )
-        if writer is None or not writer.isOpened():
+
+        queue_size = self._compute_recording_queue_size(fps)
+        worker = RecordingWorker(
+            output_path=output_path,
+            crashsafe_segment_dir=self.crashsafe_segment_dir,
+            fps=fps,
+            frame_size=(int(width), int(height)),
+            crashsafe_segment_duration_seconds=self.crashsafe_segment_duration_seconds,
+            queue_size=queue_size,
+            parent=self,
+        )
+        if not worker.is_ready():
             QMessageBox.warning(
                 self,
                 "Errore registrazione",
-                "Impossibile iniziare la registrazione locale del video.",
+                worker.startup_error
+                or "Impossibile iniziare la registrazione locale del video.",
             )
+            self.crashsafe_segment_dir = None
             return
 
-        self.video_writer = writer
+        worker.worker_error.connect(self._on_recording_worker_error)
+        worker.start()
+
+        self.recording_worker = worker
         self.recording_frame_size = (int(width), int(height))
         self.recording_output_path = str(output_path)
         self.recording_enabled = True
+        self.recording_queue_size = int(queue_size)
+        self.recording_queue_dropped_frames = 0
 
         # Sincronizza il tempo scouting al nuovo video registrato (t=0)
         self.stream_elapsed_seconds = 0.0
         self.pending_resume_seconds = 0.0
+        self.delay_buffer.clear()
         self.playback_position_changed.emit(0.0)
 
         source_kind_text = str((self.current_source or {}).get("type") or "live")
-        self.status_label.setText(f"Stato: connesso ({source_kind_text}) • REC")
+        self.status_label.setText(f"Stato: connesso ({source_kind_text}) • REC async")
         self._update_record_button_state()
         self._emit_source_changed()
 
-    def _stop_recording(self, silent: bool = False):
-        if self.video_writer is not None:
-            try:
-                self.video_writer.release()
-            except Exception:
-                pass
+    def _on_recording_worker_error(self, message: str):
+        source_kind = str((self.current_source or {}).get("type") or "live")
+        self.status_label.setText(f"Stato: connesso ({source_kind}) • REC warning")
+        if message:
+            self.status_label.setToolTip(message)
 
+    def _enqueue_record_frame(self, frame, current_seconds: float):
+        worker = self.recording_worker
+        if not self.recording_enabled or worker is None:
+            return
+
+        frame_to_save = frame
+        if self.recording_frame_size is not None:
+            rec_w, rec_h = self.recording_frame_size
+            if frame.shape[1] != rec_w or frame.shape[0] != rec_h:
+                try:
+                    frame_to_save = cv2.resize(frame, (rec_w, rec_h))
+                except Exception:
+                    frame_to_save = frame
+
+        worker.enqueue_frame(frame_to_save, float(current_seconds))
+
+    def _stop_recording(self, silent: bool = False):
         was_recording = self.recording_enabled
-        self.video_writer = None
+        worker = self.recording_worker
+
+        if worker is not None:
+            worker.request_stop()
+            if not worker.wait(5000):
+                worker.terminate()
+                worker.wait(500)
+            self.recording_queue_dropped_frames = max(
+                self.recording_queue_dropped_frames,
+                int(worker.dropped_frames),
+            )
+
+        self.recording_worker = None
         self.recording_frame_size = None
         self.recording_enabled = False
 
         source_kind = str((self.current_source or {}).get("type") or "")
         if self.capture is not None:
             if self.recording_output_path and was_recording:
+                drop_note = (
+                    f" • drop coda={self.recording_queue_dropped_frames}"
+                    if self.recording_queue_dropped_frames > 0
+                    else ""
+                )
                 self.status_label.setText(
-                    f"Stato: connesso ({source_kind}) • registrazione salvata"
+                    f"Stato: connesso ({source_kind}) • registrazione salvata{drop_note}"
                 )
             else:
                 self.status_label.setText(f"Stato: connesso ({source_kind})")
@@ -266,20 +1095,28 @@ class VideoPlayer(QWidget):
         if was_recording and not silent:
             self._emit_source_changed()
 
-    def connect_current_source(self, force_reconnect: bool = False) -> bool:
+    def connect_current_source(
+        self,
+        force_reconnect: bool = False,
+        show_errors: bool = True,
+    ) -> bool:
         """Connette la sorgente attualmente impostata nei controlli."""
         source_kind = self.source_type.currentData()
-        source_value = self.source_input.text().strip()
+        source_value = self._current_source_value()
 
         if not force_reconnect and self.capture is not None and self.current_source:
-            if (
+            same_source = (
                 str(self.current_source.get("type") or "") == str(source_kind or "")
                 and str(self.current_source.get("value") or "") == source_value
-            ):
+            )
+            worker_running = bool(
+                self.capture_worker is not None and self.capture_worker.isRunning()
+            )
+            if same_source and worker_running:
                 return True
 
-        self._connect_source()
-        return self.capture is not None
+        self._connect_source(show_errors=show_errors)
+        return bool(self.capture is not None and self.capture_worker is not None)
 
     def set_resume_position(self, seconds: float | None):
         """Imposta/aggiorna il punto di ripartenza in secondi."""
@@ -295,129 +1132,273 @@ class VideoPlayer(QWidget):
 
         source_kind = (self.current_source or {}).get("type")
         if self.capture is not None and source_kind == "file":
-            self.capture.set(cv2.CAP_PROP_POS_MSEC, target * 1000.0)
             self.stream_elapsed_seconds = target
-            self._read_next_frame()
+            self.delay_buffer.clear()
+            worker = self.capture_worker
+            if worker is not None:
+                worker.request_seek(target)
 
-    def _connect_source(self):
+    def _current_source_value(self) -> str:
+        source_kind = self.source_type.currentData()
+        if source_kind == "webcam":
+            webcam_value = str(self.webcam_sources.currentData() or "").strip()
+            if webcam_value:
+                return webcam_value
+        return self.source_input.text().strip()
+
+    def _connect_source(self, show_errors: bool = True):
         if cv2 is None:
-            QMessageBox.critical(
-                self,
-                "OpenCV non disponibile",
-                "Modulo cv2 non trovato. Installa opencv-python nell'ambiente corrente.",
-            )
+            if show_errors:
+                QMessageBox.critical(
+                    self,
+                    "OpenCV non disponibile",
+                    "Modulo cv2 non trovato. Installa opencv-python nell'ambiente corrente.",
+                )
+            else:
+                self.status_label.setText("Stato: OpenCV non disponibile")
             return
 
         source_kind = self.source_type.currentData()
-        source_value = self.source_input.text().strip()
+        source_value = self._current_source_value()
 
         if not source_value:
-            QMessageBox.warning(
-                self, "Sorgente mancante", "Inserisci una sorgente video valida."
-            )
+            if show_errors:
+                QMessageBox.warning(
+                    self, "Sorgente mancante", "Inserisci una sorgente video valida."
+                )
+            else:
+                self.status_label.setText("Stato: sorgente video mancante")
             return
 
         if source_kind == "file":
             path = Path(source_value)
             if not path.exists():
-                QMessageBox.warning(
-                    self,
-                    "File non trovato",
-                    f"Il file selezionato non esiste:\n{source_value}",
-                )
+                if show_errors:
+                    QMessageBox.warning(
+                        self,
+                        "File non trovato",
+                        f"Il file selezionato non esiste:\n{source_value}",
+                    )
+                else:
+                    self.status_label.setText("Stato: file video non trovato")
                 return
 
-        self._disconnect_source(silent=True)
+        self._disconnect_source(silent=True, user_requested=False)
 
         self.recording_output_path = None
+        self.crashsafe_segment_dir = None
+        self.recording_queue_dropped_frames = 0
 
         cap_source = self._build_capture_source(source_kind, source_value)
         capture = cv2.VideoCapture(cap_source)
 
+        if (
+            capture is not None
+            and source_kind in {"webcam", "ip"}
+            and hasattr(cv2, "CAP_PROP_BUFFERSIZE")
+        ):
+            try:
+                capture.set(
+                    cv2.CAP_PROP_BUFFERSIZE, int(max(1, self.live_capture_buffer_size))
+                )
+            except Exception:
+                pass
+
         if capture is None or not capture.isOpened():
             if capture is not None:
                 capture.release()
-            QMessageBox.warning(
-                self,
-                "Connessione fallita",
-                "Impossibile aprire la sorgente video selezionata.",
-            )
+            if show_errors:
+                QMessageBox.warning(
+                    self,
+                    "Connessione fallita",
+                    "Impossibile aprire la sorgente video selezionata.",
+                )
+            else:
+                self.status_label.setText("Stato: connessione sorgente fallita")
             return
 
         self.capture = capture
         self.current_source = {"type": source_kind, "value": source_value}
+        self.last_preview_render_ts = 0.0
+        self.pending_preview_frame = None
+        self.pending_preview_seconds = 0.0
+        self.pending_preview_source_kind = str(source_kind or "")
+        self.pending_preview_dirty = False
+        self._reset_runtime_metrics()
+
+        try:
+            self.source_width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+            self.source_height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        except Exception:
+            self.source_width = 0
+            self.source_height = 0
 
         fps = float(self.capture.get(cv2.CAP_PROP_FPS) or 0.0)
         if fps <= 1.0 or fps > 120.0:
             fps = 30.0
+        self.source_fps = float(fps)
         interval_ms = max(15, int(1000.0 / fps))
         self.frame_interval_seconds = interval_ms / 1000.0
         self.stream_elapsed_seconds = 0.0
 
+        self._stop_capture_worker()
+        worker = CaptureWorker(
+            self.capture,
+            str(source_kind or ""),
+            self.frame_interval_seconds,
+            parent=self,
+        )
+        worker.frame_captured.connect(self._on_capture_frame)
+        worker.capture_warning.connect(self._on_capture_warning)
+        self.capture_worker = worker
+
         if source_kind == "file" and self.pending_resume_seconds is not None:
             try:
                 target = max(0.0, float(self.pending_resume_seconds))
-                self.capture.set(cv2.CAP_PROP_POS_MSEC, target * 1000.0)
                 self.stream_elapsed_seconds = target
+                worker.request_seek(target)
             except Exception:
                 pass
 
-        self.frame_timer.start(interval_ms)
-        self._read_next_frame()
+        self.delay_buffer.clear()
+        self.render_timer.start()
+        worker.start()
 
         self.btn_connect.setEnabled(False)
         self.btn_disconnect.setEnabled(True)
         self.status_label.setText(f"Stato: connesso ({source_kind})")
 
+        self._cancel_ip_reconnect(reset_attempts=True)
+
         self._update_record_button_state()
         self._emit_source_changed()
 
-    def _read_next_frame(self):
-        if cv2 is None or self.capture is None:
+    def _select_preview_frame(
+        self,
+        source_kind: str | None,
+        frame,
+        current_seconds: float,
+    ):
+        kind = str(source_kind or "")
+        if kind not in {"webcam", "ip"} or self.preview_delay_seconds <= 0.0:
+            self.delay_buffer.clear()
+            return frame, max(0.0, float(current_seconds))
+
+        try:
+            self.delay_buffer.append((float(current_seconds), frame.copy()))
+        except Exception:
+            self.delay_buffer.append((float(current_seconds), frame))
+
+        target_seconds = float(current_seconds) - float(self.preview_delay_seconds)
+
+        # Mantieni solo buffer utile (delay + margine)
+        keep_from = target_seconds - 2.0
+        while len(self.delay_buffer) > 2 and self.delay_buffer[0][0] < keep_from:
+            self.delay_buffer.popleft()
+
+        if target_seconds <= 0.0:
+            ts, frm = self.delay_buffer[0]
+            return frm, max(0.0, float(ts))
+
+        while len(self.delay_buffer) >= 2 and self.delay_buffer[1][0] <= target_seconds:
+            self.delay_buffer.popleft()
+
+        ts, frm = self.delay_buffer[0]
+        return frm, max(0.0, float(ts))
+
+    def _stop_capture_worker(self):
+        worker = self.capture_worker
+        if worker is None:
             return
 
-        source_kind = (self.current_source or {}).get("type")
-        ok, frame = self.capture.read()
-        if not ok or frame is None:
-            source_kind = (self.current_source or {}).get("type")
+        worker.request_stop()
+        if not worker.wait(3000):
+            worker.terminate()
+            worker.wait(300)
+        self.capture_worker = None
 
-            if source_kind == "file":
-                self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ok, frame = self.capture.read()
-                if not ok or frame is None:
-                    self.status_label.setText("Stato: stream terminato")
-                    return
-            else:
-                self.status_label.setText(
-                    f"Stato: connesso ({source_kind}) - nessun frame"
-                )
-                return
+    def _on_capture_warning(self, status_text: str):
+        if self.capture is None:
+            return
 
-        if self.recording_enabled and self.video_writer is not None:
-            frame_to_save = frame
-            if self.recording_frame_size is not None:
-                rec_w, rec_h = self.recording_frame_size
-                if frame.shape[1] != rec_w or frame.shape[0] != rec_h:
-                    frame_to_save = cv2.resize(frame, (rec_w, rec_h))
-            try:
-                self.video_writer.write(frame_to_save)
-            except Exception:
-                pass
+        source_kind = str(
+            (self.current_source or {}).get("type")
+            or self.source_type.currentData()
+            or ""
+        )
+        if source_kind == "ip":
+            self._schedule_ip_reconnect("nessun frame")
+            return
 
-        current_seconds = 0.0
-        if source_kind == "file":
-            current_seconds = (
-                float(self.capture.get(cv2.CAP_PROP_POS_MSEC) or 0.0) / 1000.0
+        self.status_label.setText(str(status_text or "Stato: connesso - warning"))
+
+    def _on_capture_frame(
+        self,
+        frame,
+        current_seconds: float,
+        decode_ms: float,
+        source_kind: str,
+    ):
+        if self.capture is None:
+            return
+
+        self.stream_elapsed_seconds = max(0.0, float(current_seconds))
+
+        if str(source_kind or "") == "ip":
+            self._cancel_ip_reconnect(reset_attempts=True)
+
+        if self.recording_enabled:
+            self._enqueue_record_frame(frame, self.stream_elapsed_seconds)
+
+        preview_frame, preview_seconds = self._select_preview_frame(
+            str(source_kind or ""), frame, self.stream_elapsed_seconds
+        )
+        preview_frame = self._resize_preview_frame_if_needed(
+            str(source_kind or ""), preview_frame
+        )
+
+        self.pending_preview_frame = preview_frame
+        self.pending_preview_seconds = max(0.0, float(preview_seconds))
+        self.pending_preview_source_kind = str(source_kind or "")
+        self.pending_preview_dirty = True
+
+        self._track_runtime_metrics(input_frames=1, decode_ms=decode_ms)
+
+    def _render_pending_frame(self):
+        if self.capture is None or not self.pending_preview_dirty:
+            return
+
+        preview_frame = self.pending_preview_frame
+        preview_seconds = self.pending_preview_seconds
+        kind = str(self.pending_preview_source_kind or "")
+
+        is_live = kind in {"webcam", "ip"}
+        should_render = True
+
+        now_ts = time.perf_counter()
+        if is_live and self.preview_target_fps > 0.0:
+            min_interval = 1.0 / max(1.0, float(self.preview_target_fps))
+            if (
+                self.last_preview_render_ts > 0.0
+                and (now_ts - self.last_preview_render_ts) < min_interval
+            ):
+                should_render = False
+
+        if not should_render:
+            self._track_runtime_metrics(
+                dropped_frames=1 if is_live else 0,
             )
-            if current_seconds <= 0.0:
-                current_seconds = self.stream_elapsed_seconds
-        else:
-            self.stream_elapsed_seconds += self.frame_interval_seconds
-            current_seconds = self.stream_elapsed_seconds
+            return
 
-        self.last_frame = frame
-        self._render_frame(frame)
-        self.playback_position_changed.emit(max(0.0, float(current_seconds)))
+        render_started = time.perf_counter()
+        self.last_frame = preview_frame
+        self._render_frame(preview_frame)
+        render_ms = (time.perf_counter() - render_started) * 1000.0
+        self.last_preview_render_ts = now_ts
+        self.pending_preview_dirty = False
+
+        self._track_runtime_metrics(rendered_frames=1, render_ms=render_ms)
+        self.playback_position_changed.emit(max(0.0, float(preview_seconds)))
 
     def _render_frame(self, frame):
         if cv2 is None or frame is None:
@@ -443,8 +1424,12 @@ class VideoPlayer(QWidget):
         )
         self.preview_label.setPixmap(scaled)
 
-    def _disconnect_source(self, silent: bool = False):
-        self.frame_timer.stop()
+    def _disconnect_source(self, silent: bool = False, user_requested: bool = True):
+        if user_requested:
+            self._cancel_ip_reconnect(reset_attempts=True)
+
+        self.render_timer.stop()
+        self._stop_capture_worker()
 
         if self.recording_enabled:
             self._stop_recording(silent=silent)
@@ -457,7 +1442,17 @@ class VideoPlayer(QWidget):
         self.capture = None
         self.current_source = None
         self.last_frame = None
+        self.pending_preview_frame = None
+        self.pending_preview_seconds = 0.0
+        self.pending_preview_source_kind = ""
+        self.pending_preview_dirty = False
         self.stream_elapsed_seconds = 0.0
+        self.source_fps = 30.0
+        self.source_width = 0
+        self.source_height = 0
+        self.delay_buffer.clear()
+        self.last_preview_render_ts = 0.0
+        self._reset_runtime_metrics()
 
         self.btn_connect.setEnabled(True)
         self.btn_disconnect.setEnabled(False)
@@ -465,11 +1460,16 @@ class VideoPlayer(QWidget):
         self.status_label.setText("Stato: inattivo")
         self.preview_label.clear()
         self.preview_label.setText("Anteprima video non ancora disponibile")
+        if hasattr(self, "metrics_label"):
+            self.metrics_label.setText("Metriche: inattivo")
+            self.metrics_label.setStyleSheet("font-size: 11px; color: #777;")
 
         if not silent:
             payload = {"type": None, "value": None, "recording": False}
             if self.recording_output_path:
                 payload["recorded_path"] = self.recording_output_path
+            if self.crashsafe_segment_dir is not None:
+                payload["recorded_backup_dir"] = str(self.crashsafe_segment_dir)
             self.source_changed.emit(payload)
             self.playback_position_changed.emit(0.0)
 
@@ -479,5 +1479,7 @@ class VideoPlayer(QWidget):
             self._render_frame(self.last_frame)
 
     def closeEvent(self, event):
-        self._disconnect_source(silent=True)
+        self.metrics_timer.stop()
+        self._cancel_ip_reconnect(reset_attempts=True)
+        self._disconnect_source(silent=True, user_requested=False)
         super().closeEvent(event)
