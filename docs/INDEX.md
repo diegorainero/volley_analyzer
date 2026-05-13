@@ -1,410 +1,189 @@
-# 🎯 Player Detection Improvements - Complete Documentation Index
+# 📚 Documentazione — Indice di Navigazione
 
-## 📑 Guida di Navigazione
-
-Questo file fornisce un indice completo di tutti i miglioramenti implementati al sistema di rilevamento dei giocatori.
+> Guida completa al progetto **Volley Analyzer**. Questo indice organizza tutta la documentazione in sezioni tematiche.
 
 ---
 
-## 📚 Documentazione Disponibile
+## 🗂️ Indice per Categoria
 
-### Per il Sistema di Detection (Rilevamento Giocatori)
+### 🔭 Overview (Panoramica)
+| File | Descrizione |
+|------|-------------|
+| [README](overview/README.md) | Introduzione al progetto |
+| [README Complete](overview/README_COMPLETE.md) | Descrizione completa del progetto |
+| [Architecture Diagram](overview/ARCHITECTURE_DIAGRAM.md) | Diagramma architetturale |
+| [Features Summary](overview/FEATURES_SUMMARY.md) | Riepilogo funzionalità |
+| [Integration Summary](overview/INTEGRATION_SUMMARY.md) | Riepilogo integrazioni |
+| [Implementation Summary](overview/IMPLEMENTATION_SUMMARY.md) | Riepilogo implementazione |
+| [Complete Implementation Summary](overview/COMPLETE_IMPLEMENTATION_SUMMARY.md) | Implementazione completa |
+| [Creation Summary](overview/CREATION_SUMMARY.md) | Riepilogo creazione |
+| [Code Changes Summary](overview/CODE_CHANGES_SUMMARY.md) | Riepilogo modifiche codice |
+| [Improvements V2](overview/IMPROVEMENTS_V2_SUMMARY.md) | Miglioramenti V2 |
+| [Improvements V3](overview/IMPROVEMENTS_V3_SUMMARY.md) | Miglioramenti V3 |
+| [Volleyball Scout Summary](overview/VOLLEYBALL_SCOUT_SUMMARY.md) | Riepilogo scout |
+| [Solution Complete](overview/SOLUTION_COMPLETE.md) | Soluzione completa |
+| [Solution Final](overview/SOLUTION_FINAL.md) | Soluzione finale |
+| [Final Report](overview/FINAL_REPORT.md) | Report finale |
+| [Deployment Ready](overview/DEPLOYMENT_READY.md) | Pronto per il deploy |
+| [Structure](overview/STRUCTURE.md) | Struttura del progetto |
+| [System Ready](overview/SYSTEM_READY.txt) | Sistema pronto ✅ |
 
-### 1. **ADVANCED_DETECTION_README.md** ⭐ START HERE
-**Scopo**: Guida introduttiva completa
+### ⚙️ Setup & Quick Start
+| File | Descrizione |
+|------|-------------|
+| [Quick Start](setup/QUICK_START.md) | Avvio rapido |
+| [Quick Start Assets](setup/QUICK_START_ASSETS.md) | Quick start assets |
+| [Quick Start Scout](setup/QUICK_START_SCOUT.md) | Quick start scouting |
+| [Quick Start Formation](setup/QUICK_START_FORMATION_NAVIGATION.md) | Quick start formazioni |
+| [Quick Start Team Players](setup/QUICK_START_TEAM_PLAYERS.md) | Quick start giocatori |
+| [Hardware Acceleration](setup/HARDWARE_ACCELERATION.md) | Accelerazione hardware |
+| [Final Launch Guide](setup/FINAL_LAUNCH_GUIDE.md) | Guida lancio finale |
+| [README Launch Now](setup/README_LAUNCH_NOW.md) | Avvia ora |
 
-**Contenuti**:
-- Overview delle migliorie
-- Componenti principali spiegati
-- Come utilizzare il detector
-- 6 configurazioni predefinite
-- Monitoraggio e calibrazione
-- Troubleshooting guide
-- API reference
+### 🔐 Login System
+| File | Descrizione |
+|------|-------------|
+| [Login System Guide](login/LOGIN_SYSTEM_GUIDE.md) | Guida sistema login |
+| [Login Implementation Final Report](login/LOGIN_IMPLEMENTATION_FINAL_REPORT.md) | Report implementazione login |
+| [Login Documentation Index](login/LOGIN_DOCUMENTATION_INDEX.md) | Indice documentazione login |
+| [Implementation Complete Login](login/IMPLEMENTATION_COMPLETE_LOGIN.md) | Implementazione login completa |
+| [Login Quick Reference](login/LOGIN_QUICK_REFERENCE.txt) | Riferimento rapido login |
 
-**Consigliato per**: Chi vuole iniziare subito
+### 🗄️ Database
+| File | Descrizione |
+|------|-------------|
+| [Database Check Guide](database/DATABASE_CHECK_GUIDE.md) | Guida controllo DB |
+| [Database Check Summary](database/DATABASE_CHECK_SUMMARY.md) | Riepilogo check DB |
+| [Database Management](database/DATABASE_MANAGEMENT.md) | Gestione database |
+| [Database Tools Index](database/DATABASE_TOOLS_INDEX.md) | Indice strumenti DB |
+| [Database Tools Quick Reference](database/DATABASE_TOOLS_QUICK_REFERENCE.txt) | Riferimento rapido strumenti DB |
+| [README Database Check](database/README_DATABASE_CHECK.md) | README controllo DB |
 
----
+### 🏐 Formations
+| File | Descrizione |
+|------|-------------|
+| [Formation Quick Start](formations/FORMATION_QUICK_START.md) | Quick start formazioni |
+| [Formation Setup Summary](formations/FORMATION_SETUP_SUMMARY.md) | Riepilogo setup formazioni |
+| [Formation Setup Complete](formations/FORMATION_SETUP_COMPLETE_IMPLEMENTATION.md) | Setup completo |
+| [Formation Setup Fixes](formations/FORMATION_SETUP_FIXES.md) | Correzioni setup |
+| [Formation Setup New Flow](formations/FORMATION_SETUP_NEW_FLOW.md) | Nuovo flusso setup |
+| [Formation Setup Tests](formations/FORMATION_SETUP_TESTS.md) | Test formazioni |
+| [Formation Panel Fix](formations/FORMATION_PANEL_FIX.md) | Fix pannello formazioni |
+| [Formation Panel](formations/FORMATION_PANEL.md) | Pannello formazioni |
+| [Formation Navigation Summary](formations/FORMATION_NAVIGATION_SUMMARY.md) | Navigazione formazioni |
+| [Formation Enhancements](formations/FORMATION_ENHANCEMENTS_SUMMARY.md) | Miglioramenti |
+| [Formation Updates](formations/FORMATION_UPDATES.md) | Aggiornamenti |
 
-### 2. **DETECTOR_IMPROVEMENTS.md** 📖 DETAILED REFERENCE
-**Scopo**: Documentazione tecnica dettagliata
+### 👥 Team Players
+| File | Descrizione |
+|------|-------------|
+| [Index Team Players V2](team-players/INDEX_TEAM_PLAYERS_V2.md) | Indice giocatori |
+| [Final Team Players Summary](team-players/FINAL_TEAM_PLAYERS_SUMMARY.md) | Riepilogo finale |
+| [Implementation Complete](team-players/IMPLEMENTATION_COMPLETE_TEAM_PLAYERS.md) | Implementazione completa |
+| [Team Players Fix](team-players/TEAM_PLAYERS_FIX.md) | Fix giocatori |
+| [Team Players Improvements](team-players/TEAM_PLAYERS_IMPROVEMENTS.md) | Miglioramenti |
+| [Gestione Squadre](team-players/GESTIONE_SQUADRE.md) | Gestione squadre |
 
-**Contenuti**:
-- Spiegazione di ogni feature (feature principal)
-- Parametri e configurazioni
-- Configurazioni consigliate per scenari specifici
-- Metriche di impatto
-- Performance e memory usage
-- Debugging e tuning
-- Troubleshooting avanzato
-- Esempio completo
+### 🎾 Matches
+| File | Descrizione |
+|------|-------------|
+| [New Match Quick Start](matches/NEW_MATCH_QUICK_START.md) | Quick start nuovi match |
+| [New Match Feature Docs](matches/NEW_MATCH_FEATURE_DOCUMENTATION.md) | Documentazione feature match |
+| [New Match Implementation](matches/NEW_MATCH_IMPLEMENTATION_SUMMARY.md) | Implementazione match |
+| [New Match Files Index](matches/NEW_MATCH_FILES_INDEX.md) | Indice file match |
+| [README New Match Feature](matches/README_NEW_MATCH_FEATURE.md) | README feature match |
+| [Matches README](matches/README.md) | README matches |
+| [Matches Start Here](matches/START_HERE.md) | Inizia qui |
+| [Matches Testing Guide](matches/TESTING_GUIDE.md) | Guida test match |
+| [Matches UI Design](matches/UI_DESIGN.md) | Design UI match |
+| [Matches Changelog](matches/CHANGELOG.md) | Changelog |
+| [Matches Implementation Summary](matches/IMPLEMENTATION_SUMMARY.md) | Riepilogo implementazione |
 
-**Consigliato per**: Chi vuole comprendere i dettagli tecnici
+### 🎨 Theme & UI
+| File | Descrizione |
+|------|-------------|
+| [Theme README](theme/THEME_README.md) | README tema |
+| [Theme Docs Index](theme/THEME_DOCS_INDEX.md) | Indice documentazione tema |
+| [Theme Implementation](theme/THEME_IMPLEMENTATION_SUMMARY.md) | Implementazione tema |
+| [Dark Theme Update](theme/DARK_THEME_AND_MENUBAR_UPDATE.md) | Aggiornamento tema scuro |
+| [Dark App Implementation](theme/APP_DARK_IMPLEMENTATION_SUMMARY.md) | App tema scuro |
+| [Theme Toggle Implementation](theme/THEME_TOGGLE_IMPLEMENTATION.md) | Toggle tema |
+| [UI Complete](ui/UI_COMPLETE.md) | UI completa |
+| [UI Launch](ui/UI_LAUNCH.md) | Lancio UI |
+| [UI Startup](ui/UI_STARTUP.md) | Avvio UI |
+| [UI Architecture](ui/UI_ARCHITECTURE.md) | Architettura UI |
+| [Integrated UI Guide](ui/INTEGRATED_UI_GUIDE.md) | Guida UI integrata |
+| [UI README](ui/README.md) | README UI |
+| [README New UI](theme/README_NEW_UI.md) | Nuova UI |
 
----
+### 🖼️ Assets
+| File | Descrizione |
+|------|-------------|
+| [Assets Index](assets/ASSETS_INDEX.md) | Indice assets |
+| [Assets Implementation](assets/ASSETS_IMPLEMENTATION_SUMMARY.md) | Implementazione assets |
+| [Assets and UI](assets/ASSETS_AND_UI_IMPROVEMENTS.md) | Miglioramenti assets/UI |
+| [Assets Deployment](assets/VOLLEYBALL_SCOUT_ASSETS_DEPLOYMENT.md) | Deploy assets |
+| [Assets README](assets/README.md) | README assets |
+| [Usage Examples](assets/USAGE_EXAMPLES.md) | Esempi d'uso |
 
-### 3. **DETECTOR_CONFIG_GUIDE.md** ⚙️ CONFIGURATION GUIDE
-**Scopo**: Guide pratiche e esempi di configurazione
+### 📹 Video
+| File | Descrizione |
+|------|-------------|
+| [Video Acquisition Quickstart](video/VIDEO_ACQUISITION_QUICKSTART.md) | Quickstart acquisizione video |
+| [Video Acquisition System](video/VIDEO_ACQUISITION_SYSTEM.md) | Sistema acquisizione |
+| [Video Source Integration](video/VIDEO_SOURCE_INTEGRATION.md) | Integrazione sorgenti |
+| [Video Sources](video/VIDEO_SOURCES.md) | Sorgenti video |
+| [Video Sources Index](video/VIDEO_SOURCES_INDEX.md) | Indice sorgenti |
 
----
+### 🔍 Detection
+| File | Descrizione |
+|------|-------------|
+| [Advanced Detection](detection/ADVANCED_DETECTION_README.md) | Rilevamento avanzato |
+| [Detector Config](detection/DETECTOR_CONFIG_GUIDE.md) | Configurazione detector |
+| [Detector Improvements](detection/DETECTOR_IMPROVEMENTS.md) | Miglioramenti detector |
 
-## 🏐 Sistema di Scouting (Volleyball Scout)
+### 🧪 Testing
+| File | Descrizione |
+|------|-------------|
+| [Navigazione Testing](testing/navigation/README.md) | Testing navigazione |
+| [Navigazione Documentation](testing/navigation/NAVIGAZIONE_DOCUMENTATION.md) | Documentazione navigazione |
+| [Navigazione Checklist](testing/navigation/CHECKLIST.md) | Checklist |
+| [Navigazione Implementation](testing/navigation/IMPLEMENTATION_SUMMARY.md) | Implementazione navigazione |
+| [Theme Testing](testing/theme/README.md) | Testing tema |
+| [Draft and Test Data](testing/DRAFT_AND_TEST_DATA_UPDATES.md) | Dati di test |
+| [Draft System](testing/DRAFT_SYSTEM.md) | Sistema draft |
 
-### 4. **SCOUTING_FLOW.md** 📈 SCOUTING WORKFLOW
-**Scopo**: Descrizione del flusso completo di scouting.
+### 📦 Implementation
+| File | Descrizione |
+|------|-------------|
+| [Implementation README](implementation/README.md) | README implementazione |
+| [Implementation Complete](implementation/IMPLEMENTATION_COMPLETE.md) | Implementazione completa |
+| [Migration Summary](implementation/MIGRATION_SUMMARY.md) | Riepilogo migrazione |
+| [Roster Setup Flow](implementation/ROSTER_SETUP_FLOW.md) | Flusso setup roster |
+| [Testing Guide](implementation/TESTING_GUIDE.md) | Guida test |
+| [Visual Summary](implementation/VISUAL_SUMMARY.md) | Riquadro visivo |
+| [Import Fixes](implementation/IMPORT_FIXES_COMPLETE.md) | Fix import |
+| [Quick Fix Imports](implementation/QUICK_FIX_IMPORTS.md) | Fix rapidi import |
+| [Final Fixes](implementation/FINAL_FIXES.md) | Fix finali |
+| [Duplicate Column Fix](implementation/FIX_DUPLICATE_COLUMN_ERROR.md) | Fix colonna duplicata |
 
-**Contenuti**:
-- Dashboard e creazione Match
-- Roster Setup (scelta convocati)
-- **Formation Panel** (selezione titolari e libero)
-- Scout Panel (inserimento eventi live)
+### 🔧 Scouting
+| File | Descrizione |
+|------|-------------|
+| [Scouting Flow](scouting/SCOUTING_FLOW.md) | Flusso scouting |
 
-### 5. **FORMATION_PANEL.md** 🎯 FORMATION SELECTION UI
-**Scopo**: Guida completa al nuovo pannello di selezione formazione.
-
-**Contenuti**:
-- Layout visuale con drag-drop
-- Come trascinare giocatori negli slot
-- Validazione automatica (6 titolari + 1 libero)
-- Click-to-clear per rimuovere giocatori
-- Colori e stili (blu, giallo, beige)
-- Testing visivo: `python tests/test_formation_panel_ui.py`
-- Implementazione tecnica (PlayerButton, FormationSlot, LiberoSlot)
-- Troubleshooting
-
-**Consigliato per**: Chi deve usare il pannello di formazione nel match
-
-### 6. **GESTIONE_SQUADRE.md** 👥 TEAM & PLAYERS
-**Scopo**: Guida alla gestione dell'anagrafica.
-
-### 7. **DATABASE_MANAGEMENT.md** 🗄️ DATABASE & MIGRATIONS
-**Scopo**: Gestione del database e migrazioni Alembic.
-
-**Contenuti**:
-- Setup ambiente con `setup.py dev_setup`
-- Migrazioni con Alembic
-- Risoluzione errori comuni (DetachedInstanceError, OperationalError)
-- Schema database e campi `is_starter`/`is_libero`
-
-**Consigliato per**: Chi vuole configurare il detector per scenari specifici
-
----
-
-### Per il Sistema di Scouting (Volleyball Scout)
-
-Vedi sezione **🏐 Sistema di Scouting (Volleyball Scout)** sopra
-
----
-
-### 8. **MIGRATION_SUMMARY.md** 🔄 MIGRATION & SUMMARY
-**Scopo**: Riepilogo delle modifiche e checklist
-
-**Contenuti**:
-- Obiettivi raggiunti
-- File modificato (detector.py)
-- Nuovi parametri
-- Nuovi metodi interni
-- Nuovo metodo pubblico
-- Compatibilità
-- Metriche di impatto
-- File aggiunti
-- Quick start
-- Come testare
-- Configurazioni comuni
-- Performance benchmark
-- Prossimi passi suggeriti
-- Checklist di verifica
-
-**Consigliato per**: Chi vuole comprendere cosa è stato cambiato
-
----
-
-## 🚀 Quick Navigation
-
-### Caso d'uso: Voglio iniziare subito
-→ Leggi: **ADVANCED_DETECTION_README.md** (sezione "Quick Start")
-
-### Caso d'uso: Ho problemi con false positives
-→ Leggi: **ADVANCED_DETECTION_README.md** (Troubleshooting)
-→ Poi: **DETECTOR_CONFIG_GUIDE.md** (High-Precision Configuration)
-
-### Caso d'uso: Ho problemi in condizioni scure
-→ Leggi: **DETECTOR_CONFIG_GUIDE.md** (Low-Light Configuration)
-
-### Caso d'uso: Ho problemi con affollamenti
-→ Leggi: **DETECTOR_CONFIG_GUIDE.md** (Crowd/Dense Configuration)
-
-### Caso d'uso: Performance critica (tempo reale)
-→ Leggi: **DETECTOR_CONFIG_GUIDE.md** (Performance-Optimized Configuration)
-
-### Caso d'uso: Voglio capire come funziona tutto
-→ Leggi: **DETECTOR_IMPROVEMENTS.md** (completo)
-
-### Caso d'uso: Voglio configurare per il mio scenario
-→ Leggi: **DETECTOR_CONFIG_GUIDE.md** (Configuration Tuning Guide)
-
-### Caso d'uso: Voglio sapere cosa è cambiato
-→ Leggi: **MIGRATION_SUMMARY.md**
-
----
-
-## 📊 Overview delle Feature
-
-### 1. Adaptive Confidence Thresholding
-- **File**: detector.py (metodo `_get_adaptive_confidence_threshold`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 1
-- **Config**: DETECTOR_CONFIG_GUIDE.md → Low-Light Configuration
-- **Impact**: +15-20% recall in bassa illuminazione
-
-### 2. Non-Maximum Suppression (NMS)
-- **File**: detector.py (metodi `_apply_nms`, `_hard_nms`, `_soft_nms`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 2
-- **Config**: DETECTOR_CONFIG_GUIDE.md → Tutti gli scenari
-- **Impact**: -40-55% falsi positivi da duplicati
-
-### 3. Aspect Ratio Filtering
-- **File**: detector.py (metodo `_passes_aspect_ratio_filter`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 3
-- **Config**: DETECTOR_CONFIG_GUIDE.md → Parameter Reference
-- **Impact**: -15-25% falsi positivi non-umani
-
-### 4. Size-Based Filtering
-- **File**: detector.py (metodo `_passes_size_filter`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 4
-- **Config**: DETECTOR_CONFIG_GUIDE.md → Parameter Reference
-- **Impact**: -10-20% rumore
-
-### 5. Merge Nearby Boxes
-- **File**: detector.py (metodo `_merge_nearby_boxes`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 5
-- **Config**: DETECTOR_CONFIG_GUIDE.md → All configurations
-- **Impact**: Migliore gestione affollamenti
-
-### 6. IoU Computation
-- **File**: detector.py (metodo `_compute_iou`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Feature 6
-- **Test**: tests/test_detector_advanced.py → TEST 2
-
-### 7. Confidence Calibration
-- **File**: detector.py (metodi `_update_confidence_history`, `get_confidence_calibration`)
-- **Doc**: DETECTOR_IMPROVEMENTS.md → Confidence Calibration
-- **Test**: tests/test_detector_advanced.py → TEST 7
+### 🧭 Navigation
+| File | Descrizione |
+|------|-------------|
+| [Tools Summary](navigation/TOOLS_SUMMARY.md) | Riepilogo strumenti |
 
 ---
 
-## 🔍 File Modificati e Creati
-
-### Modificati
-- `src/volley_analizer/core/detector.py` - Classe PlayerDetector con tutte le migliorie
-
-### Creati
-- `docs/ADVANCED_DETECTION_README.md` - README principale
-- `docs/DETECTOR_IMPROVEMENTS.md` - Documentazione tecnica
-- `docs/DETECTOR_CONFIG_GUIDE.md` - Guida alle configurazioni
-- `docs/MIGRATION_SUMMARY.md` - Riepilogo migrazioni
-- `tests/test_detector_advanced.py` - Test suite
+## 📊 Statistiche
+- **Totale file documentazione:** 77
+- **Categorie:** 13
+- **Struttura:** `docs/[categoria]/file.md`
 
 ---
 
-## 📈 Metriche Implementate
-
-| Feature | Impatto | Doc |
-|---------|---------|-----|
-| Hard NMS | -40% FP duplicati | DETECTOR_IMPROVEMENTS.md |
-| Soft NMS Linear | -50% FP + preservazione | DETECTOR_IMPROVEMENTS.md |
-| Soft NMS Gaussian | -55% FP + max preservazione | DETECTOR_IMPROVEMENTS.md |
-| Aspect Ratio | -15-25% FP non-umani | DETECTOR_IMPROVEMENTS.md |
-| Size Filter | -10-20% rumore | DETECTOR_IMPROVEMENTS.md |
-| Adaptive Conf | +15-20% recall (low-light) | DETECTOR_IMPROVEMENTS.md |
-
----
-
-## ✅ Implementazione Checklist
-
-- [x] Adaptive confidence thresholding
-- [x] Hard-NMS implementation
-- [x] Soft-NMS (linear, gaussian, hard)
-- [x] Aspect ratio filtering
-- [x] Size-based filtering  
-- [x] Merge nearby boxes
-- [x] IoU computation
-- [x] Confidence calibration
-- [x] Backward compatibility
-- [x] Documentazione (4 file)
-- [x] Test suite (7 test)
-- [x] Configurazioni di esempio
-
----
-
-## 🎯 Prossimi Passi Consigliati
-
-1. **Leggi ADVANCED_DETECTION_README.md** per una panoramica
-2. **Esegui tests/test_detector_advanced.py** per verifica funzionamento
-3. **Scegli una configurazione** da DETECTOR_CONFIG_GUIDE.md
-4. **Testa su video reale** e monitora con `get_confidence_calibration()`
-5. **Fai tuning** usando le guide di Troubleshooting
-
----
-
-## 📞 Domande Frequenti
-
-### D: Quale configurazione devo usare?
-**R**: Dipende dal tuo scenario. Vedi DETECTOR_CONFIG_GUIDE.md → Quick Start Examples
-
-### D: Come riduco i falsi positivi?
-**R**: Vedi ADVANCED_DETECTION_README.md → Troubleshooting → "Troppi Falsi Positivi"
-
-### D: Come catcho più giocatori?
-**R**: Vedi ADVANCED_DETECTION_README.md → Troubleshooting → "Giocatori Reali Mancanti"
-
-### D: Come elimino i duplicati?
-**R**: Vedi ADVANCED_DETECTION_README.md → Troubleshooting → "Duplicati/Bounding Box Multipli"
-
-### D: È compatibile con il mio codice attuale?
-**R**: Sì! Tutti i nuovi parametri hanno valori default. Vedi MIGRATION_SUMMARY.md
-
-### D: Quale impatto avrà su performance?
-**R**: ~5-10ms overhead. Vedi DETECTOR_IMPROVEMENTS.md → Performance
-
----
-
-## 📝 Come Usare Questa Documentazione
-
-1. **Come Reference**: Usa il Quick Navigation per trovare quello che cerchi
-2. **Come Guida**: Leggi documento per documento in ordine consigliato
-3. **Come Troubleshooting**: Vai direttamente a ADVANCED_DETECTION_README.md → Troubleshooting
-4. **Come Tutorial**: Segui DETECTOR_CONFIG_GUIDE.md → Quick Start Examples
-
----
-
-## 🔗 Indice Interno Documenti
-
-### ADVANCED_DETECTION_README.md
-- Overview
-- Componenti principali (5 sezioni)
-- Come utilizzare
-- Configurazioni predefinite (6 setup)
-- Monitoraggio e calibrazione
-- Troubleshooting (4 problemi)
-- Documentazione dettagliata
-- Testing
-- Metriche di impatto
-- Compatibilità
-- API reference
-- Concetti chiave (4 argomenti)
-- Support
-
-### DETECTOR_IMPROVEMENTS.md
-- Feature 1: Adaptive Confidence
-- Feature 2: NMS (Hard, Soft-Linear, Soft-Gaussian)
-- Feature 3: Aspect Ratio Filtering
-- Feature 4: Minimum Size Filtering
-- Feature 5: Merge Nearby Boxes
-- Feature 6: IoU Computation
-- Configurazioni consigliate (4 setup)
-- API Pubblica (2 metodi)
-- Metodi Interni (8 metodi)
-- Metriche di impatto
-- Compatibilità
-- Performance benchmark
-- Debugging e tuning
-- Troubleshooting (3 problemi)
-- Esempio completo
-
-### DETECTOR_CONFIG_GUIDE.md
-- Default Configuration
-- High-Precision Configuration
-- High-Recall Configuration
-- Performance-Optimized Configuration
-- Low-Light Configuration
-- Crowd/Dense Configuration
-- Dynamic/Adaptive Configuration
-- Configuration Tuning Guide
-- Runtime Configuration
-- YAML Configuration
-- Quick Start Examples (3 esempi)
-- Parameter Reference Table
-
-### MIGRATION_SUMMARY.md
-- Obiettivo
-- Modifiche implementate (7 categorie)
-- Compatibilità
-- Metriche di impatto
-- File aggiunti (3 file)
-- Quick Start (2 setup)
-- Come testare
-- Configurazioni comuni (3 setup)
-- Performance benchmark
-- Prossimi passi suggeriti
-- Riferimenti
-- Checklist di verifica
-
----
-
-## 🎓 Livelli di Conoscenza
-
-### Beginner
-1. Leggi: ADVANCED_DETECTION_README.md (sezione Overview)
-2. Esegui: tests/test_detector_advanced.py
-3. Prova: DETECTOR_CONFIG_GUIDE.md → Quick Start Example 1
-
-### Intermediate
-1. Leggi: DETECTOR_IMPROVEMENTS.md
-2. Leggi: DETECTOR_CONFIG_GUIDE.md → Configuration Tuning
-3. Prova: Diverse configurazioni su video reale
-
-### Advanced
-1. Leggi: Tutto completamente
-2. Studia: detector.py source code
-3. Esegui: tests/test_detector_advanced.py in dettaglio
-4. Crea: Custom configuration basata su analisi statistica
-
----
-
-## 📞 Contact & Support
-
-Per supporto, domande o suggerimenti:
-
-1. Consulta la documentazione seguendo il Quick Navigation
-2. Esegui il test suite per verificare il funzionamento
-3. Usa `get_confidence_calibration()` per monitorare le statistiche
-4. Leggi il Troubleshooting section appropriato
-
----
-
-**Ultimo aggiornamento**: 2024
-**Versione**: 1.0 - Production Ready
-**Compatibilità**: YOLO, HOG
-**Status**: ✅ Complete and Tested
-
----
-
-## 📂 File Tree
-
-```
-volley_analizer/
-├── docs/
-│   ├── ADVANCED_DETECTION_README.md    ← Detection: START HERE
-│   ├── DETECTOR_IMPROVEMENTS.md        ← Detection: Technical Details
-│   ├── DETECTOR_CONFIG_GUIDE.md        ← Detection: Configurations
-│   ├── MIGRATION_SUMMARY.md            ← What Changed
-│   ├── SCOUTING_FLOW.md                ← Scouting: Workflow
-│   ├── FORMATION_PANEL.md              ← Scouting: Formation UI 🆕
-│   ├── GESTIONE_SQUADRE.md             ← Scouting: Teams & Players
-│   ├── DATABASE_MANAGEMENT.md          ← Scouting: Database
-│   └── INDEX.md                        ← This File
-├── tests/
-│   ├── test_detector_advanced.py       ← Detection: Test Suite
-│   └── test_formation_panel_ui.py      ← Scouting: Formation Test 🆕
-├── volleyball_scout/
-│   └── ui/
-│       ├── formation_panel.py          ← Formation UI Implementation 🆕
-│       ├── main_window.py              ← Main Window
-│       └── ...
-├── src/
-│   └── volley_analizer/
-│       └── core/
-│           └── detector.py             ← Main Implementation
-└── README.md
-```
-
+*Ultimo aggiornamento: Maggio 2026*
