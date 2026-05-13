@@ -7,8 +7,10 @@ Verifies that all assets are properly created and loadable
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
+_ASSETS_DIR = _PROJECT_ROOT / "volleyball_scout/ui/assets"
 
 
 def test_assets_directory():
@@ -17,7 +19,7 @@ def test_assets_directory():
     print("🧪 Testing Assets Directory")
     print("=" * 60)
 
-    assets_dir = Path(__file__).parent / "assets"
+    assets_dir = _ASSETS_DIR
 
     # Check directory exists
     if not assets_dir.exists():
@@ -205,7 +207,7 @@ def test_svg_files():
     try:
         import xml.etree.ElementTree as ET
 
-        assets_dir = Path(__file__).parent / "assets"
+        assets_dir = _ASSETS_DIR
         svg_files = list(assets_dir.glob("*.svg"))
 
         if not svg_files:
@@ -259,7 +261,7 @@ def test_svg_colors():
         "#C7451A": "Dark accent (Ubuntu orange hover)",
     }
 
-    assets_dir = Path(__file__).parent / "assets"
+    assets_dir = _ASSETS_DIR
 
     for svg_file in assets_dir.glob("*.svg"):
         try:

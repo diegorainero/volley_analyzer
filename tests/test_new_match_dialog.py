@@ -5,10 +5,11 @@ Verifica che il pulsante "Nuova Partita" funzioni correttamente
 """
 
 import sys
+from pathlib import Path
 from datetime import datetime
 
 # Aggiungi il percorso al progetto
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PyQt6.QtWidgets import QApplication
 
