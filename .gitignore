@@ -10,3 +10,9 @@ config/field_calibration.json
 .idea/
 .vscode/
 .DS_Store
+# Build artifacts
+build/
+dist/
+*.spec
+.build_entry.py
+.codex
