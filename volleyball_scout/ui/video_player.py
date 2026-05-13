@@ -53,6 +53,7 @@ class CaptureWorker(QThread):
         self._stream_elapsed_seconds = 0.0
         self._lock = Lock()
         self._seek_seconds: float | None = None
+        self._paused = False
 
     def request_stop(self):
         with self._lock:
@@ -64,6 +65,12 @@ class CaptureWorker(QThread):
         with self._lock:
             self._seek_seconds = max(0.0, float(seconds))
 
+    def request_pause(self, paused: bool):
+        if self.source_kind != "file":
+            return
+        with self._lock:
+            self._paused = bool(paused)
+
     def _consume_seek(self) -> float | None:
         with self._lock:
             target = self._seek_seconds
@@ -73,6 +80,10 @@ class CaptureWorker(QThread):
     def _is_stop_requested(self) -> bool:
         with self._lock:
             return bool(self._stop_requested)
+
+    def _is_paused(self) -> bool:
+        with self._lock:
+            return bool(self._paused)
 
     def run(self):
         if cv2 is None or self.capture is None:
@@ -86,6 +97,12 @@ class CaptureWorker(QThread):
                     self._stream_elapsed_seconds = float(seek_target)
                 except Exception:
                     pass
+
+            paused = self._is_paused() if self.source_kind == "file" else False
+            force_single_frame = seek_target is not None
+            if paused and not force_single_frame:
+                time.sleep(min(0.05, self.frame_interval_seconds))
+                continue
 
             decode_started = time.perf_counter()
             ok, frame = self.capture.read()
@@ -297,6 +314,7 @@ class VideoPlayer(QWidget):
 
     source_changed = pyqtSignal(dict)
     playback_position_changed = pyqtSignal(float)
+    playback_state_changed = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -314,6 +332,7 @@ class VideoPlayer(QWidget):
         self.source_width = 0
         self.source_height = 0
         self.pending_resume_seconds: float | None = None
+        self.file_playback_paused = False
 
         self.recording_enabled = False
         self.recording_worker: RecordingWorker | None = None
@@ -424,6 +443,11 @@ class VideoPlayer(QWidget):
         self.btn_disconnect.clicked.connect(self._disconnect_source)
         self.btn_disconnect.setEnabled(False)
         controls_row.addWidget(self.btn_disconnect)
+
+        self.btn_pause = QPushButton("Pausa")
+        self.btn_pause.clicked.connect(self._toggle_pause_playback)
+        self.btn_pause.setEnabled(False)
+        controls_row.addWidget(self.btn_pause)
 
         self.btn_record = QPushButton("Inizia registrazione")
         self.btn_record.clicked.connect(self._toggle_recording)
@@ -545,6 +569,7 @@ class VideoPlayer(QWidget):
         # In webcam la connessione è automatica, quindi mostriamo Connetti solo per stream IP.
         self.btn_connect.setVisible(source_kind == "ip")
         self.btn_disconnect.setVisible(not is_file)
+        self.btn_pause.setVisible(is_file)
         self.btn_record.setVisible(not is_file)
 
         if is_file:
@@ -553,11 +578,15 @@ class VideoPlayer(QWidget):
             if source_value and Path(source_value).exists():
                 self.connect_current_source(force_reconnect=True)
         elif is_webcam:
+            self.file_playback_paused = False
             self._refresh_webcam_sources()
         else:
+            self.file_playback_paused = False
             self.source_input.setPlaceholderText("URL stream IP (rtsp/http)")
 
+        self._update_pause_button_state()
         self._update_record_button_state()
+        self._emit_playback_state()
 
     def _browse_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -911,6 +940,63 @@ class VideoPlayer(QWidget):
             and source_kind in {"webcam", "ip"}
         )
 
+    def _is_file_source_connected(self) -> bool:
+        source_kind = str((self.current_source or {}).get("type") or "")
+        return bool(
+            source_kind == "file"
+            and self.capture is not None
+            and self.capture_worker is not None
+        )
+
+    def _update_pause_button_state(self):
+        if not hasattr(self, "btn_pause"):
+            return
+
+        is_file_connected = self._is_file_source_connected()
+        self.btn_pause.setEnabled(is_file_connected)
+        self.btn_pause.setText(
+            "Riprendi" if self.file_playback_paused and is_file_connected else "Pausa"
+        )
+
+    def _set_pause_state(self, paused: bool, emit_state: bool = True):
+        next_paused = bool(paused)
+        self.file_playback_paused = (
+            next_paused if self._is_file_source_connected() else False
+        )
+
+        worker = self.capture_worker
+        if worker is not None:
+            try:
+                worker.request_pause(self.file_playback_paused)
+            except Exception:
+                pass
+
+        source_kind = str((self.current_source or {}).get("type") or "")
+        if source_kind == "file" and self.capture is not None:
+            if self.file_playback_paused:
+                self.status_label.setText("Stato: connesso (file) • in pausa")
+            else:
+                self.status_label.setText("Stato: connesso (file)")
+
+        self._update_pause_button_state()
+        if emit_state:
+            self._emit_playback_state()
+
+    def set_paused(self, paused: bool):
+        """API pubblica: pausa/riprende la riproduzione file locale."""
+        if not self._is_file_source_connected():
+            return
+        self._set_pause_state(bool(paused), emit_state=True)
+
+    def toggle_pause(self):
+        """API pubblica: toggle pausa/ripresa per sorgente file."""
+        if not self._is_file_source_connected():
+            return
+        self._set_pause_state(not self.file_playback_paused, emit_state=True)
+
+    def _toggle_pause_playback(self):
+        self.toggle_pause()
+
     def _update_record_button_state(self):
         if not hasattr(self, "btn_record"):
             return
@@ -921,6 +1007,17 @@ class VideoPlayer(QWidget):
             "Stop registrazione" if self.recording_enabled else "Inizia registrazione"
         )
 
+    def _emit_playback_state(self):
+        source_kind = str((self.current_source or {}).get("type") or "")
+        payload = {
+            "connected": bool(self.capture is not None),
+            "type": source_kind or None,
+            "is_live": source_kind in {"webcam", "ip"},
+            "paused": bool(source_kind == "file" and self.file_playback_paused),
+            "seconds": float(max(0.0, self.stream_elapsed_seconds)),
+        }
+        self.playback_state_changed.emit(payload)
+
     def _emit_source_changed(self):
         payload = dict(self.current_source or {})
         if self.recording_output_path:
@@ -929,6 +1026,7 @@ class VideoPlayer(QWidget):
             payload["recorded_backup_dir"] = str(self.crashsafe_segment_dir)
         payload["recording"] = bool(self.recording_enabled)
         self.source_changed.emit(payload)
+        self._emit_playback_state()
 
     def _compute_recording_queue_size(self, fps: float) -> int:
         safe_fps = max(1.0, float(fps))
@@ -1137,6 +1235,11 @@ class VideoPlayer(QWidget):
             worker = self.capture_worker
             if worker is not None:
                 worker.request_seek(target)
+            self._emit_playback_state()
+
+    def seek_to(self, seconds: float | None):
+        """API pubblica: seek del video (alias di set_resume_position)."""
+        self.set_resume_position(seconds)
 
     def _current_source_value(self) -> str:
         source_kind = self.source_type.currentData()
@@ -1264,12 +1367,16 @@ class VideoPlayer(QWidget):
         self.render_timer.start()
         worker.start()
 
+        self.file_playback_paused = False
+        self._set_pause_state(False, emit_state=False)
+
         self.btn_connect.setEnabled(False)
         self.btn_disconnect.setEnabled(True)
         self.status_label.setText(f"Stato: connesso ({source_kind})")
 
         self._cancel_ip_reconnect(reset_attempts=True)
 
+        self._update_pause_button_state()
         self._update_record_button_state()
         self._emit_source_changed()
 
@@ -1362,6 +1469,7 @@ class VideoPlayer(QWidget):
         self.pending_preview_source_kind = str(source_kind or "")
         self.pending_preview_dirty = True
 
+        self.playback_position_changed.emit(max(0.0, float(preview_seconds)))
         self._track_runtime_metrics(input_frames=1, decode_ms=decode_ms)
 
     def _render_pending_frame(self):
@@ -1369,7 +1477,6 @@ class VideoPlayer(QWidget):
             return
 
         preview_frame = self.pending_preview_frame
-        preview_seconds = self.pending_preview_seconds
         kind = str(self.pending_preview_source_kind or "")
 
         is_live = kind in {"webcam", "ip"}
@@ -1398,7 +1505,6 @@ class VideoPlayer(QWidget):
         self.pending_preview_dirty = False
 
         self._track_runtime_metrics(rendered_frames=1, render_ms=render_ms)
-        self.playback_position_changed.emit(max(0.0, float(preview_seconds)))
 
     def _render_frame(self, frame):
         if cv2 is None or frame is None:
@@ -1447,6 +1553,7 @@ class VideoPlayer(QWidget):
         self.pending_preview_source_kind = ""
         self.pending_preview_dirty = False
         self.stream_elapsed_seconds = 0.0
+        self.file_playback_paused = False
         self.source_fps = 30.0
         self.source_width = 0
         self.source_height = 0
@@ -1456,6 +1563,7 @@ class VideoPlayer(QWidget):
 
         self.btn_connect.setEnabled(True)
         self.btn_disconnect.setEnabled(False)
+        self._update_pause_button_state()
         self._update_record_button_state()
         self.status_label.setText("Stato: inattivo")
         self.preview_label.clear()
@@ -1472,6 +1580,8 @@ class VideoPlayer(QWidget):
                 payload["recorded_backup_dir"] = str(self.crashsafe_segment_dir)
             self.source_changed.emit(payload)
             self.playback_position_changed.emit(0.0)
+
+        self._emit_playback_state()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

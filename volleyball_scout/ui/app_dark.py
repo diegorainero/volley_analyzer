@@ -936,9 +936,13 @@ class VolleyballScoutApp(QMainWindow):
             self.scout_panel = ScoutPanel(self.db)
             if hasattr(self.scout_panel, "set_finished"):
                 self.scout_panel.set_finished.connect(self._on_set_finished)
+            if hasattr(self.scout_panel, "back_requested"):
+                self.scout_panel.back_requested.connect(self._on_back_to_scout_list)
             scout_layout.addWidget(self.scout_panel, 1)
         elif ScoutPanel:
             self.scout_panel = ScoutPanel()
+            if hasattr(self.scout_panel, "back_requested"):
+                self.scout_panel.back_requested.connect(self._on_back_to_scout_list)
             scout_layout.addWidget(self.scout_panel, 1)
         else:
             scout_layout.addWidget(QLabel("Scout Panel not available"), 1)
@@ -958,6 +962,12 @@ class VolleyballScoutApp(QMainWindow):
                 ):
                     self.video_player.playback_position_changed.connect(
                         self.scout_panel.set_video_time
+                    )
+                if hasattr(self.video_player, "playback_state_changed") and hasattr(
+                    self.scout_panel, "set_video_playback_state"
+                ):
+                    self.video_player.playback_state_changed.connect(
+                        self.scout_panel.set_video_playback_state
                     )
 
             embedded_in_panel = False
@@ -1084,6 +1094,20 @@ class VolleyballScoutApp(QMainWindow):
                 print(
                     f"⚠️ Impossibile aprire automaticamente la formation per match {match_id} (set {next_set_number})"
                 )
+
+    def _on_back_to_scout_list(self):
+        """Ritorna alla lista match/formazioni dal pannello scouting live."""
+        self._show_section("formation")
+
+        if hasattr(self, "formation_widget") and hasattr(
+            self.formation_widget, "stacked_widget"
+        ):
+            self.formation_widget.stacked_widget.setCurrentIndex(0)
+
+        if hasattr(self, "formation_widget") and hasattr(
+            self.formation_widget, "matches_widget"
+        ):
+            self.formation_widget.matches_widget._load_matches()
 
     def _on_roster_setup_completed(self):
         """Dopo il roster completo, naviga automaticamente alla formation del match corrente."""

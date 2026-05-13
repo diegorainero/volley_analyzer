@@ -515,6 +515,7 @@ class ScoutPanel(QWidget):
     """Schermata Scouting Live con doppio campo allineato."""
 
     set_finished = pyqtSignal(dict)
+    back_requested = pyqtSignal()
 
     SKILL_CODES = {
         "Attacco": "A",
@@ -596,6 +597,7 @@ class ScoutPanel(QWidget):
         self.event_counter = 0
 
         self.elapsed_seconds = 0
+        self.elapsed_seconds_exact = 0.0
         self.timer_running = False
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -618,8 +620,14 @@ class ScoutPanel(QWidget):
         self.video_source_info = {}
         self.video_timestamp_seconds = None
         self.video_widget = None
+        self.video_is_live = False
+        self.video_paused = False
+        self.timer_was_running_before_video_pause = False
         self._resume_video_seconds: float | None = None
         self._last_saved_video_second: int | None = None
+
+        self.history_timestamp_role = int(Qt.ItemDataRole.UserRole) + 1
+        self.active_history_event_id: int | None = None
 
         self.initial_service_selected = False
         self.setter_number_by_side: dict[str, str | None] = {
@@ -704,10 +712,16 @@ class ScoutPanel(QWidget):
         self.btn_timer_reset = QPushButton("Reset timer")
         self.btn_timer_reset.clicked.connect(self._reset_timer)
 
+        self.btn_pause_video_scout = QPushButton("Pausa video+scout")
+        self.btn_pause_video_scout.setCheckable(True)
+        self.btn_pause_video_scout.setEnabled(False)
+        self.btn_pause_video_scout.toggled.connect(self._toggle_video_and_timer_pause)
+
         timer_layout.addStretch()
         timer_layout.addWidget(self.timer_label)
         timer_layout.addWidget(self.btn_timer_toggle)
         timer_layout.addWidget(self.btn_timer_reset)
+        timer_layout.addWidget(self.btn_pause_video_scout)
         timer_layout.addStretch()
         layout.addLayout(timer_layout)
 
@@ -782,6 +796,12 @@ class ScoutPanel(QWidget):
         )
         self.btn_finish_match.clicked.connect(self._finish_match)
 
+        self.btn_back_to_scouts = QPushButton("Indietro agli scout")
+        self.btn_back_to_scouts.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowLeft)
+        )
+        self.btn_back_to_scouts.clicked.connect(self._request_back_to_scouts)
+
         self.btn_set_actions = QToolButton()
         self.btn_set_actions.setText("Azioni Set")
         self.btn_set_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -821,6 +841,7 @@ class ScoutPanel(QWidget):
         score_buttons_layout.addWidget(self.btn_set_actions)
         score_buttons_layout.addWidget(self.btn_finish_set)
         score_buttons_layout.addWidget(self.btn_finish_match)
+        score_buttons_layout.addWidget(self.btn_back_to_scouts)
         score_buttons_layout.addStretch()
         layout.addLayout(score_buttons_layout)
 
@@ -1000,6 +1021,15 @@ class ScoutPanel(QWidget):
         self.video_group_layout.setContentsMargins(6, 6, 6, 6)
         self.video_group_layout.setSpacing(4)
 
+        self.video_mode_badge = QLabel("Video: OFF")
+        self.video_mode_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_mode_badge.setStyleSheet(
+            "font-size: 10px; font-weight: bold; color: #E5E7EB;"
+            "background-color: #374151; border: 1px solid #4B5563;"
+            "border-radius: 8px; padding: 3px 8px;"
+        )
+        self.video_group_layout.addWidget(self.video_mode_badge)
+
         self.video_placeholder = QLabel("Video non collegato")
         self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_placeholder.setStyleSheet("font-size: 11px; color: #D9CFC5;")
@@ -1021,6 +1051,11 @@ class ScoutPanel(QWidget):
 
         self.events_list = QListWidget()
         self.events_list.setMinimumHeight(240)
+        self.events_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.events_list.customContextMenuRequested.connect(
+            self._open_events_context_menu
+        )
+        self.events_list.itemDoubleClicked.connect(self._on_event_item_double_clicked)
         history_layout.addWidget(self.events_list)
 
         history_side_layout.addWidget(self.codes_group, 1)
@@ -1052,6 +1087,7 @@ class ScoutPanel(QWidget):
         if widget is None:
             if hasattr(self, "video_placeholder"):
                 self.video_placeholder.setVisible(True)
+            self._update_video_pause_controls()
             return
 
         self.video_widget = widget
@@ -1059,6 +1095,129 @@ class ScoutPanel(QWidget):
         self.video_group_layout.addWidget(self.video_widget, 1)
         if hasattr(self, "video_placeholder"):
             self.video_placeholder.setVisible(False)
+
+        self._update_video_pause_controls()
+
+    def _request_back_to_scouts(self):
+        self.back_requested.emit()
+
+    def _set_video_mode_badge(self, text: str, color: str, border: str):
+        if not hasattr(self, "video_mode_badge"):
+            return
+        self.video_mode_badge.setText(text)
+        self.video_mode_badge.setStyleSheet(
+            "font-size: 10px; font-weight: bold; color: #F8FAFC;"
+            f"background-color: {color}; border: 1px solid {border};"
+            "border-radius: 8px; padding: 3px 8px;"
+        )
+
+    def _refresh_video_mode_badge(self):
+        source_type = str(self.video_source_info.get("type", "") or "").strip().lower()
+        connected = bool(source_type)
+
+        if not connected:
+            self._set_video_mode_badge("Video: OFF", "#374151", "#4B5563")
+            return
+
+        if self.video_is_live:
+            self._set_video_mode_badge("Video: LIVE", "#9A3412", "#C2410C")
+            return
+
+        if self.video_paused:
+            self._set_video_mode_badge("Video: PAUSA", "#7C2D12", "#EA580C")
+            return
+
+        self._set_video_mode_badge("Video: FILE", "#065F46", "#047857")
+
+    def _update_video_pause_controls(self):
+        if not hasattr(self, "btn_pause_video_scout"):
+            return
+
+        can_pause = (
+            self.video_widget is not None
+            and not self.video_is_live
+            and hasattr(self.video_widget, "set_paused")
+        )
+        self.btn_pause_video_scout.setEnabled(bool(can_pause))
+        if not can_pause and self.btn_pause_video_scout.isChecked():
+            self.btn_pause_video_scout.blockSignals(True)
+            self.btn_pause_video_scout.setChecked(False)
+            self.btn_pause_video_scout.blockSignals(False)
+        self.btn_pause_video_scout.setText(
+            "Riprendi video+scout"
+            if self.btn_pause_video_scout.isChecked()
+            else "Pausa video+scout"
+        )
+
+    def _toggle_video_and_timer_pause(self, paused: bool):
+        if self.video_widget is None or self.video_is_live:
+            if hasattr(self, "btn_pause_video_scout"):
+                self.btn_pause_video_scout.blockSignals(True)
+                self.btn_pause_video_scout.setChecked(False)
+                self.btn_pause_video_scout.blockSignals(False)
+            return
+
+        if not hasattr(self.video_widget, "set_paused"):
+            return
+
+        if paused:
+            self.timer_was_running_before_video_pause = bool(self.timer_running)
+            if self.timer_running:
+                self._toggle_timer()
+        else:
+            if self.timer_was_running_before_video_pause and not self.timer_running:
+                self._toggle_timer()
+            self.timer_was_running_before_video_pause = False
+
+        try:
+            self.video_widget.set_paused(bool(paused))
+        except Exception:
+            pass
+
+        self.btn_pause_video_scout.setText(
+            "Riprendi video+scout" if paused else "Pausa video+scout"
+        )
+
+    def set_video_playback_state(self, state: dict | None):
+        payload = dict(state or {})
+        self.video_is_live = bool(payload.get("is_live", False))
+        self.video_paused = bool(payload.get("paused", False))
+
+        if "seconds" in payload:
+            try:
+                seconds = float(payload.get("seconds"))
+                if seconds >= 0:
+                    self.video_timestamp_seconds = seconds
+            except Exception:
+                pass
+
+        if not self.video_is_live:
+            if self.video_paused:
+                if self.timer_running:
+                    self.timer_was_running_before_video_pause = True
+                    self._toggle_timer()
+            else:
+                if self.timer_was_running_before_video_pause and not self.timer_running:
+                    self._toggle_timer()
+                self.timer_was_running_before_video_pause = False
+
+        self._update_video_pause_controls()
+        self._refresh_video_mode_badge()
+
+        if (
+            hasattr(self, "btn_pause_video_scout")
+            and self.btn_pause_video_scout.isEnabled()
+        ):
+            should_checked = bool(self.video_paused)
+            if self.btn_pause_video_scout.isChecked() != should_checked:
+                self.btn_pause_video_scout.blockSignals(True)
+                self.btn_pause_video_scout.setChecked(should_checked)
+                self.btn_pause_video_scout.blockSignals(False)
+            self.btn_pause_video_scout.setText(
+                "Riprendi video+scout" if should_checked else "Pausa video+scout"
+            )
+
+        self._highlight_history_by_current_time(scroll_to_active=False)
 
     def _shortcuts_settings(self) -> QSettings:
         return QSettings(self.SHORTCUTS_SETTINGS_ORG, self.SHORTCUTS_SETTINGS_APP)
@@ -2442,26 +2601,41 @@ class ScoutPanel(QWidget):
         """Riceve info sorgente video dal player (file/webcam/ip)."""
         self.video_source_info = dict(source_info or {})
 
+        source_type = str(self.video_source_info.get("type", "")).strip()
+        source_value = str(self.video_source_info.get("value", "") or "").strip()
+        self.video_is_live = source_type in {"webcam", "ip"}
+
+        # Salva path video definitivo quando disponibile (recording) oppure file locale.
+        persisted_video_path = ""
         recorded_path_raw = self.video_source_info.get("recorded_path")
         recorded_path = str(recorded_path_raw).strip() if recorded_path_raw else ""
         if recorded_path:
-            if self.current_context is not None:
-                self.current_context["video_path"] = recorded_path
-            self._persist_current_match_video_path(recorded_path)
+            persisted_video_path = recorded_path
+        elif source_type == "file" and source_value:
+            persisted_video_path = source_value
 
-        source_type = str(self.video_source_info.get("type", "")).strip() or "-"
+        if persisted_video_path:
+            if self.current_context is not None:
+                self.current_context["video_path"] = persisted_video_path
+            self._persist_current_match_video_path(persisted_video_path)
+
         is_recording = bool(self.video_source_info.get("recording", False))
         if is_recording:
             self.video_timestamp_seconds = 0.0
             if self.sync_timer_with_video:
+                self.elapsed_seconds_exact = 0.0
                 self.elapsed_seconds = 0
                 self.timer_label.setText(self._format_elapsed())
             self._resume_video_seconds = 0.0
             self._last_saved_video_second = 0
 
+        self._update_video_pause_controls()
+        self._refresh_video_mode_badge()
+
+        source_type_label = source_type or "-"
         if hasattr(self, "video_placeholder") and self.video_widget is None:
             suffix = " (REC)" if is_recording else ""
-            self.video_placeholder.setText(f"Video: {source_type}{suffix}")
+            self.video_placeholder.setText(f"Video: {source_type_label}{suffix}")
 
     def set_video_time(self, seconds: float | None):
         """Aggiorna il timestamp video corrente usato per gli eventi."""
@@ -2484,13 +2658,16 @@ class ScoutPanel(QWidget):
         if self.video_timestamp_seconds is not None and self.current_context:
             self._resume_video_seconds = self.video_timestamp_seconds
             if self.sync_timer_with_video:
-                self.elapsed_seconds = int(self.video_timestamp_seconds)
+                self.elapsed_seconds_exact = float(self.video_timestamp_seconds)
+                self.elapsed_seconds = int(max(0.0, self.elapsed_seconds_exact))
                 self.timer_label.setText(self._format_elapsed())
 
             whole_second = int(self.video_timestamp_seconds)
             if whole_second != self._last_saved_video_second:
                 self._save_video_resume_seconds(self.video_timestamp_seconds)
                 self._last_saved_video_second = whole_second
+
+        self._highlight_history_by_current_time()
 
     def _event_video_timestamp(self) -> float:
         """Timestamp evento: preferisce il tempo video, fallback sul timer set."""
@@ -2850,6 +3027,18 @@ class ScoutPanel(QWidget):
         self.away_court.setEnabled(enabled)
         self.btn_timer_toggle.setEnabled(enabled)
         self.btn_timer_reset.setEnabled(enabled)
+        if hasattr(self, "btn_pause_video_scout"):
+            can_pause_video = (
+                enabled
+                and self.video_widget is not None
+                and not self.video_is_live
+                and hasattr(self.video_widget, "set_paused")
+            )
+            self.btn_pause_video_scout.setEnabled(can_pause_video)
+            if not can_pause_video and self.btn_pause_video_scout.isChecked():
+                self.btn_pause_video_scout.blockSignals(True)
+                self.btn_pause_video_scout.setChecked(False)
+                self.btn_pause_video_scout.blockSignals(False)
         if hasattr(self, "btn_position_reception"):
             self.btn_position_reception.setEnabled(enabled)
 
@@ -2886,6 +3075,8 @@ class ScoutPanel(QWidget):
             self.btn_initial_service_away.setEnabled(
                 enabled and not self.initial_service_selected
             )
+        if hasattr(self, "btn_back_to_scouts"):
+            self.btn_back_to_scouts.setEnabled(True)
 
         for btn in self.skill_buttons:
             btn.setEnabled(enabled)
@@ -2917,15 +3108,17 @@ class ScoutPanel(QWidget):
         return f"{minutes:02d}:{seconds:02d}"
 
     def _format_elapsed(self) -> str:
-        return self._format_seconds(self.elapsed_seconds)
+        return self._format_seconds(int(max(0.0, float(self.elapsed_seconds_exact))))
 
     def _reset_timer_ui(self):
         self.timer_label.setText(self._format_elapsed())
         self.btn_timer_toggle.setText("Avvia timer")
 
     def _on_timer_tick(self):
-        self.elapsed_seconds += 1
+        self.elapsed_seconds_exact = max(0.0, float(self.elapsed_seconds_exact) + 1.0)
+        self.elapsed_seconds = int(self.elapsed_seconds_exact)
         self.timer_label.setText(self._format_elapsed())
+        self._highlight_history_by_current_time()
 
     def _toggle_timer(self):
         if self.timer_running:
@@ -2938,8 +3131,10 @@ class ScoutPanel(QWidget):
             self.btn_timer_toggle.setText("Pausa timer")
 
     def _reset_timer(self):
+        self.elapsed_seconds_exact = 0.0
         self.elapsed_seconds = 0
         self.timer_label.setText(self._format_elapsed())
+        self._highlight_history_by_current_time()
 
     def _normalize_lineup_number(self, value) -> str | None:
         if value is None:
@@ -3311,6 +3506,7 @@ class ScoutPanel(QWidget):
         zone_end: str | None = None,
         attack_combo: str | None = None,
         set_code: str | None = None,
+        video_timestamp_override: float | None = None,
     ) -> int | None:
         """Salva un evento di scouting nel DB."""
         if self.db is None or not self.current_context:
@@ -3329,6 +3525,12 @@ class ScoutPanel(QWidget):
                 elif team_side == "away":
                     team_code = "b"
 
+                event_timestamp = (
+                    self._event_video_timestamp()
+                    if video_timestamp_override is None
+                    else max(0.0, float(video_timestamp_override))
+                )
+
                 event = ScoutEvent(
                     match_id=self.current_context.get("match_id"),
                     set_id=set_record.id if set_record is not None else None,
@@ -3343,7 +3545,7 @@ class ScoutPanel(QWidget):
                     score_home=int(self.current_context.get("score_home", 0) or 0),
                     score_away=int(self.current_context.get("score_away", 0) or 0),
                     rally_number=next_counter,
-                    video_timestamp=self._event_video_timestamp(),
+                    video_timestamp=event_timestamp,
                     notes=notes,
                     special_code=self._normalize_history_kind(kind),
                 )
@@ -3396,6 +3598,310 @@ class ScoutPanel(QWidget):
             return kind == self.HISTORY_KIND_SYSTEM
         return True
 
+    def _extract_note_from_history_text(self, text: str) -> str:
+        parts = str(text or "").split("|", 1)
+        if len(parts) == 2:
+            return parts[1].strip()
+        return str(text or "").strip()
+
+    def _timestamp_from_history_text(self, text: str) -> float | None:
+        match = re.match(r"^\s*(\d+):([0-5]\d)\s*\|", str(text or ""))
+        if not match:
+            return None
+        try:
+            minutes = int(match.group(1))
+            seconds = int(match.group(2))
+            return float(max(0, minutes * 60 + seconds))
+        except Exception:
+            return None
+
+    def _compose_history_text(self, note: str, timestamp_seconds: float | None) -> str:
+        if timestamp_seconds is None:
+            return str(note or "")
+        return (
+            f"{self._format_seconds(int(max(0.0, float(timestamp_seconds))))} | "
+            f"{str(note or '').strip()}"
+        )
+
+    def _history_timestamp_from_record(self, record: dict) -> float | None:
+        value = record.get("timestamp_seconds")
+        if value is not None:
+            try:
+                return float(max(0.0, float(value)))
+            except Exception:
+                pass
+        return self._timestamp_from_history_text(record.get("text", ""))
+
+    def _set_record_timestamp(self, record: dict, timestamp_seconds: float):
+        ts = float(max(0.0, float(timestamp_seconds)))
+        note = self._extract_note_from_history_text(record.get("text", ""))
+        record["timestamp_seconds"] = ts
+        record["text"] = self._compose_history_text(note, ts)
+
+    def _current_reference_seconds(self) -> float:
+        if self.video_timestamp_seconds is not None:
+            try:
+                return float(max(0.0, float(self.video_timestamp_seconds)))
+            except Exception:
+                pass
+        return float(max(0.0, float(self.elapsed_seconds_exact)))
+
+    def _event_item_timestamp(self, item: QListWidgetItem | None) -> float | None:
+        if item is None:
+            return None
+
+        raw = item.data(self.history_timestamp_role)
+        if raw is not None:
+            try:
+                return float(max(0.0, float(raw)))
+            except Exception:
+                pass
+
+        return self._timestamp_from_history_text(item.text())
+
+    def _find_history_record_index_by_event_id(self, event_id: int | None) -> int:
+        if event_id is None:
+            return -1
+
+        for idx, record in enumerate(self.history_records):
+            if record.get("event_id") == event_id:
+                return idx
+        return -1
+
+    def _highlight_history_by_current_time(self, scroll_to_active: bool = True):
+        if not hasattr(self, "events_list"):
+            return
+
+        list_count = self.events_list.count()
+        if list_count <= 0:
+            self.active_history_event_id = None
+            return
+
+        reference_seconds = self._current_reference_seconds()
+        best_row = -1
+        best_ts = -1.0
+
+        for row in range(list_count):
+            item = self.events_list.item(row)
+            if item is None:
+                continue
+
+            ts = self._event_item_timestamp(item)
+            if ts is None:
+                continue
+
+            item.setData(self.history_timestamp_role, float(ts))
+            if ts <= (reference_seconds + 0.35) and ts >= best_ts:
+                best_row = row
+                best_ts = ts
+
+        if best_row < 0:
+            best_row = 0
+
+        previous_event_id = self.active_history_event_id
+        active_item = None
+
+        for row in range(list_count):
+            item = self.events_list.item(row)
+            if item is None:
+                continue
+
+            row_font = item.font()
+            if row == best_row:
+                active_item = item
+                item.setBackground(QColor("#F59E0B"))
+                item.setForeground(QColor("#111827"))
+                row_font.setBold(True)
+            else:
+                item.setBackground(QColor(0, 0, 0, 0))
+                item.setForeground(QColor("#E5E7EB"))
+                row_font.setBold(False)
+            item.setFont(row_font)
+
+        if active_item is None:
+            self.active_history_event_id = None
+            return
+
+        current_event_id = active_item.data(Qt.ItemDataRole.UserRole)
+        self.active_history_event_id = (
+            int(current_event_id) if current_event_id is not None else None
+        )
+
+        if (
+            scroll_to_active
+            and self.active_history_event_id is not None
+            and self.active_history_event_id != previous_event_id
+        ):
+            self.events_list.scrollToItem(
+                active_item,
+                QListWidget.ScrollHint.PositionAtCenter,
+            )
+
+    def _seek_video_to_timestamp(self, seconds: float | None):
+        if seconds is None or self.video_widget is None:
+            return
+
+        target = max(0.0, float(seconds))
+        try:
+            if hasattr(self.video_widget, "seek_to"):
+                self.video_widget.seek_to(target)
+            elif hasattr(self.video_widget, "set_resume_position"):
+                self.video_widget.set_resume_position(target)
+        except Exception:
+            pass
+
+    def _on_event_item_double_clicked(self, item: QListWidgetItem):
+        self._seek_video_to_timestamp(self._event_item_timestamp(item))
+
+    def _event_timestamp_for_event_id(self, event_id: int | None) -> float | None:
+        if event_id is None:
+            return None
+
+        for record in self.history_records:
+            if record.get("event_id") == event_id:
+                return self._history_timestamp_from_record(record)
+        return None
+
+    def _nudge_event_timestamp(self, event_id: int | None, delta_seconds: float):
+        base = self._event_timestamp_for_event_id(event_id)
+        if base is None:
+            base = self._current_reference_seconds()
+        self._update_event_timestamp(
+            event_id, max(0.0, float(base) + float(delta_seconds))
+        )
+
+    def _update_event_timestamp(self, event_id: int | None, new_seconds: float):
+        if event_id is None:
+            return
+
+        target = float(max(0.0, float(new_seconds)))
+
+        if self.db is not None:
+            try:
+                with self.db.session_scope() as session:
+                    from volleyball_scout.core.models import ScoutEvent
+
+                    row = session.query(ScoutEvent).filter_by(id=int(event_id)).first()
+                    if row is not None:
+                        row.video_timestamp = target
+            except Exception as e:
+                print(f"⚠️ Errore update timestamp evento: {e}")
+
+        for record in self.history_records:
+            if record.get("event_id") == event_id:
+                self._set_record_timestamp(record, target)
+                break
+
+        self._apply_history_filter()
+        self._highlight_history_by_current_time(scroll_to_active=False)
+
+    def _insert_code_before_event(self, item: QListWidgetItem):
+        if not self.current_context:
+            return
+
+        before_event_id = item.data(Qt.ItemDataRole.UserRole)
+        before_ts = self._event_item_timestamp(item)
+        if before_ts is None:
+            before_ts = self._current_reference_seconds()
+
+        raw_code, ok = QInputDialog.getText(
+            self,
+            "Aggiungi codice prima",
+            "Codice DataVolley da inserire prima dell'evento selezionato:",
+        )
+        if not ok:
+            return
+
+        raw_code = str(raw_code or "").strip()
+        if not raw_code:
+            return
+
+        parsed = self._parse_datavolley_code(raw_code)
+        if not parsed.get("valid"):
+            QMessageBox.warning(
+                self,
+                "Codice DataVolley non valido",
+                str(parsed.get("error") or "Formato non riconosciuto"),
+            )
+            return
+
+        side = parsed.get("team_side", "home")
+        team_name = (
+            self.current_context.get("home_team", {}).get("name", "Casa")
+            if side == "home"
+            else self.current_context.get("away_team", {}).get("name", "Ospiti")
+        )
+
+        insert_ts = max(0.0, float(before_ts) - 0.05)
+        player_id = self._resolve_player_id(side, parsed.get("player_number"))
+
+        note = f"Codice DV (inserito): {raw_code}"
+        event_id = self._persist_event(
+            team_side=side,
+            player_id=player_id,
+            skill=parsed.get("skill"),
+            evaluation=parsed.get("evaluation"),
+            notes=note,
+            kind=self.HISTORY_KIND_SKILL,
+            zone_start=parsed.get("zone_start"),
+            zone_end=parsed.get("zone_end"),
+            attack_combo=parsed.get("attack_combo"),
+            set_code=parsed.get("set_code"),
+            video_timestamp_override=insert_ts,
+        )
+
+        history_text = f"{team_name} | {raw_code}"
+        self._append_history(
+            history_text,
+            event_id=event_id,
+            kind=self.HISTORY_KIND_SKILL,
+            timestamp_seconds=insert_ts,
+            insert_before_event_id=before_event_id,
+        )
+
+        self.subtitle.setText(f"Inserito codice prima: {raw_code}")
+
+    def _open_events_context_menu(self, pos):
+        item = self.events_list.itemAt(pos)
+        if item is None:
+            return
+
+        menu = QMenu(self)
+
+        ts = self._event_item_timestamp(item)
+        if ts is not None:
+            goto_action = menu.addAction("Vai al tempo evento")
+            goto_action.triggered.connect(
+                lambda: self._seek_video_to_timestamp(float(ts))
+            )
+
+        event_id = item.data(Qt.ItemDataRole.UserRole)
+        if event_id is not None:
+            align_action = menu.addAction("Allinea evento al tempo video corrente")
+            align_action.triggered.connect(
+                lambda eid=int(event_id): self._update_event_timestamp(
+                    eid, self._current_reference_seconds()
+                )
+            )
+
+            nudge_back_action = menu.addAction("Sposta evento -1s")
+            nudge_back_action.triggered.connect(
+                lambda eid=int(event_id): self._nudge_event_timestamp(eid, -1.0)
+            )
+
+            nudge_forward_action = menu.addAction("Sposta evento +1s")
+            nudge_forward_action.triggered.connect(
+                lambda eid=int(event_id): self._nudge_event_timestamp(eid, 1.0)
+            )
+
+            menu.addSeparator()
+            add_before_action = menu.addAction("Aggiungi codice prima")
+            add_before_action.triggered.connect(
+                lambda: self._insert_code_before_event(item)
+            )
+
+        menu.exec(self.events_list.viewport().mapToGlobal(pos))
+
     def _apply_history_filter(self, _value=None):
         self.events_list.clear()
         for record in self.history_records:
@@ -3407,23 +3913,51 @@ class ScoutPanel(QWidget):
             event_id = record.get("event_id")
             if event_id is not None:
                 item.setData(Qt.ItemDataRole.UserRole, event_id)
+
+            timestamp = self._history_timestamp_from_record(record)
+            if timestamp is not None:
+                item.setData(self.history_timestamp_role, float(timestamp))
+
             self.events_list.addItem(item)
 
         self.events_list.scrollToBottom()
+        self._highlight_history_by_current_time(scroll_to_active=False)
 
     def _append_history(
         self,
         text: str,
         event_id: int | None = None,
         kind: str = "SY",
+        timestamp_seconds: float | None = None,
+        insert_before_event_id: int | None = None,
     ):
-        self.history_records.append(
-            {
-                "text": text,
-                "event_id": event_id,
-                "kind": self._normalize_history_kind(kind),
-            }
-        )
+        normalized_kind = self._normalize_history_kind(kind)
+        ts = timestamp_seconds
+        if ts is None:
+            try:
+                ts = self._event_video_timestamp()
+            except Exception:
+                ts = None
+
+        note = self._extract_note_from_history_text(text)
+        final_text = self._compose_history_text(note, ts)
+
+        record = {
+            "text": final_text,
+            "event_id": event_id,
+            "kind": normalized_kind,
+            "timestamp_seconds": ts,
+        }
+
+        if insert_before_event_id is None:
+            self.history_records.append(record)
+        else:
+            idx = self._find_history_record_index_by_event_id(insert_before_event_id)
+            if idx >= 0:
+                self.history_records.insert(idx, record)
+            else:
+                self.history_records.append(record)
+
         self._apply_history_filter()
 
     def _remove_history_item_by_event_id(self, event_id: int | None):
@@ -3638,6 +4172,35 @@ class ScoutPanel(QWidget):
         away_sets_won = sum(1 for s in all_sets if s.winner == "away")
         return home_sets_won, away_sets_won
 
+    def _resolve_video_path_for_match(self) -> str | None:
+        if not self.current_context:
+            return None
+
+        current_path = str(self.current_context.get("video_path") or "").strip()
+        if current_path:
+            return current_path
+
+        source_type = str(self.video_source_info.get("type", "") or "").strip()
+        source_value = str(self.video_source_info.get("value", "") or "").strip()
+        recorded_path = str(
+            self.video_source_info.get("recorded_path", "") or ""
+        ).strip()
+
+        if recorded_path:
+            return recorded_path
+        if source_type == "file" and source_value:
+            return source_value
+        return None
+
+    def _persist_video_link_on_match_close(self):
+        video_path = self._resolve_video_path_for_match()
+        if not video_path:
+            return
+
+        if self.current_context is not None:
+            self.current_context["video_path"] = video_path
+        self._persist_current_match_video_path(video_path)
+
     def _finish_set(self):
         """Chiude il set corrente e richiede la formazione del set successivo."""
         if not self.current_context:
@@ -3695,7 +4258,9 @@ class ScoutPanel(QWidget):
                     if set_record is not None:
                         set_record.score_home = score_home
                         set_record.score_away = score_away
-                        set_record.duration = int(self.elapsed_seconds)
+                        set_record.duration = int(
+                            max(0.0, float(self.elapsed_seconds_exact))
+                        )
                         set_record.winner = winner
 
                     home_sets_won, away_sets_won = self._compute_sets_won(
@@ -3732,6 +4297,7 @@ class ScoutPanel(QWidget):
         )
 
         if match_completed:
+            self._persist_video_link_on_match_close()
             winner_name = (
                 self.current_context.get("home_team", {}).get("name", "Casa")
                 if match_winner == "home"
@@ -3766,7 +4332,7 @@ class ScoutPanel(QWidget):
                 "next_set_number": next_set_number,
                 "score_home": score_home,
                 "score_away": score_away,
-                "duration_seconds": int(self.elapsed_seconds),
+                "duration_seconds": int(max(0.0, float(self.elapsed_seconds_exact))),
                 "home_sets_won": home_sets_won,
                 "away_sets_won": away_sets_won,
                 "match_completed": match_completed,
@@ -3828,6 +4394,8 @@ class ScoutPanel(QWidget):
         away_sets_won = 0
         match_winner = None
 
+        self._persist_video_link_on_match_close()
+
         if self.db is not None and match_id is not None:
             try:
                 with self.db.session_scope() as session:
@@ -3837,7 +4405,9 @@ class ScoutPanel(QWidget):
                     if set_record is not None:
                         set_record.score_home = score_home
                         set_record.score_away = score_away
-                        set_record.duration = int(self.elapsed_seconds)
+                        set_record.duration = int(
+                            max(0.0, float(self.elapsed_seconds_exact))
+                        )
                         if set_record.winner is None and score_home != score_away:
                             set_record.winner = (
                                 "home" if score_home > score_away else "away"
@@ -3899,7 +4469,7 @@ class ScoutPanel(QWidget):
                 "next_set_number": None,
                 "score_home": score_home,
                 "score_away": score_away,
-                "duration_seconds": int(self.elapsed_seconds),
+                "duration_seconds": int(max(0.0, float(self.elapsed_seconds_exact))),
                 "home_sets_won": home_sets_won,
                 "away_sets_won": away_sets_won,
                 "match_completed": True,
@@ -3929,6 +4499,7 @@ class ScoutPanel(QWidget):
         self.current_set_id = None
         self.event_counter = 0
         self.history_records = []
+        self.active_history_event_id = None
         self.events_list.clear()
 
         if self.db is None or not self.current_context:
@@ -3943,6 +4514,7 @@ class ScoutPanel(QWidget):
                     self.current_context["score_home"] = int(set_record.score_home or 0)
                     self.current_context["score_away"] = int(set_record.score_away or 0)
                     self.elapsed_seconds = int(set_record.duration or 0)
+                    self.elapsed_seconds_exact = float(max(0, self.elapsed_seconds))
 
                     events = (
                         session.query(ScoutEvent)
@@ -3959,11 +4531,18 @@ class ScoutPanel(QWidget):
                         timestamp_text = self._format_seconds(
                             int(getattr(event, "video_timestamp", 0) or 0)
                         )
+                        event_timestamp = float(
+                            max(
+                                0.0,
+                                float(getattr(event, "video_timestamp", 0.0) or 0.0),
+                            )
+                        )
                         self.history_records.append(
                             {
                                 "text": f"{timestamp_text} | {note}",
                                 "event_id": event.id,
                                 "kind": self._history_kind_from_event(event),
+                                "timestamp_seconds": event_timestamp,
                             }
                         )
                         if event.rally_number is not None:
@@ -3985,8 +4564,13 @@ class ScoutPanel(QWidget):
             self.rally_history.clear()
             self.serving_side = "home"
             self.history_records = []
+            self.active_history_event_id = None
             self.timeouts_used = {"home": 0, "away": 0}
             self.video_timestamp_seconds = None
+            self.video_source_info = {}
+            self.video_is_live = False
+            self.video_paused = False
+            self.timer_was_running_before_video_pause = False
             self._resume_video_seconds = None
             self._last_saved_video_second = None
             self.initial_service_selected = False
@@ -3998,6 +4582,7 @@ class ScoutPanel(QWidget):
             if self.timer_running:
                 self._toggle_timer()
             self.elapsed_seconds = 0
+            self.elapsed_seconds_exact = 0.0
             self._reset_timer_ui()
 
             self.subtitle.setText(
@@ -4014,6 +4599,8 @@ class ScoutPanel(QWidget):
                 self.code_input.clear()
             self._set_code_team_side("home")
             self.set_video_resume_badge(None)
+            self._update_video_pause_controls()
+            self._refresh_video_mode_badge()
             self.set_match_mode_badge(editing_completed_match=False, match_status=None)
             self._update_initial_service_controls()
             self._update_outer_service_hints()
@@ -4045,8 +4632,11 @@ class ScoutPanel(QWidget):
         )
 
         self.rally_history.clear()
+        self.active_history_event_id = None
         self.timeouts_used = {"home": 0, "away": 0}
         self.video_timestamp_seconds = None
+        self.video_paused = False
+        self._refresh_video_mode_badge()
         self._resume_video_seconds = self._load_video_resume_seconds(
             self.current_context.get("match_id")
         )
@@ -4082,7 +4672,10 @@ class ScoutPanel(QWidget):
 
         self._load_set_state_from_db()
         if self._resume_video_seconds is not None:
-            self.elapsed_seconds = int(self._resume_video_seconds)
+            self.elapsed_seconds_exact = float(max(0.0, self._resume_video_seconds))
+            self.elapsed_seconds = int(self.elapsed_seconds_exact)
+        else:
+            self.elapsed_seconds_exact = float(max(0, int(self.elapsed_seconds or 0)))
         self._refresh_setter_numbers()
 
         started_set = bool(self.history_records) or (
@@ -4109,10 +4702,12 @@ class ScoutPanel(QWidget):
 
         self._refresh_view()
         self._set_controls_enabled(True)
+        self._update_video_pause_controls()
 
         if self.timer_running:
             self._toggle_timer()
         self._toggle_timer()
+        self._highlight_history_by_current_time(scroll_to_active=False)
         self.setFocus()
 
     def closeEvent(self, event):
