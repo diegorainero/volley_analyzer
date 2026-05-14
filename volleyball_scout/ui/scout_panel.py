@@ -8,7 +8,7 @@ except ImportError:
     from ..core.rotation import rotate_lineup_clockwise
 
 from PyQt6.QtCore import QRectF, QSettings, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -557,6 +557,7 @@ class ScoutPanel(QWidget):
     POINT_OUTCOME_MAP_MATCH_PREFIX = "point_outcome_map_match_"
     POINT_OUTCOME_MAP_SET_PREFIX = "point_outcome_map_set_"
     TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY = "timer_sync_with_video"
+    VIDEO_SCREEN_INDEX_SETTINGS_KEY = "video_screen_index"
     VIDEO_MEMORY_SETTINGS_PREFIX = "video_resume_seconds_match_"
     RECEPTION_MEMORY_SETTINGS_PREFIX = "rx_manual_match_"
     HOTKEY_DEFAULTS = {
@@ -613,6 +614,7 @@ class ScoutPanel(QWidget):
         self.point_outcome_scope = self._load_point_outcome_scope()
         self.point_outcome_map = self._load_point_outcome_map()
         self.sync_timer_with_video = self._load_timer_sync_with_video()
+        self.preferred_video_screen_index = self._load_video_screen_index()
         self.history_records = []
         self.timeouts_used = {"home": 0, "away": 0}
 
@@ -620,6 +622,8 @@ class ScoutPanel(QWidget):
         self.video_source_info = {}
         self.video_timestamp_seconds = None
         self.video_widget = None
+        self.video_detached_window: QDialog | None = None
+        self._is_docking_video = False
         self.video_is_live = False
         self.video_paused = False
         self.timer_was_running_before_video_pause = False
@@ -1035,6 +1039,28 @@ class ScoutPanel(QWidget):
         self.video_placeholder.setStyleSheet("font-size: 11px; color: #D9CFC5;")
         self.video_placeholder.setMinimumHeight(140)
         self.video_group_layout.addWidget(self.video_placeholder)
+
+        video_actions_row = QHBoxLayout()
+        self.btn_video_detach = QPushButton("Finestra esterna")
+        self.btn_video_detach.clicked.connect(self._detach_video_to_window)
+        video_actions_row.addWidget(self.btn_video_detach)
+
+        self.video_screen_selector = QComboBox()
+        self.video_screen_selector.setToolTip("Seleziona il monitor destinazione")
+        self.video_screen_selector.currentIndexChanged.connect(
+            self._on_video_screen_selector_changed
+        )
+        video_actions_row.addWidget(self.video_screen_selector)
+
+        self.btn_video_move_monitor = QPushButton("Sposta monitor")
+        self.btn_video_move_monitor.clicked.connect(self._move_video_to_selected_screen)
+        video_actions_row.addWidget(self.btn_video_move_monitor)
+
+        self.btn_video_dock = QPushButton("Schermo diviso")
+        self.btn_video_dock.clicked.connect(self._dock_video_in_panel)
+        video_actions_row.addWidget(self.btn_video_dock)
+
+        self.video_group_layout.addLayout(video_actions_row)
         history_side_layout.addWidget(self.video_group)
 
         self.codes_group = QGroupBox("Elenco codici")
@@ -1061,6 +1087,8 @@ class ScoutPanel(QWidget):
         history_side_layout.addWidget(self.codes_group, 1)
         root_layout.addWidget(history_panel, 2)
 
+        self._refresh_screen_selector()
+
     def _toggle_codes_panel(self, is_visible: bool):
         self.codes_group.setVisible(is_visible)
         self.btn_toggle_codes.setText(
@@ -1075,27 +1103,247 @@ class ScoutPanel(QWidget):
                 "Nascondi tastierino" if visible else "Mostra tastierino"
             )
 
+    def _refresh_screen_selector(self):
+        if not hasattr(self, "video_screen_selector"):
+            return
+
+        previous_data = self.video_screen_selector.currentData()
+        self.video_screen_selector.blockSignals(True)
+        self.video_screen_selector.clear()
+
+        screens = QGuiApplication.screens()
+        for idx, screen in enumerate(screens):
+            try:
+                name = str(screen.name() or f"Monitor {idx + 1}")
+            except Exception:
+                name = f"Monitor {idx + 1}"
+            self.video_screen_selector.addItem(f"{idx + 1}: {name}", idx)
+
+        if self.video_screen_selector.count() <= 0:
+            self.video_screen_selector.blockSignals(False)
+            return
+
+        selected_data = previous_data
+        if selected_data is None:
+            selected_data = int(max(0, self.preferred_video_screen_index))
+
+        selected_index = self.video_screen_selector.findData(selected_data)
+        if selected_index < 0:
+            selected_index = min(
+                self.video_screen_selector.count() - 1,
+                int(max(0, self.preferred_video_screen_index)),
+            )
+        if selected_index < 0:
+            selected_index = 0
+
+        self.video_screen_selector.setCurrentIndex(selected_index)
+        selected_data_now = self.video_screen_selector.itemData(selected_index)
+        try:
+            self.preferred_video_screen_index = max(0, int(selected_data_now))
+        except Exception:
+            self.preferred_video_screen_index = 0
+
+        self.video_screen_selector.blockSignals(False)
+        self._save_video_screen_index()
+
+    def _on_video_screen_selector_changed(self, _index: int):
+        if not hasattr(self, "video_screen_selector"):
+            return
+
+        raw = self.video_screen_selector.currentData()
+        try:
+            self.preferred_video_screen_index = max(0, int(raw))
+        except Exception:
+            self.preferred_video_screen_index = 0
+        self._save_video_screen_index()
+
+    def _selected_screen_index(self) -> int:
+        if not hasattr(self, "video_screen_selector"):
+            return 0
+
+        raw = self.video_screen_selector.currentData()
+        try:
+            return max(0, int(raw))
+        except Exception:
+            return 0
+
+    def _remove_video_widget_from_current_parent(self):
+        if self.video_widget is None:
+            return
+
+        parent = self.video_widget.parentWidget()
+        if parent is not None and parent.layout() is not None:
+            parent.layout().removeWidget(self.video_widget)
+        self.video_widget.setParent(None)
+
+    def _attach_video_widget_to_panel(self):
+        if self.video_widget is None:
+            return
+
+        self._remove_video_widget_from_current_parent()
+        self.video_widget.setParent(self.video_group)
+        self.video_group_layout.insertWidget(2, self.video_widget, 1)
+        if hasattr(self, "video_placeholder"):
+            self.video_placeholder.setVisible(False)
+
+    def _on_video_detached_window_closed(self, *_args):
+        if self._is_docking_video:
+            return
+        if self.video_widget is None:
+            self.video_detached_window = None
+            self._update_video_layout_controls()
+            return
+        self._dock_video_in_panel()
+
+    def _update_video_layout_controls(self):
+        has_video = self.video_widget is not None
+        detached = self.video_detached_window is not None
+
+        self._refresh_screen_selector()
+        screens_count = len(QGuiApplication.screens())
+        can_move_monitor = has_video and screens_count > 0
+
+        if hasattr(self, "btn_video_detach"):
+            self.btn_video_detach.setEnabled(has_video and not detached)
+        if hasattr(self, "video_screen_selector"):
+            self.video_screen_selector.setEnabled(can_move_monitor)
+        if hasattr(self, "btn_video_move_monitor"):
+            self.btn_video_move_monitor.setEnabled(can_move_monitor)
+        if hasattr(self, "btn_video_dock"):
+            self.btn_video_dock.setEnabled(has_video and detached)
+
+    def _detach_video_to_window(self):
+        if self.video_widget is None:
+            return
+
+        if self.video_detached_window is not None:
+            self.video_detached_window.show()
+            self.video_detached_window.raise_()
+            self.video_detached_window.activateWindow()
+            return
+
+        self._remove_video_widget_from_current_parent()
+
+        window = QDialog(self)
+        window.setWindowTitle("Video Scout - finestra esterna")
+        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        window.setModal(False)
+
+        layout = QVBoxLayout(window)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.video_widget.setParent(window)
+        layout.addWidget(self.video_widget, 1)
+
+        window.resize(960, 540)
+        window.finished.connect(self._on_video_detached_window_closed)
+        self.video_detached_window = window
+
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+        self._update_video_layout_controls()
+        self._update_video_pause_controls()
+
+    def _move_video_to_selected_screen(self):
+        if self.video_widget is None:
+            return
+
+        screens = QGuiApplication.screens()
+        if len(screens) <= 0:
+            QMessageBox.information(
+                self,
+                "Monitor non trovato",
+                "Nessun monitor rilevato dal sistema.",
+            )
+            return
+
+        selected_idx = self._selected_screen_index()
+        if selected_idx >= len(screens):
+            selected_idx = 0
+
+        self._detach_video_to_window()
+        if self.video_detached_window is None:
+            return
+
+        target = screens[selected_idx]
+        geo = target.availableGeometry()
+        margin = 20
+        width = max(640, int(geo.width() - margin * 2))
+        height = max(360, int(geo.height() - margin * 2))
+
+        self.video_detached_window.setGeometry(
+            int(geo.x() + margin),
+            int(geo.y() + margin),
+            int(width),
+            int(height),
+        )
+        self.video_detached_window.show()
+        self.video_detached_window.raise_()
+        self.video_detached_window.activateWindow()
+
+        self._update_video_layout_controls()
+
+    def _move_video_to_secondary_screen(self):
+        """Compatibilità retro: usa monitor 2 se presente, altrimenti monitor principale."""
+        if hasattr(self, "video_screen_selector"):
+            preferred = 1 if self.video_screen_selector.count() > 1 else 0
+            self.video_screen_selector.setCurrentIndex(preferred)
+        self._move_video_to_selected_screen()
+
+    def _dock_video_in_panel(self):
+        if self.video_widget is None:
+            self.video_detached_window = None
+            self._update_video_layout_controls()
+            self._update_video_pause_controls()
+            return
+
+        self._is_docking_video = True
+        try:
+            window = self.video_detached_window
+            self.video_detached_window = None
+            if window is not None:
+                try:
+                    window.finished.disconnect(self._on_video_detached_window_closed)
+                except Exception:
+                    pass
+                window.hide()
+                window.deleteLater()
+
+            self._attach_video_widget_to_panel()
+        finally:
+            self._is_docking_video = False
+
+        self._update_video_layout_controls()
+        self._update_video_pause_controls()
+
     def set_video_widget(self, widget: QWidget | None):
         if not hasattr(self, "video_group_layout"):
             return
 
         if self.video_widget is not None:
-            self.video_group_layout.removeWidget(self.video_widget)
-            self.video_widget.setParent(None)
+            self._remove_video_widget_from_current_parent()
             self.video_widget = None
 
         if widget is None:
+            if self.video_detached_window is not None:
+                self._is_docking_video = True
+                try:
+                    self.video_detached_window.hide()
+                    self.video_detached_window.deleteLater()
+                finally:
+                    self._is_docking_video = False
+                self.video_detached_window = None
             if hasattr(self, "video_placeholder"):
                 self.video_placeholder.setVisible(True)
+            self._update_video_layout_controls()
             self._update_video_pause_controls()
             return
 
         self.video_widget = widget
-        self.video_widget.setParent(self.video_group)
-        self.video_group_layout.addWidget(self.video_widget, 1)
-        if hasattr(self, "video_placeholder"):
-            self.video_placeholder.setVisible(False)
-
+        self._attach_video_widget_to_panel()
+        self._update_video_layout_controls()
         self._update_video_pause_controls()
 
     def _request_back_to_scouts(self):
@@ -1518,6 +1766,21 @@ class ScoutPanel(QWidget):
         settings.setValue(
             self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY,
             "1" if self.sync_timer_with_video else "0",
+        )
+
+    def _load_video_screen_index(self) -> int:
+        settings = self._shortcuts_settings()
+        value = settings.value(self.VIDEO_SCREEN_INDEX_SETTINGS_KEY, "0", type=str)
+        try:
+            return max(0, int(str(value or "0").strip()))
+        except Exception:
+            return 0
+
+    def _save_video_screen_index(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(
+            self.VIDEO_SCREEN_INDEX_SETTINGS_KEY,
+            str(max(0, int(self.preferred_video_screen_index))),
         )
 
     def _hotkey_action_definitions(self) -> list[tuple[str, str, bool]]:
@@ -3084,6 +3347,8 @@ class ScoutPanel(QWidget):
             btn.setEnabled(enabled)
         for btn in self.code_keypad_buttons:
             btn.setEnabled(enabled)
+
+        self._update_video_layout_controls()
 
     def _timeout_limit_per_set(self) -> int:
         try:
@@ -4714,4 +4979,14 @@ class ScoutPanel(QWidget):
         if self.timer_running:
             self.timer.stop()
             self.timer_running = False
+
+        if self.video_detached_window is not None:
+            self._is_docking_video = True
+            try:
+                self.video_detached_window.hide()
+                self.video_detached_window.deleteLater()
+            finally:
+                self._is_docking_video = False
+            self.video_detached_window = None
+
         super().closeEvent(event)
