@@ -868,6 +868,15 @@ class VolleyballScoutApp(QMainWindow):
         action_scout_settings.triggered.connect(self._open_scout_settings)
         preferences_menu.addAction(action_scout_settings)
 
+        preferences_menu.addSeparator()
+
+        action_formation_editor = QAction("Gestione formazioni ricezione", self)
+        action_formation_editor.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        )
+        action_formation_editor.triggered.connect(self._open_formation_editor)
+        preferences_menu.addAction(action_formation_editor)
+
         # Menu Aiuto
         help_menu = menubar.addMenu("Aiuto")
         help_menu.setIcon(
@@ -1039,15 +1048,26 @@ class VolleyballScoutApp(QMainWindow):
             if file_idx >= 0:
                 self.video_player.source_type.setCurrentIndex(file_idx)
             self.video_player.source_input.setText(str(video_path))
+
+            # Imposta il seek PRIMA di connettere la sorgente
+            if resume_seconds is not None and hasattr(self.video_player, "set_resume_position"):
+                self.video_player.set_resume_position(resume_seconds)
+
             if hasattr(self.video_player, "connect_current_source"):
                 self.video_player.connect_current_source()
+
+            # Ferma subito la riproduzione automatica
+            if hasattr(self.video_player, "toggle_pause"):
+                self.video_player.toggle_pause()
 
         if (
             resume_seconds is not None
             and hasattr(self, "video_player")
             and hasattr(self.video_player, "set_resume_position")
         ):
-            self.video_player.set_resume_position(resume_seconds)
+            # Fallback: se il video non era presente, cerca comunque di impostare il resume
+            if not video_path:
+                self.video_player.set_resume_position(resume_seconds)
 
         if hasattr(self, "scout_panel") and hasattr(
             self.scout_panel, "set_video_resume_badge"
@@ -1143,6 +1163,19 @@ class VolleyballScoutApp(QMainWindow):
             self,
             "Impostazioni Scouting",
             "Pannello scouting non disponibile.",
+        )
+
+    def _open_formation_editor(self):
+        if hasattr(self, "scout_panel") and hasattr(
+            self.scout_panel, "_open_formation_editor"
+        ):
+            self.scout_panel._open_formation_editor()
+            return
+
+        QMessageBox.information(
+            self,
+            "Formazioni ricezione",
+            "Apri prima lo Scouting Live per gestire le formazioni.",
         )
 
     def _toggle_theme(self, is_dark: bool):

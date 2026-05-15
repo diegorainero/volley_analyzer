@@ -44,3 +44,24 @@ def rotate_slots_clockwise(slots: Mapping[int, Any] | None) -> dict[int, Any]:
         rotated[new_idx] = source.get(old_idx)
 
     return rotated
+
+
+def get_current_rotation(
+    lineup: Mapping[str, Any] | None, setter_number: str | int | None
+) -> int | None:
+    """Determina il numero di rotazione corrente (1-6) dalla posizione del palleggiatore.
+
+    Rotation 1 = palleggiatore in P1 (fila dietro, destra)
+    Rotation 2 = palleggiatore in P2 (fila davanti, destra)
+    Rotation 3 = palleggiatore in P3 (fila davanti, centro)
+    Rotation 4 = palleggiatore in P4 (fila davanti, sinistra)
+    Rotation 5 = palleggiatore in P5 (fila dietro, sinistra)
+    Rotation 6 = palleggiatore in P6 (fila dietro, centro)
+    """
+    if setter_number is None or lineup is None:
+        return None
+    target = str(setter_number).strip()
+    for pos_code in ("P1", "P2", "P3", "P4", "P5", "P6"):
+        if str(lineup.get(pos_code, "")).strip() == target:
+            return int(pos_code[1])
+    return None
