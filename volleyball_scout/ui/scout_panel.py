@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from copy import deepcopy
 
@@ -33,255 +34,18 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-
-class TeamCourtWidget(QGroupBox):
-    """Rappresentazione semplificata del campo per una squadra."""
-
-    VISUAL_GRID_HOME = (("P5", "P4"), ("P6", "P3"), ("P1", "P2"))
-    VISUAL_GRID_AWAY = (("P2", "P1"), ("P3", "P6"), ("P4", "P5"))
-
-    # Mappa posizione -> zona DataVolley
-    POS_TO_ZONE = {"P1": "1", "P2": "2", "P3": "3", "P4": "4", "P5": "5", "P6": "6"}
-
-    cellClicked = pyqtSignal(str, str, str, float, float)  # (team_side, pos_code, zone, click_x, click_y)
-
-    def __init__(self, team_side: str, team_name="Squadra", parent=None):
-        super().__init__(parent)
-        self.team_side = team_side
-        self._number_labels = {}
-        self._libero_label = QLabel()
-        self._highlight_number = None
-        self._clickable = False
-        self._cell_frames: dict[str, QFrame] = {}
-        self._court_frame: QFrame | None = None
-        self._reception_positions: dict[str, tuple[float, float]] = {}
-        self._setup_ui(team_name)
-
-    def _visual_grid(self) -> tuple[tuple[str, ...], ...]:
-        return (
-            self.VISUAL_GRID_AWAY if self.team_side == "away" else self.VISUAL_GRID_HOME
-        )
-
-    def _setup_ui(self, team_name: str):
-        self.setTitle(team_name)
-        self.setStyleSheet(
-            """
-            QGroupBox {
-                border: 1px solid #B79C8A;
-                border-radius: 10px;
-                margin-top: 10px;
-                padding-top: 10px;
-                font-weight: bold;
-                color: #F6EFE9;
-                background-color: #2F241F;
-            }
-            """
-        )
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-
-        court_frame = QFrame()
-        court_frame.setStyleSheet(
-            """
-            QFrame {
-                background-color: #5D8CD8;
-            }
-            """
-        )
-        court_layout = QVBoxLayout(court_frame)
-        court_layout.setContentsMargins(0, 0, 0, 0)
-
-        grid = QGridLayout()
-        grid.setSpacing(6)
-
-        for row, row_positions in enumerate(self._visual_grid()):
-            for col, pos_code in enumerate(row_positions):
-                cell = QFrame()
-                cell.setMinimumSize(72, 58)
-                cell.setProperty("pos_code", pos_code)
-                cell.setStyleSheet(
-                    """
-                    QFrame {
-                        border: none;
-                        background: transparent;
-                    }
-                    """
-                )
-                cell_layout = QVBoxLayout(cell)
-                cell_layout.setContentsMargins(3, 3, 3, 3)
-                cell_layout.setSpacing(0)
-
-                number_label = QLabel("-")
-                number_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                number_label.setFixedSize(44, 44)
-                number_label.setStyleSheet(
-                    "font-size: 18px; font-weight: bold; color: #111827;"
-                    "background-color: #E5E7EB; border: 1px solid #CBD5E1; border-radius: 22px;"
-                )
-
-                cell_layout.addStretch(1)
-                cell_layout.addWidget(number_label, 0, Qt.AlignmentFlag.AlignCenter)
-                cell_layout.addStretch(1)
-
-                self._number_labels[pos_code] = number_label
-                self._cell_frames[pos_code] = cell
-                grid.addWidget(cell, row, col)
-
-        court_layout.addLayout(grid)
-        layout.addWidget(court_frame)
-        self._court_frame = court_frame
-
-        self._libero_label = QLabel("Libero: -")
-        self._libero_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._libero_label.setStyleSheet(
-            "font-size: 11px; color: #EED9C4; padding: 2px 0;"
-        )
-        layout.addWidget(self._libero_label)
-
-    def _normalize_player_number(self, value) -> str | None:
-        if value is None:
-            return None
-        raw = str(value).strip().upper()
-        if raw.endswith("P"):
-            raw = raw[:-1]
-        if not raw or raw == "-":
-            return None
-        try:
-            return str(int(raw))
-        except Exception:
-            return raw.lstrip("0") or raw
-
-    def _apply_number_style(self, label: QLabel, highlighted: bool):
-        if highlighted:
-            label.setStyleSheet(
-                "font-size: 18px; font-weight: bold; color: #F8FAFC;"
-                "background-color: #DC2626; border: 1px solid #7F1D1D; border-radius: 22px;"
-            )
-        else:
-            label.setStyleSheet(
-                "font-size: 18px; font-weight: bold; color: #111827;"
-                "background-color: #E5E7EB; border: 1px solid #CBD5E1; border-radius: 22px;"
-            )
-
-    def set_highlight_player(self, player_number):
-        self._highlight_number = self._normalize_player_number(player_number)
-        for label in self._number_labels.values():
-            current = self._normalize_player_number(label.text())
-            self._apply_number_style(
-                label, current is not None and current == self._highlight_number
-            )
-
-    def clear_highlight_player(self):
-        self._highlight_number = None
-        for label in self._number_labels.values():
-            self._apply_number_style(label, False)
-
-    def update_lineup(
-        self,
-        team_name: str,
-        positions: dict,
-        libero=None,
-        serving=False,
-        setter_number: str | None = None,
-    ):
-        if team_name:
-            self.setTitle(team_name)
-
-        setter_norm = self._normalize_player_number(setter_number)
-
-        for pos_code, label in self._number_labels.items():
-            value = positions.get(pos_code) if positions else None
-            current_norm = self._normalize_player_number(value)
-            if current_norm is None:
-                label.setText("-")
-            elif setter_norm is not None and current_norm == setter_norm:
-                label.setText(f"{current_norm}P")
-            else:
-                label.setText(str(current_norm))
-            current = self._normalize_player_number(label.text())
-            self._apply_number_style(
-                label,
-                self._highlight_number is not None
-                and current == self._highlight_number,
-            )
-
-        libero_text = str(libero) if libero is not None else "-"
-        self._libero_label.setText(f"Libero: {libero_text}")
-
-
-    def get_cell_center(self, pos_code: str):
-        """Restituisce il centro della cella in coordinate del widget."""
-        cell = self._cell_frames.get(pos_code)
-        if cell is None:
-            return None
-        return cell.geometry().center()
-
-    def setClickable(self, clickable: bool):
-        self._clickable = clickable
-        if clickable:
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-
-    def mousePressEvent(self, event):
-        if not self._clickable or event.button() != Qt.MouseButton.LeftButton:
-            return super().mousePressEvent(event)
-
-        pos = event.position()
-        child = self.childAt(int(pos.x()), int(pos.y()))
-        if child is None:
-            return
-
-        # Walk up the widget tree until we find the cell with pos_code
-        target = child
-        while target is not None:
-            pos_code = target.property("pos_code")
-            if pos_code and pos_code in self.POS_TO_ZONE:
-                zone = self.POS_TO_ZONE[pos_code]
-                self.cellClicked.emit(self.team_side, str(pos_code), zone, pos.x(), pos.y())
-                return
-            if target.parent() == self:
-                break
-            target = target.parentWidget()
-
-        super().mousePressEvent(event)
-
-    def set_reception_positions(self, positions: dict[str, tuple[float, float]] | None):
-        self._reception_positions = dict(positions or {})
-        self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self._reception_positions or self._court_frame is None:
-            return
-
-        fr = self._court_frame.geometry()
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        for num, (nx, ny) in self._reception_positions.items():
-            cx = fr.left() + nx * fr.width()
-            cy = fr.top() + ny * fr.height()
-            r = 16
-
-            p.setPen(QPen(QColor("#0F172A"), 1))
-            color = QColor("#22C55E")
-            color.setAlpha(180)
-            p.setBrush(color)
-            p.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
-
-            p.setPen(QColor("#FFFFFF"))
-            f = p.font()
-            f.setBold(True)
-            f.setPointSize(12)
-            p.setFont(f)
-            p.drawText(
-                QRectF(cx - r, cy - r, r * 2, r * 2),
-                Qt.AlignmentFlag.AlignCenter,
-                str(num),
-            )
+from .court_widgets import TeamCourtWidget, ServeTrajectoryOverlay
+from .datavolley_codes import (
+    parse_datavolley_code,
+    resolve_point_team_from_evaluation,
+    decode_point_outcome_map,
+    point_outcome_map_to_text,
+    parse_point_outcome_map_text,
+    normalize_lineup_number,
+    lineup_numbers_for_side,
+    find_player_position_in_lineup,
+)
+from .formation_manager import FormationManager
 
 
 class ReceptionCourtEditor(QWidget):
@@ -559,60 +323,6 @@ class ReceptionPositionDialog(QDialog):
         return self.editor.positions()
 
 
-class ServeTrajectoryOverlay(QWidget):
-    """Overlay trasparente che disegna la linea di traiettoria della battuta."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._start_pos = None
-        self._end_pos = None
-        self.setVisible(False)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self._start_pos is not None and self._end_pos is not None:
-            self.update()
-
-    def set_trajectory(self, start_pos, end_pos):
-        if self.parent():
-            self.setGeometry(self.parent().rect())
-        self._start_pos = start_pos
-        self._end_pos = end_pos
-        self.setVisible(True)
-        self.raise_()
-        self.update()
-
-    def clear_trajectory(self):
-        self._start_pos = None
-        self._end_pos = None
-        self.setVisible(False)
-        self.update()
-
-    def paintEvent(self, event):
-        if self._start_pos is None or self._end_pos is None:
-            return
-
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        pen = QPen(QColor("#FACC15"), 3, Qt.PenStyle.DashLine)
-        p.setPen(pen)
-        p.drawLine(int(self._start_pos.x()), int(self._start_pos.y()),
-                   int(self._end_pos.x()), int(self._end_pos.y()))
-
-        for pos, color in [
-            (self._start_pos, QColor("#22C55E")),
-            (self._end_pos, QColor("#EF4444")),
-        ]:
-            rx, ry = int(pos.x()), int(pos.y())
-            p.setPen(QPen(QColor(color), 2))
-            p.setBrush(QColor(color.red(), color.green(), color.blue(), 80))
-            p.drawEllipse(rx - 14, ry - 14, 28, 28)
-            p.setBrush(QColor(color))
-            p.drawEllipse(rx - 6, ry - 6, 12, 12)
-
-
 class ScoutPanel(QWidget):
     """Schermata Scouting Live con doppio campo allineato."""
 
@@ -636,6 +346,8 @@ class ScoutPanel(QWidget):
         ("Attacco", "A"),
         ("Muro", "B"),
         ("Difesa", "D"),
+        ("Ace", "S#"),
+        ("Err. Servizio", "S="),
         ("Punto", "#"),
         ("Errore", "="),
     ]
@@ -659,6 +371,7 @@ class ScoutPanel(QWidget):
     POINT_OUTCOME_MAP_MATCH_PREFIX = "point_outcome_map_match_"
     POINT_OUTCOME_MAP_SET_PREFIX = "point_outcome_map_set_"
     TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY = "timer_sync_with_video"
+    DEFAULT_ATTACK_EVAL_SETTINGS_KEY = "default_attack_eval"
     VIDEO_SCREEN_INDEX_SETTINGS_KEY = "video_screen_index"
     VIDEO_MEMORY_SETTINGS_PREFIX = "video_resume_seconds_match_"
     RECEPTION_MEMORY_SETTINGS_PREFIX = "rx_manual_match_"
@@ -693,6 +406,7 @@ class ScoutPanel(QWidget):
     def __init__(self, db_manager=None, parent=None):
         super().__init__(parent)
         self.db = db_manager
+        self.formation_manager = FormationManager(db_manager)
         self.current_context = {}
         self.serving_side = "home"
         self.rally_history = []
@@ -715,6 +429,7 @@ class ScoutPanel(QWidget):
         self.hotkey_map = self._load_hotkey_map()
         self.point_outcome_scope = self._load_point_outcome_scope()
         self.point_outcome_map = self._load_point_outcome_map()
+        self.default_attack_eval = self._load_default_attack_eval()
         self.sync_timer_with_video = self._load_timer_sync_with_video()
         self.preferred_video_screen_index = self._load_video_screen_index()
         self.history_records = []
@@ -754,6 +469,14 @@ class ScoutPanel(QWidget):
         self._attack_end_side = None
 
         self.setter_number_by_side: dict[str, str | None] = {
+            "home": None,
+            "away": None,
+        }
+        self._libero_active_player: dict[str, str | None] = {
+            "home": None,
+            "away": None,
+        }
+        self._original_libero: dict[str, str | None] = {
             "home": None,
             "away": None,
         }
@@ -1000,70 +723,111 @@ class ScoutPanel(QWidget):
         initial_service_row.addWidget(self.initial_service_status, 1)
         layout.addLayout(initial_service_row)
 
-        self.home_outer_status = QPushButton("RICEZIONE")
-        self.home_outer_status.setFlat(True)
-        self.home_outer_status.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.home_outer_status.setStyleSheet(
-            "font-size: 11px; font-weight: bold; color: #F6EFE9;"
-            "border: 1px solid #6B7280; border-radius: 8px; padding: 6px 4px;"
-            "background-color: #374151;"
-        )
-        self.home_outer_status.setMinimumWidth(100)
-        self.home_outer_status.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
-        )
-        self.home_outer_status.clicked.connect(
-            lambda: self._on_battuta_badge_clicked("home")
-        )
-
-        self.away_outer_status = QPushButton("RICEZIONE")
-        self.away_outer_status.setFlat(True)
-        self.away_outer_status.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.away_outer_status.setStyleSheet(
-            "font-size: 11px; font-weight: bold; color: #F6EFE9;"
-            "border: 1px solid #6B7280; border-radius: 8px; padding: 6px 4px;"
-            "background-color: #374151;"
-        )
-        self.away_outer_status.setMinimumWidth(100)
-        self.away_outer_status.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
-        )
-        self.away_outer_status.clicked.connect(
-            lambda: self._on_battuta_badge_clicked("away")
-        )
-
         self.home_court = TeamCourtWidget("home", "Casa")
-        self.home_court.setTitle("")
         self.home_court.setStyleSheet(
-            "QGroupBox { border: none; margin: 0; padding: 0; background-color: transparent; }"
-            "QGroupBox::title { display: none; }"
+            "TeamCourtWidget { border: none; background-color: transparent; }"
         )
         self.home_court.cellClicked.connect(self._on_court_cell_clicked)
+        self.home_court.liberoDropped.connect(self._on_libero_dropped)
+        self.home_court.liberoRevertRequested.connect(self._on_libero_revert_requested)
         self.away_court = TeamCourtWidget("away", "Trasferta")
-        self.away_court.setTitle("")
         self.away_court.setStyleSheet(
-            "QGroupBox { border: none; margin: 0; padding: 0; background-color: transparent; }"
-            "QGroupBox::title { display: none; }"
+            "TeamCourtWidget { border: none; background-color: transparent; }"
         )
         self.away_court.cellClicked.connect(self._on_court_cell_clicked)
+        self.away_court.liberoDropped.connect(self._on_libero_dropped)
+        self.away_court.liberoRevertRequested.connect(self._on_libero_revert_requested)
+
+        # Nomi squadre e stato sopra i campi
+        team_names_row = QHBoxLayout()
+        team_names_row.setContentsMargins(0, 0, 0, 0)
+        team_names_row.setSpacing(0)
+
+        self.home_team_label = QPushButton("CASA")
+        self.home_team_label.setFlat(True)
+        self.home_team_label.setEnabled(False)
+        self.home_team_label.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #F6EFE9;"
+            "border: 1px solid #6B7280; border-radius: 8px; padding: 6px 4px;"
+            "background-color: #374151;"
+        )
+
+        self.away_team_label = QPushButton("OSPITI")
+        self.away_team_label.setFlat(True)
+        self.away_team_label.setEnabled(False)
+        self.away_team_label.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #F6EFE9;"
+            "border: 1px solid #6B7280; border-radius: 8px; padding: 6px 4px;"
+            "background-color: #374151;"
+        )
+
+        team_names_row.addWidget(self.home_team_label, 1)
+        # Spazio per la rete al centro
+        net_spacer = QFrame()
+        net_spacer.setFixedWidth(3)
+        net_spacer.setStyleSheet("background: transparent;")
+        team_names_row.addWidget(net_spacer)
+        team_names_row.addWidget(self.away_team_label, 1)
+        layout.addLayout(team_names_row)
 
         courts_container = QWidget()
         self.courts_container = courts_container
         courts_container.setStyleSheet(
-            "QWidget { border: 1px solid #8BAFE7; border-radius: 2px; background-color: #2F241F; }"
+            "QWidget { background-color: transparent; }"
         )
         courts_container.setLayout(QHBoxLayout())
         courts_container.layout().setContentsMargins(0, 0, 0, 0)
         courts_container.layout().setSpacing(0)
-        courts_container.layout().addWidget(self.home_outer_status)
+
+        # Contenitore fisso per pulsante BATTUTA (largo 60px, sempre visibile)
+        home_battuta_container = QWidget()
+        home_battuta_container.setFixedWidth(60)
+        home_battuta_container.setStyleSheet("background: transparent;")
+        home_battuta_layout = QVBoxLayout(home_battuta_container)
+        home_battuta_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.home_battuta_btn = QPushButton("BATTUTA")
+        self.home_battuta_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.home_battuta_btn.setVisible(False)
+        self.home_battuta_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.home_battuta_btn.clicked.connect(
+            lambda: self._on_battuta_badge_clicked("home")
+        )
+        home_battuta_layout.addWidget(self.home_battuta_btn)
+        courts_container.layout().addWidget(home_battuta_container)
+
         courts_container.layout().addWidget(self.home_court, 1)
-        # Riga di rete
+        # Riga di rete (linea bianca sottile)
         net_line = QFrame()
         net_line.setFixedWidth(2)
         net_line.setStyleSheet("background-color: #FFFFFF;")
         courts_container.layout().addWidget(net_line)
+        # Piccola ombreggiatura per effetto rete
+        net_shadow = QFrame()
+        net_shadow.setFixedWidth(1)
+        net_shadow.setStyleSheet("background-color: rgba(255,255,255,80);")
+        courts_container.layout().addWidget(net_shadow)
         courts_container.layout().addWidget(self.away_court, 1)
-        courts_container.layout().addWidget(self.away_outer_status)
+
+        away_battuta_container = QWidget()
+        away_battuta_container.setFixedWidth(60)
+        away_battuta_container.setStyleSheet("background: transparent;")
+        away_battuta_layout = QVBoxLayout(away_battuta_container)
+        away_battuta_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.away_battuta_btn = QPushButton("BATTUTA")
+        self.away_battuta_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.away_battuta_btn.setVisible(False)
+        self.away_battuta_btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.away_battuta_btn.clicked.connect(
+            lambda: self._on_battuta_badge_clicked("away")
+        )
+        away_battuta_layout.addWidget(self.away_battuta_btn)
+        courts_container.layout().addWidget(away_battuta_container)
 
         self.serve_overlay = ServeTrajectoryOverlay(courts_container)
 
@@ -1711,156 +1475,6 @@ class ScoutPanel(QWidget):
     def get_video_resume_seconds(self) -> float | None:
         return self._resume_video_seconds
 
-    def _reception_memory_key(self, side: str) -> str | None:
-        if not self.current_context:
-            return None
-
-        match_id = self.current_context.get("match_id")
-        set_number = self.current_context.get("set_number")
-        if match_id is None or set_number is None:
-            return None
-
-        try:
-            parsed_match = int(str(match_id))
-            parsed_set = int(str(set_number))
-            if parsed_match <= 0 or parsed_set <= 0:
-                return None
-        except Exception:
-            return None
-
-        safe_side = "away" if side == "away" else "home"
-        return (
-            f"{self.RECEPTION_MEMORY_SETTINGS_PREFIX}{parsed_match}"
-            f"_set_{parsed_set}_{safe_side}"
-        )
-
-    def _normalize_reception_positions(self, parsed) -> dict[str, tuple[float, float]]:
-        if not isinstance(parsed, dict):
-            return {}
-
-        result: dict[str, tuple[float, float]] = {}
-        for number, value in parsed.items():
-            try:
-                x, y = value
-                result[str(number)] = (
-                    min(1.0, max(0.0, float(x))),
-                    min(1.0, max(0.0, float(y))),
-                )
-            except Exception:
-                continue
-        return result
-
-    def _load_reception_positions_for_side_from_db(
-        self, side: str
-    ) -> dict[str, tuple[float, float]]:
-        if self.db is None or not self.current_context:
-            return {}
-
-        match_id = self.current_context.get("match_id")
-        set_number = self.current_context.get("set_number")
-        if match_id is None or set_number is None:
-            return {}
-
-        safe_side = "away" if side == "away" else "home"
-
-        try:
-            with self.db.session_scope() as session:
-                from volleyball_scout.core.models import MatchSetReceptionLayout
-
-                row = (
-                    session.query(MatchSetReceptionLayout)
-                    .filter_by(
-                        match_id=int(match_id),
-                        set_number=int(set_number),
-                        team_side=safe_side,
-                    )
-                    .first()
-                )
-                if row is None or not getattr(row, "positions_json", None):
-                    return {}
-
-                parsed = json.loads(str(row.positions_json))
-                return self._normalize_reception_positions(parsed)
-        except Exception:
-            return {}
-
-    def _load_reception_positions_for_side(
-        self, side: str
-    ) -> dict[str, tuple[float, float]]:
-        db_positions = self._load_reception_positions_for_side_from_db(side)
-        if db_positions:
-            return db_positions
-
-        key = self._reception_memory_key(side)
-        if key is None:
-            return {}
-
-        settings = self._shortcuts_settings()
-        raw = settings.value(key, None)
-        if raw is None:
-            return {}
-
-        try:
-            parsed = json.loads(str(raw))
-        except Exception:
-            return {}
-
-        normalized = self._normalize_reception_positions(parsed)
-        if normalized and self.db is not None and self.current_context:
-            self._save_reception_positions_for_side(side, normalized)
-        return normalized
-
-    def _save_reception_positions_for_side(
-        self, side: str, positions: dict[str, tuple[float, float]]
-    ):
-        key = self._reception_memory_key(side)
-
-        serializable = {
-            str(number): [float(value[0]), float(value[1])]
-            for number, value in dict(positions or {}).items()
-        }
-
-        if key is not None:
-            settings = self._shortcuts_settings()
-            settings.setValue(key, json.dumps(serializable, ensure_ascii=False))
-
-        if self.db is None or not self.current_context:
-            return
-
-        match_id = self.current_context.get("match_id")
-        set_number = self.current_context.get("set_number")
-        if match_id is None or set_number is None:
-            return
-
-        safe_side = "away" if side == "away" else "home"
-        payload = json.dumps(serializable, ensure_ascii=False)
-
-        try:
-            with self.db.session_scope() as session:
-                from volleyball_scout.core.models import MatchSetReceptionLayout
-
-                row = (
-                    session.query(MatchSetReceptionLayout)
-                    .filter_by(
-                        match_id=int(match_id),
-                        set_number=int(set_number),
-                        team_side=safe_side,
-                    )
-                    .first()
-                )
-                if row is None:
-                    row = MatchSetReceptionLayout(
-                        match_id=int(match_id),
-                        set_number=int(set_number),
-                        team_side=safe_side,
-                        positions_json=payload,
-                    )
-                    session.add(row)
-                else:
-                    row.positions_json = payload
-        except Exception as e:
-            print(f"⚠️ Errore salvataggio layout ricezione su DB: {e}")
-
     def set_video_resume_badge(self, seconds: float | None):
         if not hasattr(self, "video_resume_badge"):
             return
@@ -1965,6 +1579,16 @@ class ScoutPanel(QWidget):
             self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY,
             "1" if self.sync_timer_with_video else "0",
         )
+
+    def _load_default_attack_eval(self) -> str:
+        settings = self._shortcuts_settings()
+        value = settings.value(self.DEFAULT_ATTACK_EVAL_SETTINGS_KEY, "!", type=str)
+        eval_code = str(value or "!").strip()
+        return eval_code if eval_code in {"#", "+", "!", "/", "-", "="} else "!"
+
+    def _save_default_attack_eval(self):
+        settings = self._shortcuts_settings()
+        settings.setValue(self.DEFAULT_ATTACK_EVAL_SETTINGS_KEY, self.default_attack_eval)
 
     def _load_video_screen_index(self) -> int:
         settings = self._shortcuts_settings()
@@ -2212,16 +1836,6 @@ class ScoutPanel(QWidget):
         self._update_keyboard_hotkeys_hint()
         self._update_hotkeys_map_label()
 
-    def _default_point_outcome_map(self) -> dict[str, str]:
-        return {
-            "*#": "self",
-            "*=": "opponent",
-            "S#": "self",
-            "S=": "opponent",
-            "R#": "self",
-            "R=": "opponent",
-        }
-
     def _point_outcome_scope_options(self) -> list[tuple[str, str]]:
         return [
             ("global", "Globale"),
@@ -2257,31 +1871,11 @@ class ScoutPanel(QWidget):
                 return f"{self.POINT_OUTCOME_MAP_SET_PREFIX}{match_id}_{set_number}"
         return self.POINT_OUTCOME_MAP_SETTINGS_KEY
 
-    def _decode_point_outcome_map(self, serialized: str | None) -> dict[str, str]:
-        result = dict(self._default_point_outcome_map())
-        if not str(serialized or "").strip():
-            return result
-
-        for line in str(serialized).splitlines():
-            row = line.strip()
-            if not row or "|" not in row:
-                continue
-            key, value = row.split("|", 1)
-            key = str(key).strip().upper()
-            value = str(value).strip().lower()
-            if re.fullmatch(r"[SREABDF\*][#\+!\-=/]", key) and value in {
-                "self",
-                "opponent",
-                "none",
-            }:
-                result[key] = value
-        return result
-
     def _load_point_outcome_map(self, scope: str | None = None) -> dict[str, str]:
         settings = self._shortcuts_settings()
         key = self._point_outcome_storage_key(scope)
         serialized = settings.value(key, "", type=str)
-        return self._decode_point_outcome_map(serialized)
+        return decode_point_outcome_map(serialized)
 
     def _save_point_outcome_map(self, scope: str | None = None):
         settings = self._shortcuts_settings()
@@ -2296,49 +1890,8 @@ class ScoutPanel(QWidget):
         storage_key = self._point_outcome_storage_key(scope)
         settings.setValue(storage_key, "\n".join(lines))
 
-    def _point_outcome_map_to_text(self, rules: dict[str, str]) -> str:
-        rows = [
-            "# Formato: SkillValutazione=esito",
-            "# Esito: self | opponent | none",
-            "# Esempi:",
-            "# S#=self      -> punto a chi esegue la battuta",
-            "# R==opponent  -> errore ricezione, punto all'avversario",
-            "# *#=self      -> fallback per qualsiasi skill con #",
-            "",
-        ]
-
-        for key in sorted(rules.keys()):
-            rows.append(f"{key}={rules[key]}")
-        return "\n".join(rows)
-
-    def _parse_point_outcome_map_text(self, text: str) -> dict[str, str]:
-        parsed: dict[str, str] = {}
-        for raw_line in str(text or "").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-
-            line = re.sub(r"\s+#.*$", "", line).strip()
-            if not line or "=" not in line:
-                continue
-
-            m = re.fullmatch(
-                r"([SREABDF\*])([#\+!\-=/])\s*=\s*(self|opponent|none)",
-                line,
-                flags=re.IGNORECASE,
-            )
-            if not m:
-                continue
-
-            skill_token = m.group(1).upper()
-            eval_token = m.group(2)
-            outcome = m.group(3).lower()
-            parsed[f"{skill_token}{eval_token}"] = outcome
-
-        return parsed
-
     def _configure_point_outcome_map(self):
-        current_text = self._point_outcome_map_to_text(self.point_outcome_map)
+        current_text = point_outcome_map_to_text(self.point_outcome_map)
         new_text, ok = QInputDialog.getMultiLineText(
             self,
             "Mappa punto vinto/perso",
@@ -2348,7 +1901,7 @@ class ScoutPanel(QWidget):
         if not ok:
             return
 
-        parsed = self._parse_point_outcome_map_text(new_text)
+        parsed = parse_point_outcome_map_text(new_text)
         if not parsed:
             QMessageBox.warning(
                 self,
@@ -2498,6 +2051,25 @@ class ScoutPanel(QWidget):
             self._save_timer_sync_with_video()
 
         chk_sync_timer.stateChanged.connect(on_sync_timer_changed)
+
+        eval_row = QHBoxLayout()
+        eval_row.addWidget(QLabel("Codice attacco predefinito:"))
+        cmb_attack_eval = QComboBox()
+        for code in ["#", "+", "!", "/", "-", "="]:
+            cmb_attack_eval.addItem(code, code)
+        idx_eval = cmb_attack_eval.findData(self.default_attack_eval)
+        if idx_eval >= 0:
+            cmb_attack_eval.setCurrentIndex(idx_eval)
+        eval_row.addWidget(cmb_attack_eval)
+        eval_row.addStretch()
+        layout.addLayout(eval_row)
+
+        def on_attack_eval_changed():
+            selected = cmb_attack_eval.currentData()
+            self.default_attack_eval = str(selected or "!")
+            self._save_default_attack_eval()
+
+        cmb_attack_eval.currentIndexChanged.connect(lambda _i: on_attack_eval_changed())
 
         btn_shortcuts = QPushButton("Configura tasti rapidi codifica")
         btn_shortcuts.clicked.connect(
@@ -3210,9 +2782,9 @@ class ScoutPanel(QWidget):
 
     def _clear_player_highlight(self):
         if hasattr(self, "home_court"):
-            self.home_court.clear_highlight_player()
+            self.home_court.clear_highlight()
         if hasattr(self, "away_court"):
-            self.away_court.clear_highlight_player()
+            self.away_court.clear_highlight()
 
     def _highlight_player_on_courts(self, side: str, player_number: str | None):
         self._clear_player_highlight()
@@ -3223,130 +2795,6 @@ class ScoutPanel(QWidget):
             self.home_court.set_highlight_player(player_number)
         elif side == "away" and hasattr(self, "away_court"):
             self.away_court.set_highlight_player(player_number)
-
-    def _infer_code_team_side(self, raw_code: str) -> str | None:
-        normalized = str(raw_code or "").strip().lower()
-        if not normalized:
-            return None
-
-        lead = normalized[0]
-        second = normalized[1] if len(normalized) > 1 else ""
-
-        if lead == "*":
-            return "home"
-        if lead == "a" and (second.isdigit() or second == "p"):
-            return "home"
-        if lead == "b" and (second.isdigit() or second == "p"):
-            return "away"
-        return None
-
-    def _parse_datavolley_code(self, raw_code: str) -> dict:
-        normalized = str(raw_code or "").strip().upper().replace(" ", "")
-        if not normalized:
-            return {"valid": False, "error": "Codice vuoto"}
-
-        guessed_team = self._infer_code_team_side(normalized)
-        team_side = guessed_team or self._selected_code_team_side()
-
-        scan_code = normalized
-        if scan_code and scan_code[0] == "*":
-            scan_code = scan_code[1:]
-        elif (
-            len(scan_code) > 1
-            and scan_code[0] in {"A", "B"}
-            and (scan_code[1].isdigit() or scan_code[1] == "P")
-        ):
-            scan_code = scan_code[1:]
-
-        if not scan_code:
-            return {"valid": False, "error": "Codice incompleto"}
-
-        skill_index = None
-        skill = None
-        for idx, ch in enumerate(scan_code):
-            if ch in self.DATA_VOLLEY_SKILL_ALIASES:
-                skill_index = idx
-                skill = self.DATA_VOLLEY_SKILL_ALIASES[ch]
-                break
-
-        if skill_index is None or skill is None:
-            return {
-                "valid": False,
-                "error": "Skill DataVolley non trovata (usa S/R/E/A/B/D/F)",
-            }
-
-        prefix_part = scan_code[:skill_index]
-        suffix_part = scan_code[skill_index + 1 :]
-
-        player_number = None
-        player_match = re.search(r"(\d{1,2})$", prefix_part)
-        if player_match:
-            player_number = player_match.group(1).zfill(2)
-
-        evaluation = None
-        if suffix_part and suffix_part[0] in self.DATA_VOLLEY_EVALUATIONS:
-            evaluation = suffix_part[0]
-            suffix_part = suffix_part[1:]
-
-        zone_start = None
-        zone_end = None
-        extra_part = suffix_part
-        zone_pair_match = re.search(r"([1-9])([1-9])$", suffix_part)
-        if zone_pair_match:
-            zone_start = zone_pair_match.group(1)
-            zone_end = zone_pair_match.group(2)
-            extra_part = suffix_part[:-2]
-
-        extra_part = extra_part.strip()
-        attack_combo = None
-        set_code = None
-        if extra_part:
-            extra_match = re.search(r"([A-Z0-9]{1,2})$", extra_part)
-            if extra_match:
-                if skill == "A":
-                    attack_combo = extra_match.group(1)
-                elif skill == "E":
-                    set_code = extra_match.group(1)
-
-        return {
-            "valid": True,
-            "raw": normalized,
-            "team_side": team_side,
-            "player_number": player_number,
-            "skill": skill,
-            "evaluation": evaluation,
-            "zone_start": zone_start,
-            "zone_end": zone_end,
-            "attack_combo": attack_combo,
-            "set_code": set_code,
-        }
-
-    def _resolve_point_team_from_evaluation(
-        self,
-        side: str,
-        skill: str | None,
-        evaluation: str | None,
-    ) -> str | None:
-        eval_token = str(evaluation or "").strip()
-        if not eval_token:
-            return None
-
-        skill_token = str(skill or "").strip().upper()
-        if skill_token not in self.DATA_VOLLEY_SKILL_ALIASES:
-            skill_token = "*"
-
-        key_specific = f"{skill_token}{eval_token}"
-        key_fallback = f"*{eval_token}"
-        outcome = self.point_outcome_map.get(key_specific)
-        if outcome is None:
-            outcome = self.point_outcome_map.get(key_fallback)
-
-        outcome = str(outcome or "none").strip().lower()
-        if outcome == "self":
-            return side
-        if outcome == "opponent":
-            return "away" if side == "home" else "home"
-        return None
 
     def _apply_point_logic(self, side: str) -> dict:
         score_key = "score_home" if side == "home" else "score_away"
@@ -3390,7 +2838,9 @@ class ScoutPanel(QWidget):
         if not raw_code:
             return
 
-        parsed = self._parse_datavolley_code(raw_code)
+        parsed = parse_datavolley_code(raw_code, self.DATA_VOLLEY_SKILL_ALIASES, self.DATA_VOLLEY_EVALUATIONS)
+        if parsed.get("team_side") is None:
+            parsed["team_side"] = self._selected_code_team_side()
         if not parsed.get("valid"):
             QMessageBox.warning(
                 self,
@@ -3413,12 +2863,11 @@ class ScoutPanel(QWidget):
 
         skill = parsed.get("skill")
         evaluation = parsed.get("evaluation")
-        point_side = self._resolve_point_team_from_evaluation(side, skill, evaluation)
+        point_side = resolve_point_team_from_evaluation(side, skill, evaluation, self.point_outcome_map, self.DATA_VOLLEY_SKILL_ALIASES)
 
-        snapshot = None
+        snapshot = self._snapshot_state()
         point_result = None
         if point_side is not None:
-            snapshot = self._snapshot_state()
             point_result = self._apply_point_logic(point_side)
 
         history_kind = (
@@ -3450,8 +2899,7 @@ class ScoutPanel(QWidget):
             set_code=parsed.get("set_code"),
         )
 
-        if snapshot is not None:
-            self.rally_history.append({"snapshot": snapshot, "event_id": event_id})
+        self.rally_history.append({"snapshot": snapshot, "event_id": event_id})
 
         history_text = f"{self._format_elapsed()} | {team_name} | {raw_code}"
         if point_result is not None:
@@ -3546,10 +2994,10 @@ class ScoutPanel(QWidget):
         if hasattr(self, "btn_back_to_scouts"):
             self.btn_back_to_scouts.setEnabled(True)
 
-        if hasattr(self, "home_outer_status"):
-            self.home_outer_status.setEnabled(enabled)
-        if hasattr(self, "away_outer_status"):
-            self.away_outer_status.setEnabled(enabled)
+        if hasattr(self, "home_team_label"):
+            self.home_team_label.setEnabled(enabled)
+        if hasattr(self, "away_team_label"):
+            self.away_team_label.setEnabled(enabled)
 
         for btn in self.skill_buttons:
             btn.setEnabled(enabled)
@@ -3611,95 +3059,35 @@ class ScoutPanel(QWidget):
         self.timer_label.setText(self._format_elapsed())
         self._highlight_history_by_current_time()
 
-    def _normalize_lineup_number(self, value) -> str | None:
-        if value is None:
-            return None
-        raw = str(value).strip()
-        if not raw or raw == "-":
-            return None
-        try:
-            return str(int(raw))
-        except Exception:
-            return raw.lstrip("0") or raw
-
-    def _find_player_position_in_lineup(
-        self, side: str, player_number: str | int | None
-    ) -> str | None:
-        target = self._normalize_lineup_number(player_number)
-        if target is None:
-            return None
-
-        lineup = self._team_context(side).get("lineup", {})
-        for pos in ("P1", "P2", "P3", "P4", "P5", "P6"):
-            if self._normalize_lineup_number(lineup.get(pos)) == target:
-                return pos
-        return None
-
-    def _detect_setter_number_for_side(self, side: str) -> str | None:
-        team_data = self._team_context(side)
-        lineup = team_data.get("lineup", {})
-        lineup_numbers = {
-            self._normalize_lineup_number(v)
-            for v in lineup.values()
-            if self._normalize_lineup_number(v) is not None
-        }
-        if not lineup_numbers:
-            return None
-
-        explicit = self._normalize_lineup_number(team_data.get("setter_number"))
-        if explicit in lineup_numbers:
-            return explicit
-
-        if self.db is None or not self.current_context:
-            return None
-
-        match_id = self.current_context.get("match_id")
-        team_id = team_data.get("id")
-        if match_id is None or team_id is None:
-            return None
-
-        try:
-            with self.db.session_scope() as session:
-                from volleyball_scout.core.models import MatchPlayer
-
-                rows = (
-                    session.query(MatchPlayer)
-                    .filter_by(match_id=match_id, team_id=team_id)
-                    .all()
-                )
-
-                starters = [r for r in rows if bool(getattr(r, "is_starter", False))]
-                ordered_sets = [starters, rows]
-                for source_rows in ordered_sets:
-                    for row in source_rows:
-                        role_text = str(getattr(row, "role", "") or "").strip().lower()
-                        if "palleggiatore" not in role_text:
-                            continue
-                        number = self._normalize_lineup_number(
-                            getattr(row, "number", None)
-                        )
-                        if number in lineup_numbers:
-                            return number
-        except Exception:
-            return None
-
-        return None
-
     def _refresh_setter_numbers(self):
-        self.setter_number_by_side["home"] = self._detect_setter_number_for_side("home")
-        self.setter_number_by_side["away"] = self._detect_setter_number_for_side("away")
+        for side in ("home", "away"):
+            team_data = self._team_context(side)
+            lineup_numbers = {
+                normalize_lineup_number(v)
+                for v in team_data.get("lineup", {}).values()
+                if normalize_lineup_number(v) is not None
+            }
+            explicit = normalize_lineup_number(team_data.get("setter_number"))
+            detected = self.formation_manager.detect_setter_number(
+                self.current_context.get("match_id"),
+                team_data.get("id"),
+                lineup_numbers,
+                explicit_setter=explicit,
+            )
+            if detected is not None:
+                self.setter_number_by_side[side] = detected
+            else:
+                self.setter_number_by_side[side] = self._prompt_for_setter(side)
 
     def _update_outer_service_hints(self):
         entries = {
-            "home": getattr(self, "home_outer_status", None),
-            "away": getattr(self, "away_outer_status", None),
+            "home": getattr(self, "home_team_label", None),
+            "away": getattr(self, "away_team_label", None),
         }
         for side, label in entries.items():
             if label is None:
                 continue
 
-            is_serving = side == self.serving_side
-            status = "BATTUTA" if is_serving else "RICEZIONE"
             rotation = self._get_current_rotation(side)
             rotation_str = f"Rot. {rotation}" if rotation is not None else "-"
 
@@ -3709,22 +3097,38 @@ class ScoutPanel(QWidget):
                 else ""
             )
 
-            label.setText(f"{team_name}\n{status}\n{rotation_str}")
+            label.setText(f"{team_name}\n{rotation_str}")
+            label.setStyleSheet(
+                "font-size: 10px; font-weight: bold; color: #F6EFE9;"
+                "border: 1px solid #374151; border-radius: 8px; padding: 6px 4px;"
+                "background-color: #4B5563;"
+            )
 
+        # Pulsanti BATTUTA laterali
+        for side in ("home", "away"):
+            btn = getattr(self, f"{side}_battuta_btn", None)
+            if btn is None:
+                continue
+            is_serving = side == self.serving_side
             if is_serving:
-                label.setStyleSheet(
+                btn.setText("BATTUTA")
+                btn.setStyleSheet(
                     "font-size: 10px; font-weight: bold; color: white;"
                     "border: 1px solid #C2410C; border-radius: 8px; padding: 6px 4px;"
                     "background-color: #E95420;"
                 )
-                label.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setVisible(True)
             else:
-                label.setStyleSheet(
-                    "font-size: 10px; font-weight: bold; color: #F6EFE9;"
-                    "border: 1px solid #374151; border-radius: 8px; padding: 6px 4px;"
-                    "background-color: #4B5563;"
-                )
-                label.setCursor(Qt.CursorShape.ArrowCursor)
+                btn.setVisible(False)
+
+    def _reset_serve_hint(self):
+        """Nasconde il pulsante BATTUTA laterale dopo l'atterraggio."""
+        side = self._serve_zone_start_side
+        if side is None:
+            return
+        btn = getattr(self, f"{side}_battuta_btn", None)
+        if btn is not None:
+            btn.setVisible(False)
 
     def _update_initial_service_controls(self):
         if not hasattr(self, "initial_service_status"):
@@ -3793,15 +3197,6 @@ class ScoutPanel(QWidget):
         )
         return False
 
-    def _lineup_numbers_for_side(self, side: str) -> list[str]:
-        lineup = self._team_context(side).get("lineup", {})
-        ordered = []
-        for pos in ("P1", "P2", "P3", "P4", "P5", "P6"):
-            normalized = self._normalize_lineup_number(lineup.get(pos))
-            if normalized and normalized not in ordered:
-                ordered.append(normalized)
-        return ordered
-
     def _cell_to_overlay(self, court, pos_code):
         """Converte il centro di una cella in coordinate dell'overlay."""
         center = court.get_cell_center(pos_code)
@@ -3818,9 +3213,9 @@ class ScoutPanel(QWidget):
             return QPointF(self._serve_start_overlay_pos)
         # Fallback: centro del badge
         side = self._serve_zone_start_side
-        badge = self.home_outer_status if side == "home" else self.away_outer_status
-        center = badge.rect().center()
-        return QPointF(badge.x() + center.x(), badge.y() + center.y())
+        badge = self.home_battuta_btn if side == "home" else self.away_battuta_btn
+        center = badge.mapTo(self.courts_container, badge.rect().center())
+        return QPointF(float(center.x()), float(center.y()))
 
     def _get_end_overlay_pos(self, side: str, pos_code: str):
         """Coordinate del punto di arrivo nell'overlay (centro cella)."""
@@ -3862,7 +3257,7 @@ class ScoutPanel(QWidget):
         self._serve_zone_end_side = None
 
         # Memorizza la posizione del click sul badge
-        badge = self.home_outer_status if side == "home" else self.away_outer_status
+        badge = self.home_battuta_btn if side == "home" else self.away_battuta_btn
         global_pos = QCursor.pos()
         overlay_pos = self.courts_container.mapFromGlobal(global_pos)
         self._serve_start_overlay_pos = QPointF(overlay_pos.x(), overlay_pos.y())
@@ -3877,7 +3272,7 @@ class ScoutPanel(QWidget):
             "name", "Casa" if side == "home" else "Ospiti"
         )
         lineup = self._team_context(side).get("lineup", {})
-        server_number = self._normalize_lineup_number(lineup.get("P1")) or ""
+        server_number = normalize_lineup_number(lineup.get("P1")) or ""
         self.subtitle.setText(
             f"Battuta {serving_team}: clicca sul campo per il punto di arrivo"
         )
@@ -3887,6 +3282,7 @@ class ScoutPanel(QWidget):
         self.away_court.setClickable(True)
 
     def _exit_serve_mode(self):
+        self._reset_serve_hint()
         self._serve_mode_active = False
         self._serve_zone_start = None
         self._serve_zone_start_side = None
@@ -3968,7 +3364,7 @@ class ScoutPanel(QWidget):
 
     def _on_attack_cell_clicked(self, side: str, pos_code: str, zone: str, click_x: float = 0, click_y: float = 0):
         lineup = self._team_context(side).get("lineup", {})
-        player = self._normalize_lineup_number(lineup.get(pos_code))
+        player = normalize_lineup_number(lineup.get(pos_code))
         if player is None:
             QMessageBox.warning(
                 self, "Nessun giocatore",
@@ -3976,9 +3372,9 @@ class ScoutPanel(QWidget):
             )
             return
 
-        # Fase 4: tutte le fasi complete → auto-submit con ! e riparti
+        # Fase 4: tutte le fasi complete → auto-submit con eval predefinito e riparti
         if self._attack_player is not None and self._attack_start_zone is not None and self._attack_end_zone is not None:
-            self._submit_attack_code("!")
+            self._submit_attack_code(self.default_attack_eval)
             self._reset_attack_state()
             # continua con la Fase 1 usando questo click
 
@@ -3995,7 +3391,13 @@ class ScoutPanel(QWidget):
                 f"Attacco {team_name} #{player}: clicca sul punto di partenza"
             )
         elif self._attack_start_zone is None:
-            # Fase 2: punto di partenza (posizione click sul campo)
+            # Fase 2: punto di partenza — deve essere nel campo dell'attaccante
+            if side != self._attack_side:
+                QMessageBox.warning(
+                    self, "Punto di partenza",
+                    "Il punto di partenza deve essere nel campo del giocatore selezionato.",
+                )
+                return
             self._attack_start_zone = zone
             self._attack_start_overlay_pos = self._get_click_overlay_pos(side, click_x, click_y)
             team_name = self.current_context.get(
@@ -4031,8 +3433,8 @@ class ScoutPanel(QWidget):
 
     def _submit_attack_code(self, evaluation: str):
         lineup = self._team_context(self._attack_side).get("lineup", {})
-        attacker = self._normalize_lineup_number(lineup.get(
-            self._find_player_position_in_lineup(self._attack_side, self._attack_player)
+        attacker = normalize_lineup_number(lineup.get(
+            find_player_position_in_lineup(lineup, self._attack_player)
         )) or self._attack_player
 
         code = f"{attacker}A{evaluation}{self._attack_start_zone}{self._attack_end_zone}"
@@ -4051,6 +3453,8 @@ class ScoutPanel(QWidget):
         if self._serve_zone_end is None:
             self._serve_zone_end = zone
             self._serve_zone_end_side = side
+
+            self._reset_serve_hint()
 
             start_ov = self._get_start_overlay_pos()
             end_ov = self._get_click_overlay_pos(side, click_x, click_y)
@@ -4078,7 +3482,7 @@ class ScoutPanel(QWidget):
             return
 
         lineup = self._team_context(side).get("lineup", {})
-        receiver_number = self._normalize_lineup_number(lineup.get(pos_code))
+        receiver_number = normalize_lineup_number(lineup.get(pos_code))
         if receiver_number is None:
             QMessageBox.warning(
                 self, "Nessun giocatore",
@@ -4102,19 +3506,23 @@ class ScoutPanel(QWidget):
             return
 
         if eval_code == "=":
-            self._submit_ace_serve()
+            self._submit_serve_and_reception(
+                self._serve_receiver, "=", "#"
+            )
+            self._exit_serve_mode()
+            self._refresh_view()
         else:
             serve_eval = {"#": "-", "-": "+", "+": "-"}.get(eval_code, "-")
             self._submit_serve_and_reception(
                 self._serve_receiver, eval_code, serve_eval
             )
-        self._exit_serve_mode()
-        self._auto_enter_attack_after_reception()
+            self._exit_serve_mode()
+            self._auto_enter_attack_after_reception()
 
     def _submit_ace_serve(self):
         """Battuta ace: invia solo S#, niente codice ricezione separato."""
         serving_lineup = self._team_context(self.serving_side).get("lineup", {})
-        server_number = self._normalize_lineup_number(serving_lineup.get("P1")) or ""
+        server_number = normalize_lineup_number(serving_lineup.get("P1")) or ""
         code = f"{server_number}S#{self._serve_zone_start}{self._serve_zone_end}"
         self._set_code_team_side(self.serving_side)
         self.code_input.setText(code)
@@ -4123,27 +3531,117 @@ class ScoutPanel(QWidget):
     def _submit_serve_error(self):
         """Battuta in rete o fuori: invia S=, punto agli avversari."""
         serving_lineup = self._team_context(self.serving_side).get("lineup", {})
-        server_number = self._normalize_lineup_number(serving_lineup.get("P1")) or ""
+        server_number = normalize_lineup_number(serving_lineup.get("P1")) or ""
         code = f"{server_number}S={self._serve_zone_start}{self._serve_zone_end}"
         self._set_code_team_side(self.serving_side)
         self.code_input.setText(code)
         self._register_datavolley_code()
 
-    def _submit_serve_and_reception(self, receiver_number, reception_eval, serve_eval):
+    def _submit_serve_and_reception(self, receiver_number: str, reception_eval: str, serve_eval: str):
+        """Registra sia la battuta (S) che la ricezione (R) con la valutazione data.
+
+        Per R# (ricezione perfetta), assegna il punto alla squadra ricevente tramite
+        resolve_point_team_from_evaluation.
+        """
         serving_lineup = self._team_context(self.serving_side).get("lineup", {})
-        server_number = self._normalize_lineup_number(serving_lineup.get("P1")) or ""
+        server_number = normalize_lineup_number(serving_lineup.get("P1")) or ""
+
+        serving_side = self.serving_side
+        receiving_side = "away" if serving_side == "home" else "home"
 
         serve_code = f"{server_number}S{serve_eval}{self._serve_zone_start}{self._serve_zone_end}"
-        self._set_code_team_side(self.serving_side)
-        self.code_input.setText(serve_code)
-        self._register_datavolley_code()
-
-        receiving_side = "away" if self.serving_side == "home" else "home"
-        # Reception code: zona ripetuta due volte per compatibilità parser (attende 2 digit)
         reception_code = f"{receiver_number}R{reception_eval}{self._serve_zone_end}{self._serve_zone_end}"
+
+        # Snapshot BEFORE any changes
+        snapshot = self._snapshot_state()
+
+        # 1) Register serve event (no point for S-)
+        self._set_code_team_side(serving_side)
+        parsed_serve = parse_datavolley_code(
+            serve_code, self.DATA_VOLLEY_SKILL_ALIASES, self.DATA_VOLLEY_EVALUATIONS
+        )
+        if parsed_serve.get("team_side") is None:
+            parsed_serve["team_side"] = serving_side
+
+        serve_event_id = self._persist_event(
+            team_side=serving_side,
+            player_id=self._resolve_player_id(serving_side, parsed_serve.get("player_number")),
+            skill=parsed_serve.get("skill"),
+            evaluation=parsed_serve.get("evaluation"),
+            notes=f"Battuta: {serve_code}",
+            kind=self.HISTORY_KIND_SKILL,
+            zone_start=parsed_serve.get("zone_start"),
+            zone_end=parsed_serve.get("zone_end"),
+        )
+        self.rally_history.append({"snapshot": deepcopy(snapshot), "event_id": serve_event_id})
+        self._append_history(
+            f"{self._format_elapsed()} | {self._team_name(serving_side)} | {serve_code}",
+            event_id=serve_event_id,
+            kind=self.HISTORY_KIND_SKILL,
+        )
+
+        # 2) Register reception event
         self._set_code_team_side(receiving_side)
-        self.code_input.setText(reception_code)
-        self._register_datavolley_code()
+        parsed_recv = parse_datavolley_code(
+            reception_code, self.DATA_VOLLEY_SKILL_ALIASES, self.DATA_VOLLEY_EVALUATIONS
+        )
+        if parsed_recv.get("team_side") is None:
+            parsed_recv["team_side"] = receiving_side
+
+        point_side: str | None = resolve_point_team_from_evaluation(
+            receiving_side,
+            parsed_recv.get("skill"),
+            parsed_recv.get("evaluation"),
+            self.point_outcome_map,
+            self.DATA_VOLLEY_SKILL_ALIASES,
+        )
+
+        # Snapshot BEFORE point logic (for undo)
+        pre_point_snapshot = self._snapshot_state()
+
+        point_result = None
+        if point_side is not None:
+            point_result = self._apply_point_logic(point_side)
+
+        recv_event_id = self._persist_event(
+            team_side=receiving_side,
+            player_id=self._resolve_player_id(receiving_side, parsed_recv.get("player_number")),
+            skill=parsed_recv.get("skill"),
+            evaluation=parsed_recv.get("evaluation"),
+            notes=f"Ricezione: {reception_code}"
+            + (f" | Punto {point_result['team_name']}" if point_result else ""),
+            kind=self.HISTORY_KIND_POINT if point_result else self.HISTORY_KIND_SKILL,
+            zone_start=parsed_recv.get("zone_start"),
+            zone_end=parsed_recv.get("zone_end"),
+        )
+
+        self.rally_history.append({"snapshot": pre_point_snapshot, "event_id": recv_event_id})
+
+        score_text = (
+            f" -> {point_result['score_home']}-{point_result['score_away']}"
+            if point_result
+            else ""
+        )
+        self._append_history(
+            f"{self._format_elapsed()} | {self._team_name(receiving_side)} | {reception_code}{score_text}",
+            event_id=recv_event_id,
+            kind=self.HISTORY_KIND_POINT if point_result else self.HISTORY_KIND_SKILL,
+        )
+
+        self.subtitle.setText(
+            f"Battuta {serve_code} | Ricezione {reception_code}"
+            + (f" | Punto {point_result['team_name']}" if point_result else "")
+        )
+        self._refresh_view()
+        self.code_input.clear()
+        self.code_input.setFocus()
+
+    def _team_name(self, side: str) -> str:
+        if not self.current_context:
+            return "Casa" if side == "home" else "Ospiti"
+        return self.current_context.get(
+            f"{side}_team", {}
+        ).get("name", "Casa" if side == "home" else "Ospiti")
 
     def _open_formation_editor(self):
         from volleyball_scout.ui.formation_editor import FormationEditorDialog
@@ -4156,7 +3654,7 @@ class ScoutPanel(QWidget):
         team_name = self.current_context.get(f"{side}_team", {}).get(
             "name", "Ospiti" if side == "away" else "Casa"
         )
-        line_numbers = self._lineup_numbers_for_side(side)
+        line_numbers = lineup_numbers_for_side(self._team_context(side).get("lineup", {}))
         if not line_numbers:
             return
 
@@ -4171,88 +3669,15 @@ class ScoutPanel(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._formations_by_rotation[side] = dialog.get_formations()
             if self.current_context.get("match_id") and self.current_context.get("set_number"):
-                self._save_formations_for_side(side)
+                self.formation_manager.save_formations(
+                    side,
+                    self.current_context.get("match_id"),
+                    self.current_context.get("set_number"),
+                    self._formations_by_rotation.get(side, {}),
+                )
 
         self._update_reception_formation_display()
         self._update_outer_service_hints()
-
-    def _save_formations_for_side(self, side: str):
-        formations = self._formations_by_rotation.get(side)
-        if not formations:
-            return
-        match_id = self.current_context.get("match_id")
-        set_number = self.current_context.get("set_number")
-        if match_id is None or set_number is None:
-            return
-        # Salva come JSON con chiave 'formation_by_rotation'
-        import json
-        data = {"formation_by_rotation": {}}
-        for r, pos in formations.items():
-            data["formation_by_rotation"][str(r)] = {
-                k: [float(v[0]), float(v[1])] for k, v in pos.items()
-            }
-        positions_json = json.dumps(data)
-        if self.db is not None:
-            from sqlalchemy import and_
-            from volleyball_scout.core.models import MatchSetReceptionLayout
-            with self.db.session_scope() as session:
-                existing = (
-                    session.query(MatchSetReceptionLayout)
-                    .filter(
-                        and_(
-                            MatchSetReceptionLayout.match_id == match_id,
-                            MatchSetReceptionLayout.set_number == set_number,
-                            MatchSetReceptionLayout.team_side == side,
-                        )
-                    )
-                    .first()
-                )
-                if existing:
-                    existing.positions_json = positions_json
-                else:
-                    layout = MatchSetReceptionLayout(
-                        match_id=match_id,
-                        set_number=set_number,
-                        team_side=side,
-                        positions_json=positions_json,
-                    )
-                    session.add(layout)
-
-    def _load_formations_for_side(self, side: str) -> dict:
-        """Carica formazioni dal DB o da QSettings."""
-        if self.db is not None and self.current_context:
-            match_id = self.current_context.get("match_id")
-            set_number = self.current_context.get("set_number")
-            if match_id is not None and set_number is not None:
-                from sqlalchemy import and_
-                from volleyball_scout.core.models import MatchSetReceptionLayout
-                import json
-                with self.db.session_scope() as session:
-                    row = (
-                        session.query(MatchSetReceptionLayout)
-                        .filter(
-                            and_(
-                                MatchSetReceptionLayout.match_id == match_id,
-                                MatchSetReceptionLayout.set_number == set_number,
-                                MatchSetReceptionLayout.team_side == side,
-                            )
-                        )
-                        .first()
-                    )
-                    if row is not None and row.positions_json:
-                        try:
-                            data = json.loads(row.positions_json)
-                            fb = data.get("formation_by_rotation", {})
-                            result = {}
-                            for r_str, pos_dict in fb.items():
-                                result[int(r_str)] = {
-                                    k: (float(v[0]), float(v[1]))
-                                    for k, v in pos_dict.items()
-                                }
-                            return result
-                        except Exception:
-                            pass
-        return {}
 
     def _get_current_rotation(self, side: str) -> int | None:
         """Restituisce la rotazione corrente (1-6) per la squadra indicata."""
@@ -4262,6 +3687,36 @@ class ScoutPanel(QWidget):
             return None
         from volleyball_scout.core.rotation import get_current_rotation
         return get_current_rotation(lineup, setter)
+
+    def _prompt_for_setter(self, side: str) -> str | None:
+        """Chiede all'utente chi è il palleggiatore se non è già registrato."""
+        team_name = (
+            self.current_context.get(f"{side}_team", {}).get("name", "Casa" if side == "home" else "Ospiti")
+            if self.current_context
+            else ("Casa" if side == "home" else "Ospiti")
+        )
+        lineup = self._team_context(side).get("lineup", {})
+        player_numbers = sorted(
+            set(
+                normalize_lineup_number(v)
+                for v in lineup.values()
+                if normalize_lineup_number(v) is not None
+            )
+        )
+        if not player_numbers:
+            return None
+
+        number, ok = QInputDialog.getItem(
+            self, f"Palleggiatore {team_name}",
+            f"Chi è il palleggiatore di {team_name}?",
+            [f"#{n}" for n in player_numbers],
+            editable=False,
+        )
+        if ok and number:
+            number = number.lstrip("#")
+            self.setter_number_by_side[side] = number
+            return number
+        return None
 
     def _update_reception_formation_display(self):
         """Disegna le formazioni di ricezione sui campi."""
@@ -4283,142 +3738,30 @@ class ScoutPanel(QWidget):
             if positions:
                 court.set_reception_positions(positions)
             else:
-                # Auto-genera dal metodo di gioco P-S-C/P-C-S
-                auto_positions = self._auto_generate_reception_positions(side)
+                lineup_raw = self._team_context(side).get("lineup", {})
+                lineup = {
+                    pos: normalize_lineup_number(num)
+                    for pos, num in lineup_raw.items()
+                    if normalize_lineup_number(num) is not None
+                }
+                setter_number = self.setter_number_by_side.get(side)
+                team_id = self._team_context(side).get("id")
+                roles = self.formation_manager.get_player_roles(
+                    self.current_context.get("match_id"), team_id
+                )
+                game_method_by_team = self.current_context.get("game_method_by_team", {})
+                libero_number = normalize_lineup_number(
+                    self._team_context(side).get("libero")
+                )
+                auto_positions = self.formation_manager.auto_generate_reception_positions(
+                    lineup, setter_number, roles, team_id, game_method_by_team, libero_number
+                )
                 if auto_positions:
                     court.set_reception_positions(auto_positions)
+                elif self.reception_manual_positions.get(side):
+                    court.set_reception_positions(self.reception_manual_positions[side])
                 else:
                     court.set_reception_positions(None)
-
-    def _auto_generate_reception_positions(self, side: str) -> dict | None:
-        """Genera posizioni ricezione in base allo schema P-S-C / P-C-S."""
-        lineup_raw = self._team_context(side).get("lineup", {})
-        lineup = {
-            pos: self._normalize_lineup_number(num)
-            for pos, num in lineup_raw.items()
-            if self._normalize_lineup_number(num) is not None
-        }
-        if len(lineup) < 6:
-            return None
-
-        setter = self.setter_number_by_side.get(side)
-        if setter is None:
-            return None
-
-        roles = self._get_player_roles_for_side(side)
-        if not roles:
-            return None
-
-        team_id = self._team_context(side).get("id")
-        game_method_by_team = self.current_context.get("game_method_by_team", {})
-        method = game_method_by_team.get(str(team_id), "P-S-C") if team_id else "P-S-C"
-
-        # Mappa posizioni: zone di ricezione standard (nx, ny)
-        # Il campo va da (0,0) top-left a (1,1) bottom-right
-        default_positions = {
-            "1": (0.82, 0.82),  # back right
-            "6": (0.50, 0.78),  # center back
-            "5": (0.18, 0.82),  # back left
-            "4": (0.18, 0.22),  # front left
-            "3": (0.50, 0.22),  # center front
-            "2": (0.82, 0.22),  # front right (setter)
-        }
-
-        # Trova il libero o il centrale nella schiera (zone 1,6,5)
-        back_row_zones = ["1", "6", "5"]
-        back_players = {}
-        for zone in back_row_zones:
-            pos = f"P{zone}"
-            num = lineup.get(pos)
-            if num:
-                back_players[zone] = num
-
-        # Cerca libero o centrale nel back-row da mettere in zona 5
-        libero_number = self._normalize_lineup_number(
-            self._team_context(side).get("libero")
-        )
-        position5_player = None
-        for zone in back_row_zones:
-            num = back_players.get(zone)
-            if num is None:
-                continue
-            if num == libero_number:
-                position5_player = num
-                back_row_zones.remove(zone)
-                break
-            role = roles.get(num, "")
-            if "centrale" in role:
-                if position5_player is None:
-                    position5_player = num
-                    back_row_zones.remove(zone)
-                    break
-
-        if position5_player is None:
-            # Prendi il primo disponibile dal back row
-            for zone in back_row_zones:
-                num = back_players.get(zone)
-                if num:
-                    position5_player = num
-                    back_row_zones.remove(zone)
-                    break
-
-        # Assegna posizioni
-        result = {}
-        assigned_zones = set()
-
-        # Metti il palleggiatore in posizione 2
-        setter_pos = self._find_player_position_in_lineup(side, setter)
-        setter_zone = None
-        if setter_pos and setter_pos[1].isdigit():
-            setter_zone = setter_pos[1]
-
-        # Assegna zone ai giocatori
-        for pos_code in ("P1", "P2", "P3", "P4", "P5", "P6"):
-            num = lineup.get(pos_code)
-            if num is None:
-                continue
-            zone = pos_code[1]
-            if zone == setter_zone:
-                # Setter in posizione 2
-                result[num] = default_positions["2"]
-                assigned_zones.add("2")
-            elif num == position5_player:
-                result[num] = default_positions["5"]
-                assigned_zones.add("5")
-            else:
-                # Altro giocatore: trova zona libera
-                for z in ("1", "6", "4", "3"):
-                    if z not in assigned_zones and z != "2" and z != "5" and z != setter_zone:
-                        result[num] = default_positions[z]
-                        assigned_zones.add(z)
-                        break
-
-        return result if len(result) >= 5 else None
-
-    def _get_player_roles_for_side(self, side: str) -> dict[str, str]:
-        """Restituisce {player_number: role} per la squadra indicata."""
-        team_data = self._team_context(side)
-        team_id = team_data.get("id")
-        match_id = self.current_context.get("match_id") if self.current_context else None
-        if not team_id or not match_id or self.db is None:
-            return {}
-        try:
-            from volleyball_scout.core.models import MatchPlayer
-            with self.db.session_scope() as session:
-                rows = (
-                    session.query(MatchPlayer)
-                    .filter_by(match_id=match_id, team_id=team_id)
-                    .all()
-                )
-                result = {}
-                for r in rows:
-                    num = self._normalize_lineup_number(getattr(r, "number", None))
-                    role = str(getattr(r, "role", "") or "").strip().lower()
-                    if num:
-                        result[num] = role
-                return result
-        except Exception:
-            return {}
 
     def _position_reception_with_prompt(self):
         if not self.current_context:
@@ -4446,7 +3789,7 @@ class ScoutPanel(QWidget):
             side = "away" if self.serving_side == "home" else "home"
 
         side = "away" if side == "away" else "home"
-        players = self._lineup_numbers_for_side(side)
+        players = lineup_numbers_for_side(self._team_context(side).get("lineup", {}))
         if not players:
             QMessageBox.warning(
                 self,
@@ -4476,10 +3819,15 @@ class ScoutPanel(QWidget):
 
         placed_positions = dialog.positions()
         self.reception_manual_positions[side] = dict(placed_positions)
-        self._save_reception_positions_for_side(
-            side, self.reception_manual_positions[side]
-        )
         if self.current_context is not None:
+            self.formation_manager.save_reception_positions(
+                side,
+                self.current_context.get("match_id"),
+                self.current_context.get("set_number"),
+                self.reception_manual_positions[side],
+                self._shortcuts_settings(),
+                self.RECEPTION_MEMORY_SETTINGS_PREFIX,
+            )
             self.current_context["reception_manual_positions"] = {
                 "home": dict(self.reception_manual_positions.get("home", {})),
                 "away": dict(self.reception_manual_positions.get("away", {})),
@@ -4536,7 +3884,82 @@ class ScoutPanel(QWidget):
 
         team_key = "home_team" if side == "home" else "away_team"
         team_data = self.current_context.get(team_key, {})
-        team_data["lineup"] = rotate_lineup_clockwise(team_data.get("lineup", {}))
+        lineup = team_data.get("lineup", {})
+
+        # Auto-revert libero se la rotazione lo porterebbe in prima linea
+        reverted = self._auto_revert_libero_if_needed(side, lineup)
+
+        team_data["lineup"] = rotate_lineup_clockwise(lineup)
+
+    def _auto_revert_libero_if_needed(self, side: str, lineup: dict) -> bool:
+        """Reverta il libero se dopo la rotazione finirebbe in prima linea. Restituisce True se ha revertato."""
+        if self._libero_active_player.get(side) is None:
+            return False
+
+        libero_num = normalize_lineup_number(
+            self.current_context.get(f"{side}_team", {}).get("libero")
+        )
+        if libero_num is None:
+            return False
+
+        current_pos = None
+        for pos_code, num in lineup.items():
+            if normalize_lineup_number(num) == libero_num:
+                current_pos = pos_code
+                break
+        if current_pos is None:
+            return False
+
+        rotation_map = {
+            "P1": "P6", "P2": "P1", "P3": "P2",
+            "P4": "P3", "P5": "P4", "P6": "P5",
+        }
+        new_pos = rotation_map.get(current_pos)
+        if new_pos is None:
+            return False
+
+        front_row = ("P2", "P3", "P4")
+        if new_pos not in front_row:
+            return False
+
+        replaced_player = self._libero_active_player.get(side)
+        lineup[current_pos] = replaced_player
+        self._libero_active_player[side] = None
+
+        team_name = self.current_context.get(f"{side}_team", {}).get("name", "")
+        note = f"Libero {team_name}: rientro automatico #{replaced_player} (rotazione)"
+        event_id = self._persist_event(
+            team_side=side,
+            notes=note,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self.subtitle.setText(note)
+        self._append_history(
+            f"{self._format_elapsed()} | {note}",
+            event_id=event_id,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self._flash_cell(side, current_pos)
+        return True
+
+    def _flash_cell(self, side: str, pos_code: str):
+        """Lampeggia una cella per 1 secondo."""
+        court = self.home_court if side == "home" else self.away_court
+        cell = court._cell_frames.get(pos_code)
+        label = court._number_labels.get(pos_code)
+        if label is None:
+            return
+
+        # Applica stile lampeggio
+        label.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #FFFFFF;"
+            "background-color: #22C55E; border: 3px solid #16A34A; border-radius: 22px;"
+        )
+
+        # Dopo 1 secondo torna allo stile normale
+        QTimer.singleShot(1000, lambda lbl=label, c=court: c._apply_number_style(
+            lbl, highlighted=False, is_libero=False,
+        ))
 
     def _snapshot_state(self) -> dict:
         return {
@@ -4919,7 +4342,9 @@ class ScoutPanel(QWidget):
         if not raw_code:
             return
 
-        parsed = self._parse_datavolley_code(raw_code)
+        parsed = parse_datavolley_code(raw_code, self.DATA_VOLLEY_SKILL_ALIASES, self.DATA_VOLLEY_EVALUATIONS)
+        if parsed.get("team_side") is None:
+            parsed["team_side"] = self._selected_code_team_side()
         if not parsed.get("valid"):
             QMessageBox.warning(
                 self,
@@ -5090,6 +4515,7 @@ class ScoutPanel(QWidget):
             home.get("name", "Casa"),
             home.get("lineup", {}),
             libero=home.get("libero"),
+            replaced_player=self._libero_active_player.get("home"),
             serving=self.serving_side == "home",
             setter_number=self.setter_number_by_side.get("home"),
         )
@@ -5097,6 +4523,7 @@ class ScoutPanel(QWidget):
             away.get("name", "Trasferta"),
             away.get("lineup", {}),
             libero=away.get("libero"),
+            replaced_player=self._libero_active_player.get("away"),
             serving=self.serving_side == "away",
             setter_number=self.setter_number_by_side.get("away"),
         )
@@ -5166,6 +4593,90 @@ class ScoutPanel(QWidget):
             event_id=event_id,
             kind=self.HISTORY_KIND_SYSTEM,
         )
+
+    def _on_libero_dropped(self, side: str, pos_code: str, player_number: str, libero_number: str):
+        """Swap a player with the libero via drag-and-drop."""
+        if not self.current_context:
+            return
+        team_key = "home_team" if side == "home" else "away_team"
+        team_data = self.current_context.get(team_key, {})
+        lineup = team_data.get("lineup", {})
+        pos_code = str(pos_code)
+        if pos_code not in lineup:
+            return
+        old_player = normalize_lineup_number(lineup.get(pos_code))
+        if old_player is None:
+            return
+        old_player_str = str(old_player)
+        if old_player_str == libero_number:
+            return
+
+        team_name = team_data.get("name", "Casa" if side == "home" else "Ospiti")
+
+        lineup[pos_code] = libero_number
+        self._libero_active_player[side] = old_player_str
+
+        note = f"Libero {team_name}: #{old_player_str} ↔ #{libero_number}"
+        event_id = self._persist_event(
+            team_side=side,
+            notes=note,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self.subtitle.setText(note)
+        self._append_history(
+            f"{self._format_elapsed()} | {note}",
+            event_id=event_id,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self._refresh_view()
+
+    def _on_libero_revert_requested(self, replaced_player: str):
+        """Revert libero substitution: put the replaced player back in."""
+        if not self.current_context:
+            return
+        side = self._find_side_for_replaced_player(replaced_player)
+        if side is None:
+            return
+        team_key = "home_team" if side == "home" else "away_team"
+        team_data = self.current_context.get(team_key, {})
+        lineup = team_data.get("lineup", {})
+
+        # Find the position currently occupied by the libero
+        libero_num = normalize_lineup_number(team_data.get("libero"))
+        if libero_num is None:
+            return
+        libero_pos = None
+        for pos_code, num in lineup.items():
+            if normalize_lineup_number(num) == libero_num:
+                libero_pos = pos_code
+                break
+        if libero_pos is None:
+            return
+
+        # Put the replaced player back in that position
+        lineup[libero_pos] = replaced_player
+        self._libero_active_player[side] = None
+
+        team_name = team_data.get("name", "Casa" if side == "home" else "Ospiti")
+        note = f"Libero {team_name}: rientro #{replaced_player}"
+        event_id = self._persist_event(
+            team_side=side,
+            notes=note,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self.subtitle.setText(note)
+        self._append_history(
+            f"{self._format_elapsed()} | {note}",
+            event_id=event_id,
+            kind=self.HISTORY_KIND_SYSTEM,
+        )
+        self._refresh_view()
+
+    def _find_side_for_replaced_player(self, replaced_player: str) -> str | None:
+        for side in ("home", "away"):
+            if self._libero_active_player.get(side) == replaced_player:
+                return side
+        return None
 
     def _register_substitution(self, side: str):
         if not self.current_context:
@@ -5681,6 +5192,8 @@ class ScoutPanel(QWidget):
             self._exit_serve_mode()
             self._exit_attack_mode()
             self.setter_number_by_side = {"home": None, "away": None}
+            self._libero_active_player = {"home": None, "away": None}
+            self._original_libero = {"home": None, "away": None}
             self.reception_rotation_hint = {"home": "-", "away": "-"}
             self.reception_manual_positions = {"home": {}, "away": {}}
             self._formations_by_rotation = {"home": {}, "away": {}}
@@ -5763,9 +5276,24 @@ class ScoutPanel(QWidget):
         away_manual = dict(loaded_manual.get("away", {}))
 
         if not home_manual:
-            home_manual = self._load_reception_positions_for_side("home")
+            settings = self._shortcuts_settings()
+            home_manual = self.formation_manager.load_reception_positions(
+                "home",
+                self.current_context.get("match_id"),
+                self.current_context.get("set_number"),
+                settings,
+                self.RECEPTION_MEMORY_SETTINGS_PREFIX,
+            )
         if not away_manual:
-            away_manual = self._load_reception_positions_for_side("away")
+            if not home_manual:
+                settings = self._shortcuts_settings()
+            away_manual = self.formation_manager.load_reception_positions(
+                "away",
+                self.current_context.get("match_id"),
+                self.current_context.get("set_number"),
+                settings,
+                self.RECEPTION_MEMORY_SETTINGS_PREFIX,
+            )
 
         self.reception_manual_positions = {
             "home": home_manual,
@@ -5789,8 +5317,16 @@ class ScoutPanel(QWidget):
             self.elapsed_seconds_exact = float(max(0, int(self.elapsed_seconds or 0)))
         self._refresh_setter_numbers()
         self._formations_by_rotation = {
-            "home": self._load_formations_for_side("home"),
-            "away": self._load_formations_for_side("away"),
+            "home": self.formation_manager.load_formations(
+                "home",
+                self.current_context.get("match_id"),
+                self.current_context.get("set_number"),
+            ),
+            "away": self.formation_manager.load_formations(
+                "away",
+                self.current_context.get("match_id"),
+                self.current_context.get("set_number"),
+            ),
         }
 
         started_set = bool(self.history_records) or (
