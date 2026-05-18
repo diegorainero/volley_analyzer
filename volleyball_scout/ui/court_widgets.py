@@ -7,6 +7,10 @@ Provides:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtCore import (
     QByteArray,
     QDataStream,
@@ -186,7 +190,6 @@ class TeamCourtWidget(QWidget):
     POS_TO_ZONE = {"P1": "1", "P2": "2", "P3": "3", "P4": "4", "P5": "5", "P6": "6"}
 
     cellClicked = pyqtSignal(str, str, str, float, float)
-    receptionLabelClicked = pyqtSignal(str, str, float, float)
     liberoDropped = pyqtSignal(str, str, str, str)
     liberoRevertRequested = pyqtSignal(str)
 
@@ -446,11 +449,12 @@ class TeamCourtWidget(QWidget):
         # Check if click is on a reparented reception label
         for label, _ in self._reception_label_origins.items():
             if label.isVisible() and label.geometry().contains(px, py):
-                player_number = label.text().rstrip("P").strip()
-                self.receptionLabelClicked.emit(
-                    self.team_side, player_number, pos.x(), pos.y()
-                )
-                return
+                for pos_code, nl in self._number_labels.items():
+                    if nl is label and pos_code in self.POS_TO_ZONE:
+                        zone = self.POS_TO_ZONE[pos_code]
+                        self.cellClicked.emit(self.team_side, str(pos_code), zone, pos.x(), pos.y())
+                        return
+                break
 
         # Fall through to the underlying cell
         child = self.childAt(px, py)
@@ -471,6 +475,7 @@ class TeamCourtWidget(QWidget):
         super().mousePressEvent(event)
 
     def set_reception_positions(self, positions: dict[str, tuple[float, float]] | None):
+        prev_count = len(self._reception_label_origins)
         for label, (orig_parent, orig_layout) in self._reception_label_origins.items():
             label.setParent(orig_parent)
             orig_layout.insertWidget(1, label, 0, Qt.AlignmentFlag.AlignCenter)
@@ -478,18 +483,26 @@ class TeamCourtWidget(QWidget):
         self._reception_label_origins.clear()
         self._reception_positions = dict(positions or {})
         if not positions:
+            logger.debug("%s set_reception_positions None (restored %d labels)", self.team_side, prev_count)
             return
+        logger.debug("%s set_reception_positions %d players, restoring %d",
+                      self.team_side, len(positions), prev_count)
         self._set_reception_label_positions()
 
     def _set_reception_label_positions(self):
         cf = self._court_frame
         if not cf:
+            logger.warning("%s _set_reception_label_positions no court_frame", self.team_side)
             return
         g = cf.geometry()
+        positioned = 0
         for num, (nx, ny) in self._reception_positions.items():
+            target_text = str(num).strip()
+            found = False
             for label in self._number_labels.values():
-                if label.text().rstrip("P").strip() == str(num):
-                    if label.parent() != self:
+                label_text = label.text().rstrip("P").strip()
+                if label_text == target_text:
+                    if label.parent() is not self:
                         self._reception_label_origins[label] = (
                             label.parentWidget(), label.parentWidget().layout()
                         )
@@ -499,7 +512,24 @@ class TeamCourtWidget(QWidget):
                     label.move(int(cx - 22), int(cy - 22))
                     label.raise_()
                     label.show()
+                    positioned += 1
+                    found = True
                     break
+            if not found:
+                logger.debug("%s label not found for player %s", self.team_side, target_text)
+        logger.debug("%s positioned %d/%d reception labels", self.team_side, positioned, len(self._reception_positions))
+        if positioned == 0 and self._reception_positions:
+            logger.warning("%s fallback: no labels could be positioned for %d players",
+                           self.team_side, len(self._reception_positions))
+            self._fallback_reception_display(g)
+        elif positioned < len(self._reception_positions):
+            pass  # some labels were positioned, partial match
+
+    def _fallback_reception_display(self, cf_geometry):
+        """If reception label positioning fails, draw colored circles via paintEvent."""
+        self._reception_draw_positions = dict(self._reception_positions)
+        self._reception_draw_geo = cf_geometry
+        self.update()
 
     def _on_libero_dropped(self, pos_code: str, libero_number: str):
         label = self._number_labels.get(pos_code)

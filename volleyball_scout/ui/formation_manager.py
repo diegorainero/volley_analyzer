@@ -1,4 +1,7 @@
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 import itertools
 
 from .datavolley_codes import normalize_lineup_number, find_player_position_in_lineup
@@ -297,11 +300,14 @@ class FormationManager:
                         assigned_zones.add(z)
                         break
 
-        return result if len(result) >= 5 else None
+        final = result if len(result) >= 5 else None
+        logger.debug("auto_generate_reception_positions setter_zone=%s pos5=%s -> %s", setter_zone, position5_player, final)
+        return final
 
     # ----- Formation persistence -----
 
     def load_formations(self, side: str, match_id, set_number) -> dict:
+        logger.debug("load_formations side=%s match=%s set=%s", side, match_id, set_number)
         if self.db is not None:
             try:
                 from sqlalchemy import and_
@@ -328,19 +334,26 @@ class FormationManager:
                                     k: (float(v[0]), float(v[1]))
                                     for k, v in pos_dict.items()
                                 }
+                            logger.debug("load_formations OK side=%s rotations=%s", side, sorted(result.keys()))
                             return result
-                        except Exception:
+                        except Exception as e:
+                            logger.warning("load_formations parse error: %s", e)
                             pass
-            except Exception:
+            except Exception as e:
+                logger.warning("load_formations db error: %s", e)
                 pass
+        logger.debug("load_formations empty side=%s", side)
         return {}
 
     def save_formations(
         self, side: str, match_id, set_number, formations: dict
     ):
         if not formations:
+            logger.debug("save_formations skip empty side=%s", side)
             return
 
+        logger.debug("save_formations side=%s match=%s set=%s rotations=%s",
+                      side, match_id, set_number, sorted(formations.keys()))
         data = {"formation_by_rotation": {}}
         for r, pos in formations.items():
             data["formation_by_rotation"][str(r)] = {
@@ -396,7 +409,9 @@ class FormationManager:
         roles = base_role_order.get(scheme, base_role_order["P-S-C"])
         shift = (rotation - 1) % 6
         rotated = roles[-shift:] + roles[:-shift]
-        return {rotated[i]: self.ZONE_POSITIONS[i] for i in range(6)}
+        result = {rotated[i]: self.ZONE_POSITIONS[i] for i in range(6)}
+        logger.debug("generate_formation_from_scheme scheme=%s rot=%s -> %s", scheme, rotation, result)
+        return result
 
     def generate_all_rotations(self, scheme: str) -> dict:
         result = {}
@@ -437,13 +452,16 @@ class FormationManager:
         formation_config: dict,
         rotation: int,
         libero_number: str | None = None,
+        known_setter: str | None = None,
     ) -> dict[str, tuple[float, float]] | None:
         rot_map = formation_config.get(rotation)
         if not rot_map:
+            logger.debug("resolve no config for rotation %s", rotation)
             return None
 
-        player_role_map = self._map_players_to_role_codes(lineup, roles, libero_number)
+        player_role_map = self._map_players_to_role_codes(lineup, roles, libero_number, known_setter=known_setter)
         if not player_role_map:
+            logger.debug("resolve empty player_role_map for rotation %s", rotation)
             return None
 
         result = {}
@@ -452,6 +470,7 @@ class FormationManager:
             if xy is not None:
                 result[player_num] = xy
 
+        logger.debug("resolve_formation: rot=%s role_map=%s result=%s", rotation, player_role_map, result)
         return result if len(result) >= 5 else None
 
     def _map_players_to_role_codes(
@@ -459,6 +478,7 @@ class FormationManager:
         lineup: dict[str, str],
         roles: dict[str, str],
         libero_number: str | None = None,
+        known_setter: str | None = None,
     ) -> dict[str, str]:
         ROLE_MAP = {
             "palleggiatore": None,
@@ -486,19 +506,28 @@ class FormationManager:
         hitters = []
         middles = []
 
+        known_setter_stripped = str(known_setter).strip() if known_setter else None
         for num, db_role in players_with_roles.items():
             if "palleggiatore" in db_role:
-                setter = num
-                assigned[num] = "P"
+                if setter is None:
+                    setter = num
+                    assigned[num] = "P"
             elif "opposto" in db_role:
-                opposites.append(num)
+                if known_setter_stripped is None or num != known_setter_stripped:
+                    opposites.append(num)
             elif "schiacciatore" in db_role or "banda" in db_role:
-                hitters.append(num)
+                if known_setter_stripped is None or num != known_setter_stripped:
+                    hitters.append(num)
             elif "centrale" in db_role:
-                middles.append(num)
+                if known_setter_stripped is None or num != known_setter_stripped:
+                    middles.append(num)
 
         if setter is None:
-            return {}
+            if known_setter is not None and str(known_setter).strip() in players_with_roles:
+                setter = str(known_setter).strip()
+                assigned[setter] = "P"
+            else:
+                return {}
 
         for i, num in enumerate(opposites):
             if len(opposites) == 1 or i == 0:
@@ -523,7 +552,21 @@ class FormationManager:
             else:
                 assigned[num] = "S2"
 
-        return assigned
+        seen_roles = set()
+        dedup = {}
+        for num, rc in assigned.items():
+            if rc not in seen_roles:
+                seen_roles.add(rc)
+                dedup[num] = rc
+        available = [c for c in ["O", "S2", "C2", "S1", "C1"] if c not in seen_roles]
+        for num, rc in list(assigned.items()):
+            if num not in dedup:
+                if available:
+                    dedup[num] = available.pop(0)
+                else:
+                    dedup[num] = "S2"
+
+        return dedup
 
     def _assign_s1_s2_from_lineup(
         self, lineup: dict[str, str], setter: str, hitters: list[str]

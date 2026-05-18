@@ -3,6 +3,8 @@ import logging
 import re
 from copy import deepcopy
 
+logger = logging.getLogger(__name__)
+
 try:
     from volleyball_scout.core.rotation import rotate_lineup_clockwise
 except ImportError:
@@ -735,7 +737,6 @@ class ScoutPanel(QWidget):
             "TeamCourtWidget { border: none; background-color: transparent; }"
         )
         self.home_court.cellClicked.connect(self._on_court_cell_clicked)
-        self.home_court.receptionLabelClicked.connect(self._on_reception_label_clicked)
         self.home_court.liberoDropped.connect(self._on_libero_dropped)
         self.home_court.liberoRevertRequested.connect(self._on_libero_revert_requested)
         self.away_court = TeamCourtWidget("away", "Trasferta")
@@ -743,7 +744,6 @@ class ScoutPanel(QWidget):
             "TeamCourtWidget { border: none; background-color: transparent; }"
         )
         self.away_court.cellClicked.connect(self._on_court_cell_clicked)
-        self.away_court.receptionLabelClicked.connect(self._on_reception_label_clicked)
         self.away_court.liberoDropped.connect(self._on_libero_dropped)
         self.away_court.liberoRevertRequested.connect(self._on_libero_revert_requested)
 
@@ -1636,12 +1636,6 @@ class ScoutPanel(QWidget):
 
     def _rx_formation_for_side(self, side: str) -> dict:
         config = self._load_rx_formation_config("global")
-        team_id = self._team_context(side).get("id")
-        if team_id:
-            team_config = self._load_rx_formation_config(str(team_id))
-            if team_config:
-                for rot, mapping in team_config.items():
-                    config[rot] = mapping
         return config
 
     def _load_video_screen_index(self) -> int:
@@ -2006,239 +2000,152 @@ class ScoutPanel(QWidget):
         dialog.setMinimumHeight(520)
 
         layout = QVBoxLayout(dialog)
-        tabs = QTabWidget()
-        layout.addWidget(tabs)
 
-        scope_labels = {"global": "Default"}
-        team_ids = []
-        if self.current_context:
-            for side in ("home", "away"):
-                team = self.current_context.get(f"{side}_team", {})
-                tid = team.get("id")
-                if tid:
-                    label = team.get("name", side.capitalize())
-                    scope_labels[str(tid)] = label
-                    team_ids.append(tid)
+        cfg = self._load_rx_formation_config("global")
+        if not cfg:
+            scheme = "P-S-C"
+            if self.current_context:
+                scheme = self.current_context.get("game_method", "P-S-C")
+            cfg = self.formation_manager.generate_all_rotations(scheme)
+        configs = dict(cfg)
 
-        configs = {}
-        for scope in ["global"] + [str(t) for t in team_ids]:
-            cfg = self._load_rx_formation_config(scope)
-            if not cfg:
-                scheme = "P-S-C"
-                if self.current_context:
-                    scheme = self.current_context.get("game_method", "P-S-C")
-                cfg = self.formation_manager.generate_all_rotations(scheme)
-            configs[scope] = dict(cfg)
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setSpacing(8)
 
-        page_widgets = {}
-        for scope in ["global"] + [str(t) for t in team_ids]:
-            page = QWidget()
-            page_layout = QVBoxLayout(page)
-            page_layout.setSpacing(8)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+        top_row.addWidget(QLabel("Rot:"))
 
-            top_row = QHBoxLayout()
-            top_row.setSpacing(6)
-            top_row.addWidget(QLabel("Rot:"))
-
-            rot_btns = {}
-            rot_group = QButtonGroup(page)
-            for r in range(1, 7):
-                btn = QPushButton(str(r))
-                btn.setCheckable(True)
-                btn.setFixedSize(34, 30)
-                btn.setStyleSheet(
-                    "QPushButton { font-weight: bold; border-radius: 4px; }"
-                    "QPushButton:checked { background-color: #3B82F6; color: white; }"
-                )
-                rot_btns[r] = btn
-                rot_group.addButton(btn, r)
-                top_row.addWidget(btn)
-            rot_btns[1].setChecked(True)
-
-            top_row.addSpacing(12)
-
-            scheme_group = QButtonGroup(page)
-            btn_psc = QRadioButton("P-S-C")
-            btn_pcs = QRadioButton("P-C-S")
-            btn_psc.setChecked(True)
-            scheme_group.addButton(btn_psc)
-            scheme_group.addButton(btn_pcs)
-            top_row.addWidget(btn_psc)
-            top_row.addWidget(btn_pcs)
-
-            top_row.addStretch()
-
-            btn_pulisci = QPushButton("Pulisci")
-            btn_pulisci.setStyleSheet("QPushButton { color: #DC2626; }")
-            btn_copia = QPushButton("Copia rot. ←")
-            btn_copia.setEnabled(scope != "global")
-            top_row.addWidget(btn_pulisci)
-            top_row.addWidget(btn_copia)
-
-            page_layout.addLayout(top_row)
-
-            body_row = QHBoxLayout()
-
-            court = FormationCourtWidget("home", page)
-            court.setMinimumSize(280, 280)
-            court.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            body_row.addWidget(court, 1)
-
-            page_layout.addLayout(body_row, 1)
-
-            tabs.addTab(page, scope_labels.get(scope, scope))
-            page_widgets[scope] = {
-                "rot_btns": rot_btns,
-                "rot_group": rot_group,
-                "court": court,
-                "btn_psc": btn_psc,
-                "btn_pcs": btn_pcs,
-                "btn_pulisci": btn_pulisci,
-                "btn_copia": btn_copia,
-                "_current_rotation": 1,
-            }
-
-        def _save_current_rotation(scope, rotation):
-            pw = page_widgets[scope]
-            cfg = configs.setdefault(scope, {})
-            cfg[rotation] = pw["court"].get_positions()
-
-        def _load_current_rotation(scope, rotation):
-            pw = page_widgets[scope]
-            cfg = configs.get(scope, {})
-            pw["court"].set_positions(cfg.get(rotation, {}))
-
-        def _save_config(scope):
-            self._save_rx_formation_config(configs.get(scope, {}), scope)
-
-        for scope in configs:
-            pw = page_widgets[scope]
-
-            def on_rotation(btn_id, s=scope):
-                if btn_id >= 0:
-                    pw2 = page_widgets[s]
-                    prev = pw2["_current_rotation"]
-                    if prev != btn_id:
-                        _save_current_rotation(s, prev)
-                    pw2["_current_rotation"] = btn_id
-                    _load_current_rotation(s, btn_id)
-
-            pw["rot_group"].idClicked.connect(on_rotation)
-
-            def gen_scheme(scheme, s=scope):
-                new_cfg = self.formation_manager.generate_all_rotations(scheme)
-                configs[s] = new_cfg
-                pw2 = page_widgets[s]
-                rid = pw2["rot_group"].checkedId()
-                if rid >= 0:
-                    pw2["_current_rotation"] = rid
-                else:
-                    rid = 1
-                _load_current_rotation(s, rid)
-                _save_config(s)
-
-            pw["btn_psc"].clicked.connect(
-                lambda checked, s=scope: gen_scheme("P-S-C", s)
+        rot_btns = {}
+        rot_group = QButtonGroup(page)
+        for r in range(1, 7):
+            btn = QPushButton(str(r))
+            btn.setCheckable(True)
+            btn.setFixedSize(34, 30)
+            btn.setStyleSheet(
+                "QPushButton { font-weight: bold; border-radius: 4px; }"
+                "QPushButton:checked { background-color: #3B82F6; color: white; }"
             )
-            pw["btn_pcs"].clicked.connect(
-                lambda checked, s=scope: gen_scheme("P-C-S", s)
-            )
+            rot_btns[r] = btn
+            rot_group.addButton(btn, r)
+            top_row.addWidget(btn)
+        rot_btns[1].setChecked(True)
 
-            def on_positions_changed(s=scope):
-                rid = page_widgets[s]["rot_group"].checkedId()
-                if rid >= 0:
-                    _save_current_rotation(s, rid)
-                    _save_config(s)
+        top_row.addSpacing(12)
 
-            pw["court"].positionsChanged.connect(on_positions_changed)
+        scheme_group = QButtonGroup(page)
+        btn_psc = QRadioButton("P-S-C")
+        btn_pcs = QRadioButton("P-C-S")
+        btn_psc.setChecked(True)
+        scheme_group.addButton(btn_psc)
+        scheme_group.addButton(btn_pcs)
+        top_row.addWidget(btn_psc)
+        top_row.addWidget(btn_pcs)
 
-            def on_cell_clicked(nx, ny, s=scope):
-                pw2 = page_widgets[s]
-                court = pw2["court"]
-                rid = pw2["rot_group"].checkedId()
-                if rid < 0:
-                    return
-                menu = QMenu(court)
-                for role in self.formation_manager.ROLE_CODES:
-                    act = menu.addAction(role)
-                    act.setData(role)
-                menu.addSeparator()
-                act_clear = menu.addAction("-")
-                act_clear.setData(None)
-                cx, cy = court._to_canvas(nx, ny)
-                action = menu.exec(court.mapToGlobal(QPoint(int(cx), int(cy))))
-                if action is None:
-                    return
-                role_data = action.data()
-                cfg = configs.setdefault(s, {})
-                rd = cfg.setdefault(rid, {})
-                for old_role in list(rd.keys()):
-                    ox, oy = rd[old_role]
-                    if abs(ox - nx) < 0.05 and abs(oy - ny) < 0.05:
-                        del rd[old_role]
-                if role_data is not None:
-                    rd[role_data] = (nx, ny)
-                court.set_positions(rd)
-                _save_config(s)
+        top_row.addStretch()
 
-            pw["court"].cellClicked.connect(on_cell_clicked)
+        btn_pulisci = QPushButton("Pulisci")
+        btn_pulisci.setStyleSheet("QPushButton { color: #DC2626; }")
+        top_row.addWidget(btn_pulisci)
 
-            def on_pulisci(s=scope):
-                pw2 = page_widgets[s]
-                rid = pw2["rot_group"].checkedId()
-                if rid >= 0:
-                    pw2["court"].clear_positions()
-                    _save_current_rotation(s, rid)
-                    _save_config(s)
+        page_layout.addLayout(top_row)
 
-            pw["btn_pulisci"].clicked.connect(
-                lambda checked, s=scope: on_pulisci(s)
-            )
+        body_row = QHBoxLayout()
 
-            def on_copia(s=scope):
-                if not self.current_context:
-                    return
-                pw2 = page_widgets[s]
-                rid = pw2["rot_group"].checkedId()
-                if rid < 0:
-                    return
-                side = None
-                for sd in ("home", "away"):
-                    tid = str(self._team_context(sd).get("id", ""))
-                    if tid == s:
-                        side = sd
-                        break
-                if side is None:
-                    return
-                fbr = self._formations_by_rotation.get(side, {})
-                positions = fbr.get(rid)
-                if not positions:
-                    return
-                lineup = self._team_context(side).get("lineup", {})
-                roles = self._team_context(side).get("roles", {})
-                if not lineup or not roles:
-                    return
-                pmap = self.formation_manager._map_players_to_role_codes(
-                    lineup, roles
-                )
-                if not pmap:
-                    return
-                cfg = configs.setdefault(s, {})
-                result = {}
-                for player_num, (nx, ny) in positions.items():
-                    role_code = pmap.get(player_num)
-                    if role_code:
-                        result[role_code] = (nx, ny)
-                cfg[rid] = result
-                _load_current_rotation(s, rid)
-                _save_config(s)
+        court = FormationCourtWidget("home", page)
+        court.setMinimumSize(280, 280)
+        court.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        body_row.addWidget(court, 1)
 
-            pw["btn_copia"].clicked.connect(
-                lambda checked, s=scope: on_copia(s)
-            )
+        page_layout.addLayout(body_row, 1)
 
-        for scope in configs:
-            _load_current_rotation(scope, 1)
+        layout.addWidget(page)
+
+        _current_rotation = 1
+
+        def _save_current_rotation(rotation):
+            nonlocal _current_rotation
+            _current_rotation = rotation
+            configs[rotation] = court.get_positions()
+
+        def _load_current_rotation(rotation):
+            court.set_positions(configs.get(rotation, {}))
+
+        def _save_config():
+            self._save_rx_formation_config(configs, "global")
+
+        def on_rotation(btn_id):
+            if btn_id >= 0:
+                prev = _current_rotation
+                if prev != btn_id:
+                    _save_current_rotation(prev)
+                _load_current_rotation(btn_id)
+
+        rot_group.idClicked.connect(on_rotation)
+
+        def gen_scheme(scheme):
+            nonlocal _current_rotation
+            new_cfg = self.formation_manager.generate_all_rotations(scheme)
+            configs.clear()
+            configs.update(new_cfg)
+            rid = rot_group.checkedId()
+            if rid >= 0:
+                _current_rotation = rid
+            else:
+                rid = 1
+            _load_current_rotation(rid)
+            _save_config()
+
+        btn_psc.clicked.connect(lambda checked: gen_scheme("P-S-C"))
+        btn_pcs.clicked.connect(lambda checked: gen_scheme("P-C-S"))
+
+        def on_positions_changed():
+            rid = rot_group.checkedId()
+            if rid >= 0:
+                _save_current_rotation(rid)
+                _save_config()
+
+        court.positionsChanged.connect(on_positions_changed)
+
+        def on_cell_clicked(nx, ny):
+            rid = rot_group.checkedId()
+            if rid < 0:
+                return
+            menu = QMenu(court)
+            for role in self.formation_manager.ROLE_CODES:
+                act = menu.addAction(role)
+                act.setData(role)
+            menu.addSeparator()
+            act_clear = menu.addAction("-")
+            act_clear.setData(None)
+            cx, cy = court._to_canvas(nx, ny)
+            action = menu.exec(court.mapToGlobal(QPoint(int(cx), int(cy))))
+            if action is None:
+                return
+            role_data = action.data()
+            rd = configs.setdefault(rid, {})
+            for old_role in list(rd.keys()):
+                ox, oy = rd[old_role]
+                if abs(ox - nx) < 0.05 and abs(oy - ny) < 0.05:
+                    del rd[old_role]
+            if role_data is not None:
+                rd[role_data] = (nx, ny)
+            court.set_positions(rd)
+            _save_config()
+
+        court.cellClicked.connect(on_cell_clicked)
+
+        def on_pulisci():
+            rid = rot_group.checkedId()
+            if rid >= 0:
+                court.clear_positions()
+                _save_current_rotation(rid)
+                _save_config()
+
+        btn_pulisci.clicked.connect(on_pulisci)
+
+        _load_current_rotation(1)
 
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         btn_box.rejected.connect(dialog.close)
@@ -3111,7 +3018,6 @@ class ScoutPanel(QWidget):
         if sideout:
             self._rotate_team_lineup(side)
             self._apply_serving_side(side)
-            self._update_reception_formation_display()
             self.subtitle.setText(
                 "Side-out: cambio palla e rotazione automatica applicata."
             )
@@ -3434,6 +3340,7 @@ class ScoutPanel(QWidget):
                 )
                 btn.setVisible(True)
                 self._reception_active = True
+                self._serve_mode_active = True
             else:
                 btn.setVisible(False)
 
@@ -3548,6 +3455,7 @@ class ScoutPanel(QWidget):
 
     def _on_battuta_badge_clicked(self, side: str):
         """Cliccando sul badge BATTUTA attiva la modalità battuta."""
+        logger.debug("_on_battuta_badge_clicked side=%s serve_mode_active=%s", side, self._serve_mode_active)
         if not self.current_context:
             return
 
@@ -3557,8 +3465,9 @@ class ScoutPanel(QWidget):
         if not self._require_initial_service_selected():
             return
 
-        if self._serve_mode_active:
+        if self._serve_zone_start is not None:
             self._exit_serve_mode()
+            self._refresh_view()
             return
 
         self._exit_attack_mode()
@@ -3594,11 +3503,13 @@ class ScoutPanel(QWidget):
         )
         self._clear_player_highlight()
         self._highlight_player_on_courts(side, server_number)
+        self._refresh_setter_numbers()
         self.home_court.setClickable(True)
         self.away_court.setClickable(True)
         self._update_reception_formation_display()
 
     def _exit_serve_mode(self):
+        logger.debug("_exit_serve_mode")
         self._reset_serve_hint()
         self._serve_mode_active = False
         self._reception_active = False
@@ -3654,6 +3565,11 @@ class ScoutPanel(QWidget):
         self.subtitle.setText("Clicca sul giocatore che attacca")
         self.home_court.setClickable(True)
         self.away_court.setClickable(True)
+        receiving_side = "away" if self.serving_side == "home" else "home"
+        court = self.home_court if receiving_side == "home" else self.away_court
+        court.set_reception_positions(None)
+        other = self.away_court if receiving_side == "home" else self.home_court
+        other.set_reception_positions(None)
 
     def _exit_attack_mode(self):
         self._attack_mode_active = False
@@ -3770,6 +3686,7 @@ class ScoutPanel(QWidget):
             return
 
         if self._serve_zone_end is None:
+            logger.debug("Phase 1: serve arrival zone pos_code=%s zone=%s side=%s", pos_code, zone, side)
             self._serve_zone_end = zone
             self._serve_zone_end_side = side
 
@@ -3802,6 +3719,7 @@ class ScoutPanel(QWidget):
 
         lineup = self._team_context(side).get("lineup", {})
         receiver_number = normalize_lineup_number(lineup.get(pos_code))
+        logger.debug("Phase 2: receiver selection pos_code=%s zone=%s receiver=%s", pos_code, zone, receiver_number)
         if receiver_number is None:
             QMessageBox.warning(
                 self, "Nessun giocatore",
@@ -3815,24 +3733,13 @@ class ScoutPanel(QWidget):
         )
         self._show_reception_eval_buttons(True)
 
-    def _on_reception_label_clicked(self, side: str, player_number: str, click_x: float, click_y: float):
-        if not self._serve_mode_active or self._serve_zone_end is None:
-            return
-        receiving_side = "away" if self.serving_side == "home" else "home"
-        if side != receiving_side:
-            return
-        self._serve_receiver = player_number
-        self.subtitle.setText(
-            f"Ricevitore #{player_number}: scegli la valutazione"
-        )
-        self._show_reception_eval_buttons(True)
-
     def _show_reception_eval_buttons(self, visible: bool):
         self._eval_label.setVisible(visible)
         for btn in self._reception_eval_buttons:
             btn.setVisible(visible)
 
     def _on_reception_eval_clicked(self, eval_code: str):
+        logger.debug("_on_reception_eval_clicked code=%s receiver=%s", eval_code, self._serve_receiver)
         if not self._serve_mode_active or self._serve_receiver is None:
             return
 
@@ -3982,6 +3889,7 @@ class ScoutPanel(QWidget):
 
         # Solo la squadra in ricezione (quella che NON batte)
         side = "away" if self.serving_side == "home" else "home"
+        logger.debug("_open_formation_editor side=%s serving_side=%s", side, self.serving_side)
         team_name = self.current_context.get(f"{side}_team", {}).get(
             "name", "Ospiti" if side == "away" else "Casa"
         )
@@ -3990,6 +3898,7 @@ class ScoutPanel(QWidget):
             return
 
         formations = self._formations_by_rotation.get(side, {})
+        logger.debug("existing formations for %s: %s", side, sorted(formations.keys()) if formations else "{}")
         dialog = FormationEditorDialog(
             team_name=team_name,
             team_side=side,
@@ -3999,6 +3908,8 @@ class ScoutPanel(QWidget):
         )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._formations_by_rotation[side] = dialog.get_formations()
+            logger.debug("formations saved for %s: rotations=%s",
+                          side, sorted(self._formations_by_rotation[side].keys()))
             if self.current_context.get("match_id") and self.current_context.get("set_number"):
                 self.formation_manager.save_formations(
                     side,
@@ -4007,8 +3918,8 @@ class ScoutPanel(QWidget):
                     self._formations_by_rotation.get(side, {}),
                 )
 
-        self._update_reception_formation_display()
         self._update_outer_service_hints()
+        self._update_reception_formation_display()
 
     def _get_current_rotation(self, side: str) -> int | None:
         """Restituisce la rotazione corrente (1-6) per la squadra indicata."""
@@ -4056,11 +3967,20 @@ class ScoutPanel(QWidget):
     def _update_reception_formation_display(self):
         """Disegna le formazioni di ricezione sui campi."""
         if not self.current_context:
+            logger.debug("update_reception_formation_display: no context")
+            return
+
+        logger.debug("update_reception_formation_display serve_mode=%s reception_active=%s serving=%s",
+                      self._serve_mode_active, self._reception_active, self.serving_side)
+
+        if not self._reception_active and (self._attack_mode_active or not self._serve_mode_active):
+            self.home_court.set_reception_positions(None)
+            self.away_court.set_reception_positions(None)
             return
 
         for side in ("home", "away"):
             court = self.home_court if side == "home" else self.away_court
-            if side == self.serving_side or not (self._serve_mode_active or self._reception_active):
+            if side == self.serving_side:
                 court.set_reception_positions(None)
                 continue
             rotation = self._get_current_rotation(side)
@@ -4070,62 +3990,124 @@ class ScoutPanel(QWidget):
                 continue
 
             self.reception_rotation_hint[side] = str(rotation)
+            logger.debug("%s rotation=%s", side, rotation)
 
             formations = self._formations_by_rotation.get(side, {})
+            logger.debug("%s saved formations keys=%s", side, sorted(formations.keys()) if formations else "{}")
             positions = formations.get(rotation)
             if positions:
-                court.set_reception_positions(positions)
-            else:
-                lineup_raw = self._team_context(side).get("lineup", {})
-                lineup = {
-                    pos: normalize_lineup_number(num)
-                    for pos, num in lineup_raw.items()
-                    if normalize_lineup_number(num) is not None
-                }
-                setter_number = self.setter_number_by_side.get(side)
-                team_id = self._team_context(side).get("id")
-                roles = self.formation_manager.get_player_roles(
-                    self.current_context.get("match_id"), team_id
-                )
-                libero_number = normalize_lineup_number(
-                    self._team_context(side).get("libero")
-                )
-                rx_config = self._rx_formation_for_side(side)
-                if not rx_config:
-                    default_scheme = "P-S-C"
+                logger.debug("%s using saved formation for rot %s: %s", side, rotation, positions)
+                first_key = next(iter(positions), None)
+                if first_key is not None and not first_key.lstrip("-").isdigit():
+                    lineup_raw = self._team_context(side).get("lineup", {})
+                    lineup = {
+                        pos: normalize_lineup_number(num)
+                        for pos, num in lineup_raw.items()
+                        if normalize_lineup_number(num) is not None
+                    }
+                    libero_num = normalize_lineup_number(self._team_context(side).get("libero"))
+                    setter_num = self.setter_number_by_side.get(side)
                     team_id = self._team_context(side).get("id")
-                    if team_id:
-                        method_by_team = self.current_context.get("game_method_by_team", {})
-                        default_scheme = method_by_team.get(str(team_id), "P-S-C")
-                    rx_config = self.formation_manager.generate_all_rotations(default_scheme)
-                if rx_config:
-                    config_positions = self.formation_manager.resolve_formation_player_assignments(
-                        lineup, roles, rx_config, rotation, libero_number
+                    roles = self.formation_manager.get_player_roles(
+                        self.current_context.get("match_id"), team_id
                     )
-                    if config_positions:
-                        court.set_reception_positions(config_positions)
+                    player_role_map = self.formation_manager._map_players_to_role_codes(
+                        lineup, roles, libero_num, known_setter=setter_num
+                    )
+                    role_to_player = {v: k for k, v in player_role_map.items()}
+                    converted = {}
+                    for key, xy in positions.items():
+                        player_num = role_to_player.get(key, key)
+                        converted[player_num] = xy
+                    if len(converted) >= 5:
+                        court.set_reception_positions(converted)
                         continue
-
-                # Fallback: position by lineup order (no DB roles needed)
-                lineup_positions = {}
-                for i, pc in enumerate(["P1", "P2", "P3", "P4", "P5", "P6"]):
-                    pn = lineup.get(pc)
-                    if pn:
-                        lineup_positions[pn] = self.formation_manager.ZONE_POSITIONS[i]
-                if len(lineup_positions) >= 5:
-                    court.set_reception_positions(lineup_positions)
+                else:
+                    court.set_reception_positions(positions)
                     continue
 
-                game_method_by_team = self.current_context.get("game_method_by_team", {})
-                auto_positions = self.formation_manager.auto_generate_reception_positions(
-                    lineup, setter_number, roles, team_id, game_method_by_team, libero_number
+            lineup_raw = self._team_context(side).get("lineup", {})
+            lineup = {
+                pos: normalize_lineup_number(num)
+                for pos, num in lineup_raw.items()
+                if normalize_lineup_number(num) is not None
+            }
+            logger.debug("%s lineup=%s", side, lineup)
+            setter_number = self.setter_number_by_side.get(side)
+            team_id = self._team_context(side).get("id")
+            roles = self.formation_manager.get_player_roles(
+                self.current_context.get("match_id"), team_id
+            )
+            logger.debug("%s setter=%s roles=%s", side, setter_number, roles)
+            libero_number = normalize_lineup_number(
+                self._team_context(side).get("libero")
+            )
+            rx_config = self._rx_formation_for_side(side)
+            rx_config_is_per_side = bool(rx_config)
+            if not rx_config:
+                default_scheme = "P-S-C"
+                team_id = self._team_context(side).get("id")
+                if team_id:
+                    method_by_team = self.current_context.get("game_method_by_team", {})
+                    default_scheme = method_by_team.get(str(team_id), "P-S-C")
+                rx_config = self.formation_manager.generate_all_rotations(default_scheme)
+            if rx_config:
+                config_positions = self.formation_manager.resolve_formation_player_assignments(
+                    lineup, roles, rx_config, rotation, libero_number,
+                    known_setter=setter_number,
                 )
-                if auto_positions:
-                    court.set_reception_positions(auto_positions)
-                elif self.reception_manual_positions.get(side):
-                    court.set_reception_positions(self.reception_manual_positions[side])
-                else:
-                    court.set_reception_positions(None)
+                if config_positions:
+                    pos = config_positions
+                    if not rx_config_is_per_side and side == "away":
+                        pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                    logger.debug("%s using rx_config positions rot=%s: %s", side, rotation, pos)
+                    court.set_reception_positions(pos)
+                    continue
+                logger.debug("%s rx_config resolve returned None for rot=%s", side, rotation)
+
+            # Fallback: position by lineup order with setter at zone 2
+            lineup_positions = {}
+            positions_order = ["P1", "P2", "P3", "P4", "P5", "P6"]
+            # zone indices in ZONE_POSITIONS: 0=P1, 1=P2, 2=P3, 3=P4, 4=P5, 5=P6
+            # assign setter to zone 2 (index 1), remaining players fill rest in order
+            setter_found = False
+            player_list = []
+            for pc in positions_order:
+                pn = lineup.get(pc)
+                if pn:
+                    if setter_number and pn == setter_number:
+                        lineup_positions[pn] = self.formation_manager.ZONE_POSITIONS[1]
+                        setter_found = True
+                    else:
+                        player_list.append(pn)
+            if len(player_list) + (1 if setter_found else 0) >= 5:
+                remaining_indices = [i for i in range(6) if i != 1]
+                for i, pn in enumerate(player_list):
+                    if i < len(remaining_indices):
+                        lineup_positions[pn] = self.formation_manager.ZONE_POSITIONS[remaining_indices[i]]
+                pos = lineup_positions
+                if side == "away":
+                    pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                logger.debug("%s using lineup-order fallback: %s", side, pos)
+                court.set_reception_positions(pos)
+                continue
+
+            game_method_by_team = self.current_context.get("game_method_by_team", {})
+            auto_positions = self.formation_manager.auto_generate_reception_positions(
+                lineup, setter_number, roles, team_id, game_method_by_team, libero_number
+            )
+            if auto_positions:
+                pos = auto_positions
+                if side == "away":
+                    pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                logger.debug("%s using auto-generation: %s", side, pos)
+                court.set_reception_positions(pos)
+            elif self.reception_manual_positions.get(side):
+                logger.debug("%s using manual positions: %s", side, self.reception_manual_positions[side])
+                court.set_reception_positions(self.reception_manual_positions[side])
+            else:
+                logger.debug("%s no positions available, clearing", side)
+                court.set_reception_positions(None)
 
     def _position_reception_with_prompt(self):
         if not self.current_context:
@@ -4864,6 +4846,8 @@ class ScoutPanel(QWidget):
         self._apply_history_filter()
 
     def _refresh_view(self):
+        logger.debug("_refresh_view serving_side=%s serve_mode=%s reception_active=%s",
+                      self.serving_side, self._serve_mode_active, self._reception_active)
         if not self.current_context:
             return
 
@@ -4893,6 +4877,7 @@ class ScoutPanel(QWidget):
         )
 
         self._update_initial_service_controls()
+        self._refresh_setter_numbers()
         self._update_outer_service_hints()
         self._update_reception_formation_display()
 
@@ -5692,6 +5677,9 @@ class ScoutPanel(QWidget):
                 self.current_context.get("set_number"),
             ),
         }
+        logger.debug("formations loaded: home=%s away=%s",
+                      sorted(self._formations_by_rotation["home"].keys()) if self._formations_by_rotation["home"] else "{}",
+                      sorted(self._formations_by_rotation["away"].keys()) if self._formations_by_rotation["away"] else "{}")
 
         started_set = bool(self.history_records) or (
             int(self.current_context.get("score_home", 0) or 0)

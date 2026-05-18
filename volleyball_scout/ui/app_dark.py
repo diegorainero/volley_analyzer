@@ -2,6 +2,7 @@
 Volleyball Scout - Main PyQt6 Application with Dark Theme and Menu Bar
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -1291,6 +1292,14 @@ class VolleyballScoutApp(QMainWindow):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Volleyball Scout")
+    parser.add_argument("--debug", action="store_true", help="Abilita log di debug")
+    args, _ = parser.parse_known_args()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.debug("Debug logging attivato")
+
     app = QApplication(sys.argv)
 
     window = VolleyballScoutApp()
