@@ -150,22 +150,16 @@ class CourtFrame(QFrame):
             "QFrame { background-color: #5D8CD8; }"
         )
 
-    def set_reception_positions(self, positions: dict[str, tuple[float, float]] | None):
-        self._reception_positions = dict(positions or {})
-        self.update()
-
     def paintEvent(self, event):
         super().paintEvent(event)
         r = self.rect()
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Court border
         p.setPen(QPen(QColor("#FFFFFF"), 2))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(r.adjusted(4, 4, -4, -4))
 
-        # 3-meter attack line (vertical, 1/3 from net side)
         three_m_pen = QPen(QColor("#FFFFFF"), 2)
         three_m_pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(three_m_pen)
@@ -177,30 +171,6 @@ class CourtFrame(QFrame):
         p.drawLine(int(x), int(ty), int(x), int(by))
 
         p.end()
-
-        # Reception circles (draw on parent TeamCourtWidget so they float above the grid)
-        parent = self.parentWidget()
-        if not self._reception_positions or not isinstance(parent, TeamCourtWidget):
-            return
-        fr = self.geometry()
-        p2 = QPainter(parent)
-        p2.setRenderHint(QPainter.RenderHint.Antialiasing)
-        for num, (nx, ny) in self._reception_positions.items():
-            cx = fr.left() + nx * fr.width()
-            cy = fr.top() + ny * fr.height()
-            r2 = 16
-            p2.setPen(QPen(QColor("#0F172A"), 1))
-            color = QColor("#22C55E")
-            color.setAlpha(180)
-            p2.setBrush(color)
-            p2.drawEllipse(int(cx - r2), int(cy - r2), r2 * 2, r2 * 2)
-            p2.setPen(QColor("#FFFFFF"))
-            f = p2.font()
-            f.setBold(True)
-            f.setPointSize(12)
-            p2.setFont(f)
-            p2.drawText(QRectF(cx - r2, cy - r2, r2 * 2, r2 * 2), Qt.AlignmentFlag.AlignCenter, str(num))
-        p2.end()
 
 
 class TeamCourtWidget(QWidget):
@@ -216,6 +186,7 @@ class TeamCourtWidget(QWidget):
     POS_TO_ZONE = {"P1": "1", "P2": "2", "P3": "3", "P4": "4", "P5": "5", "P6": "6"}
 
     cellClicked = pyqtSignal(str, str, str, float, float)
+    receptionLabelClicked = pyqtSignal(str, str, float, float)
     liberoDropped = pyqtSignal(str, str, str, str)
     liberoRevertRequested = pyqtSignal(str)
 
@@ -229,6 +200,8 @@ class TeamCourtWidget(QWidget):
         self._highlight_number = None
         self._clickable = False
         self._cell_frames: dict[str, DropCell] = {}
+        self._reception_positions: dict[str, tuple[float, float]] = {}
+        self._reception_label_origins: dict[QLabel, tuple[QWidget, QLayout]] = {}
         self._court_frame: CourtFrame | None = None
         self._setup_ui(team_name)
         self._libero_drag_label = LiberoDragLabel(self)
@@ -316,6 +289,7 @@ class TeamCourtWidget(QWidget):
         super().resizeEvent(event)
         self._update_libero_icon_position()
         self._update_replaced_player_position()
+        self._set_reception_label_positions()
 
     def _normalize_player_number(self, value) -> str | None:
         if value is None:
@@ -467,7 +441,19 @@ class TeamCourtWidget(QWidget):
             return super().mousePressEvent(event)
 
         pos = event.position()
-        child = self.childAt(int(pos.x()), int(pos.y()))
+        px, py = int(pos.x()), int(pos.y())
+
+        # Check if click is on a reparented reception label
+        for label, _ in self._reception_label_origins.items():
+            if label.isVisible() and label.geometry().contains(px, py):
+                player_number = label.text().rstrip("P").strip()
+                self.receptionLabelClicked.emit(
+                    self.team_side, player_number, pos.x(), pos.y()
+                )
+                return
+
+        # Fall through to the underlying cell
+        child = self.childAt(px, py)
         if child is None:
             return
 
@@ -485,8 +471,35 @@ class TeamCourtWidget(QWidget):
         super().mousePressEvent(event)
 
     def set_reception_positions(self, positions: dict[str, tuple[float, float]] | None):
-        if self._court_frame:
-            self._court_frame.set_reception_positions(positions)
+        for label, (orig_parent, orig_layout) in self._reception_label_origins.items():
+            label.setParent(orig_parent)
+            orig_layout.insertWidget(1, label, 0, Qt.AlignmentFlag.AlignCenter)
+            label.show()
+        self._reception_label_origins.clear()
+        self._reception_positions = dict(positions or {})
+        if not positions:
+            return
+        self._set_reception_label_positions()
+
+    def _set_reception_label_positions(self):
+        cf = self._court_frame
+        if not cf:
+            return
+        g = cf.geometry()
+        for num, (nx, ny) in self._reception_positions.items():
+            for label in self._number_labels.values():
+                if label.text().rstrip("P").strip() == str(num):
+                    if label.parent() != self:
+                        self._reception_label_origins[label] = (
+                            label.parentWidget(), label.parentWidget().layout()
+                        )
+                        label.setParent(self)
+                    cx = g.left() + nx * g.width()
+                    cy = g.top() + ny * g.height()
+                    label.move(int(cx - 22), int(cy - 22))
+                    label.raise_()
+                    label.show()
+                    break
 
     def _on_libero_dropped(self, pos_code: str, libero_number: str):
         label = self._number_labels.get(pos_code)
@@ -497,6 +510,40 @@ class TeamCourtWidget(QWidget):
         if current_num is None or current_num == "-":
             return
         self.liberoDropped.emit(self.team_side, pos_code, current_num, libero_number)
+
+
+class ReceptionOverlay(QWidget):
+    """Overlay trasparente che disegna i cerchi di ricezione sopra la griglia."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._positions: dict[str, tuple[float, float]] = {}
+
+    def set_positions(self, positions: dict[str, tuple[float, float]] | None):
+        self._positions = dict(positions or {})
+        self.update()
+
+    def paintEvent(self, event):
+        if not self._positions:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        for num, (nx, ny) in self._positions.items():
+            cx = nx * w
+            cy = ny * h
+            r2 = 18
+            p.setPen(QPen(QColor("#CBD5E1"), 2))
+            p.setBrush(QColor("#E5E7EB"))
+            p.drawEllipse(int(cx - r2), int(cy - r2), r2 * 2, r2 * 2)
+            p.setPen(QColor("#111827"))
+            f = p.font()
+            f.setBold(True)
+            f.setPointSize(12)
+            p.setFont(f)
+            p.drawText(QRectF(cx - r2, cy - r2, r2 * 2, r2 * 2), Qt.AlignmentFlag.AlignCenter, str(num))
+        p.end()
 
 
 class ServeTrajectoryOverlay(QWidget):

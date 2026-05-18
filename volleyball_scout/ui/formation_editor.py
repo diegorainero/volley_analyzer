@@ -40,6 +40,8 @@ PLAYER_COLORS = [
 class FormationCourtWidget(QWidget):
     """Campo da ricezione che accetta giocatori trascinati e ne mostra le posizioni."""
 
+    positionsChanged = pyqtSignal()
+    cellClicked = pyqtSignal(float, float)
     R = 18.0
 
     def __init__(self, team_side: str, parent=None):
@@ -49,7 +51,17 @@ class FormationCourtWidget(QWidget):
         self._dragging_player: str | None = None
         self._offset = QPoint(0, 0)
         self.setAcceptDrops(True)
-        self.setMinimumSize(400, 260)
+        self.setMinimumSize(300, 300)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return width
+
+    def sizeHint(self):
+        from PyQt6.QtCore import QSize
+        return QSize(300, 300)
 
     def set_positions(self, positions: dict[str, tuple[float, float]] | None):
         self._positions = {}
@@ -60,6 +72,7 @@ class FormationCourtWidget(QWidget):
             except Exception:
                 continue
         self.update()
+        self.positionsChanged.emit()
 
     def get_positions(self) -> dict[str, tuple[float, float]]:
         return dict(self._positions)
@@ -67,6 +80,7 @@ class FormationCourtWidget(QWidget):
     def clear_positions(self):
         self._positions = {}
         self.update()
+        self.positionsChanged.emit()
 
     def _outer_rect(self) -> QRectF:
         m = 12.0
@@ -109,34 +123,41 @@ class FormationCourtWidget(QWidget):
         p.setBrush(QColor("#5D8CD8"))
         p.drawRoundedRect(outer, 8, 8)
 
-        p.setPen(QPen(QColor("#0F172A"), 4))
+        p.setPen(QPen(QColor("#FFFFFF"), 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(outer.adjusted(4, 4, -4, -4))
+
         nx = outer.left() + outer.width() / 2.0
+        p.setPen(QPen(QColor("#FFFFFF"), 3))
         p.drawLine(int(nx), int(outer.top()), int(nx), int(outer.bottom()))
 
-        p.setPen(QPen(QColor("#F2D2A8"), 1))
-        p.setBrush(QColor("#E8A85F"))
-        p.drawRect(half)
-
-        p.setPen(QPen(QColor("#F6C98F"), 1, Qt.PenStyle.DashLine))
-        for i in (1, 2):
-            y = half.top() + (half.height() / 3.0) * i
-            p.drawLine(int(half.left()), int(y), int(half.right()), int(y))
-        for i in (1, 2):
-            x = half.left() + (half.width() / 3.0) * i
-            p.drawLine(int(x), int(half.top()), int(x), int(half.bottom()))
+        pen = QPen(QColor("#FFFFFF"), 2)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        p.setPen(pen)
+        hw = outer.width() / 2.0
+        is_home = self.team_side == "home"
+        x3m = outer.left() + (hw * 2 / 3.0) if is_home else outer.left() + hw + (hw * 1 / 3.0)
+        p.drawLine(int(x3m), int(outer.top() + 6), int(x3m), int(outer.bottom() - 6))
 
         p.setPen(QPen(QColor("#0F172A"), 1))
+
         for idx, (num, (nx, ny)) in enumerate(self._positions.items()):
             cx, cy = self._to_canvas(nx, ny)
             r = int(self.R)
             color = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
             p.setBrush(color)
             p.drawEllipse(int(cx - r), int(cy - r), r * 2, r * 2)
+            p.setPen(QColor("#FFFFFF"))
+            f = p.font()
+            f.setBold(True)
+            f.setPointSize(10)
+            p.setFont(f)
             p.drawText(
                 QRectF(cx - r, cy - r, r * 2, r * 2),
                 Qt.AlignmentFlag.AlignCenter,
                 str(num),
             )
+            p.setPen(QPen(QColor("#0F172A"), 1))
 
     def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
@@ -149,6 +170,9 @@ class FormationCourtWidget(QWidget):
             cx, cy = self._to_canvas(*self._positions[player])
             self._offset = QPoint(int(px - cx), int(py - cy))
             self.update()
+            return
+        nx, ny = self._to_normalized(px, py)
+        self.cellClicked.emit(nx, ny)
 
     def mouseMoveEvent(self, event):
         if self._dragging_player is None:
@@ -162,6 +186,7 @@ class FormationCourtWidget(QWidget):
         if event.button() == Qt.MouseButton.LeftButton and self._dragging_player is not None:
             self._dragging_player = None
             self.update()
+            self.positionsChanged.emit()
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -170,6 +195,7 @@ class FormationCourtWidget(QWidget):
             if player is not None:
                 del self._positions[player]
                 self.update()
+                self.positionsChanged.emit()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
@@ -186,6 +212,7 @@ class FormationCourtWidget(QWidget):
         px, py = event.position().x(), event.position().y()
         self._positions[player] = self._to_normalized(px, py)
         self.update()
+        self.positionsChanged.emit()
         event.acceptProposedAction()
 
 
@@ -227,6 +254,55 @@ class PlayerListWidget(QListWidget):
         p.setPen(QPen(QColor("#0F172A"), 1))
         p.drawEllipse(2, 2, 36, 36)
         p.drawText(QRectF(2, 2, 36, 36), Qt.AlignmentFlag.AlignCenter, str(player))
+        p.end()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QPoint(20, 20))
+        drag.exec(Qt.DropAction.CopyAction)
+
+
+class RoleListWidget(QListWidget):
+    """Lista ruoli trascinabili (P, S1, S2, C1, C2, O)."""
+
+    ROLE_LABELS = ["P", "S1", "S2", "C1", "C2", "O"]
+    ROLE_COLORS = ["#FACC15", "#22C55E", "#3B82F6", "#EC4899", "#A855F7", "#F97316"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        for i, role in enumerate(self.ROLE_LABELS):
+            item = QListWidgetItem(f"  {role}")
+            item.setData(Qt.ItemDataRole.UserRole, role)
+            item.setData(Qt.ItemDataRole.UserRole + 1, self.ROLE_COLORS[i])
+            item.setSizeHint(self._size_hint())
+            self.addItem(item)
+        self.setMinimumWidth(90)
+        self.setMaximumWidth(110)
+
+    def _size_hint(self):
+        from PyQt6.QtCore import QSize
+        return QSize(70, 36)
+
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if item is None:
+            return
+        role = item.data(Qt.ItemDataRole.UserRole) or ""
+        color = item.data(Qt.ItemDataRole.UserRole + 1) or "#FACC15"
+        mime = QMimeData()
+        mime.setText(str(role))
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        pixmap = QPixmap(40, 40)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QColor(color))
+        p.setPen(QPen(QColor("#0F172A"), 1))
+        p.drawEllipse(2, 2, 36, 36)
+        p.drawText(QRectF(2, 2, 36, 36), Qt.AlignmentFlag.AlignCenter, str(role))
         p.end()
         drag.setPixmap(pixmap)
         drag.setHotSpot(QPoint(20, 20))

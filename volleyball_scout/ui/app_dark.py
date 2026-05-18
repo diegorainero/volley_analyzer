@@ -1166,17 +1166,14 @@ class VolleyballScoutApp(QMainWindow):
         )
 
     def _open_formation_editor(self):
-        if hasattr(self, "scout_panel") and hasattr(
-            self.scout_panel, "_open_formation_editor"
-        ):
-            self.scout_panel._open_formation_editor()
-            return
-
-        QMessageBox.information(
-            self,
-            "Formazioni ricezione",
-            "Apri prima lo Scouting Live per gestire le formazioni.",
-        )
+        if hasattr(self, "scout_panel"):
+            self.scout_panel._configure_rx_formation()
+        else:
+            QMessageBox.information(
+                self,
+                "Formazioni ricezione",
+                "Apri prima lo Scouting Live per gestire le formazioni.",
+            )
 
     def _toggle_theme(self, is_dark: bool):
         """Cambia il tema dell'applicazione"""
