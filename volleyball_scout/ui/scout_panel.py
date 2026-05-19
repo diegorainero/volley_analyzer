@@ -1636,7 +1636,14 @@ class ScoutPanel(QWidget):
 
     def _rx_formation_for_side(self, side: str) -> dict:
         config = self._load_rx_formation_config("global")
-        return config
+        if config:
+            return config
+        team_id = self._team_context(side).get("id")
+        if team_id:
+            team_config = self._load_rx_formation_config(str(team_id))
+            if team_config:
+                return team_config
+        return {}
 
     def _load_video_screen_index(self) -> int:
         settings = self._shortcuts_settings()
@@ -2002,6 +2009,16 @@ class ScoutPanel(QWidget):
         layout = QVBoxLayout(dialog)
 
         cfg = self._load_rx_formation_config("global")
+        if not cfg and self.current_context:
+            for side in ("home", "away"):
+                team = self.current_context.get(f"{side}_team", {})
+                tid = team.get("id")
+                if tid:
+                    team_cfg = self._load_rx_formation_config(str(tid))
+                    if team_cfg:
+                        logger.debug("migrating team config %s to global", tid)
+                        cfg = team_cfg
+                        break
         if not cfg:
             scheme = "P-S-C"
             if self.current_context:
@@ -3082,6 +3099,7 @@ class ScoutPanel(QWidget):
         point_result = None
         if point_side is not None:
             point_result = self._apply_point_logic(point_side)
+            self._exit_attack_mode()
 
         history_kind = (
             self.HISTORY_KIND_POINT
@@ -3547,6 +3565,7 @@ class ScoutPanel(QWidget):
             self.subtitle.setText("Clicca sul giocatore che attacca")
             self.home_court.setClickable(True)
             self.away_court.setClickable(True)
+            self._show_attack_formation()
         else:
             self._exit_attack_mode()
 
@@ -3570,8 +3589,10 @@ class ScoutPanel(QWidget):
         court.set_reception_positions(None)
         other = self.away_court if receiving_side == "home" else self.home_court
         other.set_reception_positions(None)
+        self._show_attack_formation()
 
     def _exit_attack_mode(self):
+        self._clear_attack_formation()
         self._attack_mode_active = False
         self._attack_side = None
         self._attack_player = None
@@ -3596,6 +3617,7 @@ class ScoutPanel(QWidget):
         self.serve_overlay.clear_trajectory()
         self._clear_player_highlight()
         self.subtitle.setText("Clicca sul giocatore che attacca")
+        self._show_attack_formation()
 
     def _on_attack_cell_clicked(self, side: str, pos_code: str, zone: str, click_x: float = 0, click_y: float = 0):
         lineup = self._team_context(side).get("lineup", {})
@@ -3964,6 +3986,53 @@ class ScoutPanel(QWidget):
             return number
         return None
 
+    def _show_attack_formation(self):
+        if not self.current_context or not self._attack_mode_active:
+            return
+        attacking_side = "away" if self.serving_side == "home" else "home"
+        self._apply_scheme_formation(attacking_side)
+
+    def _apply_scheme_formation(self, side: str):
+        court = self.home_court if side == "home" else self.away_court
+        rotation = self._get_current_rotation(side)
+        if rotation is None:
+            court.set_positions(None)
+            return
+        team_id = self._team_context(side).get("id")
+        method_by_team = self.current_context.get("game_method_by_team", {})
+        scheme = method_by_team.get(str(team_id), "P-S-C")
+        formation = self.formation_manager.generate_formation_from_scheme(scheme, rotation)
+        lineup_raw = self._team_context(side).get("lineup", {})
+        lineup = {
+            pos: normalize_lineup_number(num)
+            for pos, num in lineup_raw.items()
+            if normalize_lineup_number(num) is not None
+        }
+        libero_num = normalize_lineup_number(self._team_context(side).get("libero"))
+        roles = self.formation_manager.get_player_roles(
+            self.current_context.get("match_id"), team_id
+        )
+        setter_num = self.setter_number_by_side.get(side)
+        player_role_map = self.formation_manager._map_players_to_role_codes(
+            lineup, roles, libero_num, known_setter=setter_num
+        )
+        role_to_player = {v: k for k, v in player_role_map.items()}
+        positions = {}
+        for role_code, xy in formation.items():
+            player_num = role_to_player.get(role_code)
+            if player_num:
+                positions[player_num] = xy
+        if len(positions) < 5:
+            court.set_reception_positions(None)
+            return
+        if side == "away":
+            positions = {k: (1.0 - v[0], 1.0 - v[1]) for k, v in positions.items()}
+        court.set_reception_positions(positions)
+
+    def _clear_attack_formation(self):
+        self.home_court.set_reception_positions(None)
+        self.away_court.set_reception_positions(None)
+
     def _update_reception_formation_display(self):
         """Disegna le formazioni di ricezione sui campi."""
         if not self.current_context:
@@ -3977,6 +4046,8 @@ class ScoutPanel(QWidget):
             self.home_court.set_reception_positions(None)
             self.away_court.set_reception_positions(None)
             return
+
+        self._clear_attack_formation()
 
         for side in ("home", "away"):
             court = self.home_court if side == "home" else self.away_court
@@ -4043,7 +4114,6 @@ class ScoutPanel(QWidget):
                 self._team_context(side).get("libero")
             )
             rx_config = self._rx_formation_for_side(side)
-            rx_config_is_per_side = bool(rx_config)
             if not rx_config:
                 default_scheme = "P-S-C"
                 team_id = self._team_context(side).get("id")
@@ -4058,8 +4128,8 @@ class ScoutPanel(QWidget):
                 )
                 if config_positions:
                     pos = config_positions
-                    if not rx_config_is_per_side and side == "away":
-                        pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                    if side == "away":
+                        pos = {k: (1.0 - v[0], 1.0 - v[1]) for k, v in pos.items()}
                     logger.debug("%s using rx_config positions rot=%s: %s", side, rotation, pos)
                     court.set_reception_positions(pos)
                     continue
@@ -4087,7 +4157,7 @@ class ScoutPanel(QWidget):
                         lineup_positions[pn] = self.formation_manager.ZONE_POSITIONS[remaining_indices[i]]
                 pos = lineup_positions
                 if side == "away":
-                    pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                    pos = {k: (1.0 - v[0], 1.0 - v[1]) for k, v in pos.items()}
                 logger.debug("%s using lineup-order fallback: %s", side, pos)
                 court.set_reception_positions(pos)
                 continue
@@ -4099,7 +4169,7 @@ class ScoutPanel(QWidget):
             if auto_positions:
                 pos = auto_positions
                 if side == "away":
-                    pos = {k: (1.0 - v[0], v[1]) for k, v in pos.items()}
+                    pos = {k: (1.0 - v[0], 1.0 - v[1]) for k, v in pos.items()}
                 logger.debug("%s using auto-generation: %s", side, pos)
                 court.set_reception_positions(pos)
             elif self.reception_manual_positions.get(side):
