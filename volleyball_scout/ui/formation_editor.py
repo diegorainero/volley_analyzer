@@ -45,6 +45,7 @@ class FormationCourtWidget(QWidget):
     R = 18.0
 
     def __init__(self, team_side: str, parent=None):
+        """Inizializza il widget campo formazione."""
         super().__init__(parent)
         self.team_side = "away" if team_side == "away" else "home"
         self._positions: dict[str, tuple[float, float]] = {}
@@ -54,16 +55,20 @@ class FormationCourtWidget(QWidget):
         self.setMinimumSize(300, 300)
 
     def hasHeightForWidth(self):
+        """Verifica se l'altezza scala con la larghezza."""
         return True
 
     def heightForWidth(self, width):
+        """Calcola l'altezza proporzionale alla larghezza."""
         return width
 
     def sizeHint(self):
+        """Dimensione suggerita predefinita."""
         from PyQt6.QtCore import QSize
         return QSize(300, 300)
 
     def set_positions(self, positions: dict[str, tuple[float, float]] | None):
+        """Imposta le posizioni dei giocatori."""
         self._positions = {}
         for key, value in dict(positions or {}).items():
             try:
@@ -75,18 +80,22 @@ class FormationCourtWidget(QWidget):
         self.positionsChanged.emit()
 
     def get_positions(self) -> dict[str, tuple[float, float]]:
+        """Restituisce le posizioni correnti."""
         return dict(self._positions)
 
     def clear_positions(self):
+        """Pulisce tutte le posizioni."""
         self._positions = {}
         self.update()
         self.positionsChanged.emit()
 
     def _outer_rect(self) -> QRectF:
+        # Rettangolo esterno del campo con margine.
         m = 12.0
         return QRectF(m, m, max(10.0, self.width() - m * 2), max(10.0, self.height() - m * 2))
 
     def _team_half_rect(self) -> QRectF:
+        # Rettangolo della metà campo squadra.
         outer = self._outer_rect()
         hw = outer.width() / 2.0
         if self.team_side == "home":
@@ -94,16 +103,19 @@ class FormationCourtWidget(QWidget):
         return QRectF(outer.left() + hw, outer.top(), hw, outer.height())
 
     def _to_canvas(self, nx: float, ny: float) -> tuple[float, float]:
+        # Converte coordinate normalizzate in pixel canvas.
         half = self._team_half_rect()
         return (half.left() + nx * half.width(), half.top() + ny * half.height())
 
     def _to_normalized(self, px: float, py: float) -> tuple[float, float]:
+        # Converte pixel canvas in coordinate normalizzate.
         half = self._team_half_rect()
         nx = (px - half.left()) / max(1.0, half.width())
         ny = (py - half.top()) / max(1.0, half.height())
         return (min(1.0, max(0.0, nx)), min(1.0, max(0.0, ny)))
 
     def _player_at(self, px: float, py: float) -> str | None:
+        # Trova il giocatore alle coordinate pixel.
         r2 = self.R * self.R
         for num in reversed(list(self._positions.keys())):
             cx, cy = self._to_canvas(*self._positions[num])
@@ -112,6 +124,7 @@ class FormationCourtWidget(QWidget):
         return None
 
     def paintEvent(self, event):
+        """Disegna il campo e i giocatori."""
         super().paintEvent(event)
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -160,6 +173,7 @@ class FormationCourtWidget(QWidget):
             p.setPen(QPen(QColor("#0F172A"), 1))
 
     def mousePressEvent(self, event):
+        """Gestisce pressione del mouse."""
         if event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
             return
@@ -175,6 +189,7 @@ class FormationCourtWidget(QWidget):
         self.cellClicked.emit(nx, ny)
 
     def mouseMoveEvent(self, event):
+        """Gestisce movimento mouse durante drag."""
         if self._dragging_player is None:
             super().mouseMoveEvent(event)
             return
@@ -183,12 +198,14 @@ class FormationCourtWidget(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        """Gestisce rilascio mouse dopo drag."""
         if event.button() == Qt.MouseButton.LeftButton and self._dragging_player is not None:
             self._dragging_player = None
             self.update()
             self.positionsChanged.emit()
 
     def mouseDoubleClickEvent(self, event):
+        """Rimuove giocatore con doppio click."""
         if event.button() == Qt.MouseButton.LeftButton:
             px, py = event.position().x(), event.position().y()
             player = self._player_at(px, py)
@@ -198,14 +215,17 @@ class FormationCourtWidget(QWidget):
                 self.positionsChanged.emit()
 
     def dragEnterEvent(self, event):
+        """Accetta evento drag enter."""
         if event.mimeData().hasText():
             event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
+        """Gestisce movimento drag."""
         if event.mimeData().hasText():
             event.acceptProposedAction()
 
     def dropEvent(self, event):
+        """Gestisce drop giocatore sul campo."""
         player = event.mimeData().text().strip()
         if not player:
             return
@@ -220,6 +240,7 @@ class PlayerListWidget(QListWidget):
     """Lista giocatori trascinabili."""
 
     def __init__(self, players: list[str], parent=None):
+        """Inizializza la lista giocatori."""
         super().__init__(parent)
         self.setDragEnabled(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
@@ -234,10 +255,12 @@ class PlayerListWidget(QListWidget):
         self.setMaximumWidth(140)
 
     def _size_hint(self):
+        # Dimensione suggerita item lista.
         from PyQt6.QtCore import QSize
         return QSize(80, 36)
 
     def startDrag(self, supportedActions):
+        """Avvia drag giocatore dalla lista."""
         item = self.currentItem()
         if item is None:
             return
@@ -267,6 +290,7 @@ class RoleListWidget(QListWidget):
     ROLE_COLORS = ["#FACC15", "#22C55E", "#3B82F6", "#EC4899", "#A855F7", "#F97316"]
 
     def __init__(self, parent=None):
+        """Inizializza la lista ruoli."""
         super().__init__(parent)
         self.setDragEnabled(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
@@ -282,10 +306,12 @@ class RoleListWidget(QListWidget):
         self.setMaximumWidth(110)
 
     def _size_hint(self):
+        # Dimensione suggerita item lista.
         from PyQt6.QtCore import QSize
         return QSize(70, 36)
 
     def startDrag(self, supportedActions):
+        """Avvia drag ruolo dalla lista."""
         item = self.currentItem()
         if item is None:
             return
@@ -315,6 +341,7 @@ class RotationSelector(QWidget):
     rotation_changed = pyqtSignal(int)
 
     def __init__(self, parent=None):
+        """Inizializza il selettore rotazioni."""
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 4)
@@ -332,11 +359,13 @@ class RotationSelector(QWidget):
         self._update_style()
 
     def _select(self, rotation: int):
+        # Seleziona rotazione e aggiorna stile.
         self._current = rotation
         self._update_style()
         self.rotation_changed.emit(rotation)
 
     def _update_style(self):
+        # Aggiorna stile pulsanti rotazione.
         for i, btn in enumerate(self._buttons):
             r = i + 1
             if r == self._current:
@@ -351,6 +380,7 @@ class RotationSelector(QWidget):
                 )
 
     def current_rotation(self) -> int:
+        """Restituisce la rotazione corrente."""
         return self._current
 
 
@@ -365,6 +395,7 @@ class FormationEditorDialog(QDialog):
         formations: dict[int, dict[str, tuple[float, float]]] | None = None,
         parent=None,
     ):
+        """Inizializza il dialog editor formazioni."""
         super().__init__(parent)
         self.team_side = "away" if team_side == "away" else "home"
         self.setWindowTitle(f"Formazioni ricezione - {team_name}")
@@ -429,10 +460,12 @@ class FormationEditorDialog(QDialog):
         self._load_current_rotation()
 
     def _on_rotation_changed(self, rotation: int):
+        # Salva/carica rotazione selezionata.
         self._save_current_rotation()
         self._load_current_rotation()
 
     def _save_current_rotation(self):
+        # Salva formazione rotazione corrente.
         r = self.rot_selector.current_rotation()
         pos = self.court.get_positions()
         if pos:
@@ -441,10 +474,12 @@ class FormationEditorDialog(QDialog):
             del self._formations[r]
 
     def _load_current_rotation(self):
+        # Carica formazione rotazione corrente.
         r = self.rot_selector.current_rotation()
         self.court.set_positions(self._formations.get(r, {}))
 
     def _clear_current(self):
+        # Pulisce formazione corrente.
         self.court.clear_positions()
         self._save_current_rotation()
 
@@ -495,5 +530,6 @@ class FormationEditorDialog(QDialog):
         self._save_current_rotation()
 
     def get_formations(self) -> dict[int, dict[str, tuple[float, float]]]:
+        """Restituisce tutte le formazioni."""
         self._save_current_rotation()
         return dict(self._formations)

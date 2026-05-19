@@ -60,6 +60,7 @@ class ReceptionCourtEditor(QWidget):
     MARKER_RADIUS = 18.0
 
     def __init__(self, team_side: str, parent=None):
+        """Inizializza l'editor di ricezione con il lato squadra."""
         super().__init__(parent)
         self.team_side = "away" if team_side == "away" else "home"
         self.selected_player: str | None = None
@@ -68,10 +69,12 @@ class ReceptionCourtEditor(QWidget):
         self.setMinimumSize(520, 280)
 
     def set_selected_player(self, player_number: str | None):
+        """Imposta il giocatore selezionato da evidenziare."""
         self.selected_player = str(player_number) if player_number else None
         self.update()
 
     def set_positions(self, positions: dict | None):
+        """Imposta le posizioni dei giocatori sul campo."""
         self._positions = {}
         for key, value in dict(positions or {}).items():
             try:
@@ -85,13 +88,17 @@ class ReceptionCourtEditor(QWidget):
         self.update()
 
     def positions(self) -> dict[str, tuple[float, float]]:
+        """Restituisce le posizioni correnti dei giocatori."""
         return dict(self._positions)
 
     def clear_positions(self):
+        """Pulisce tutte le posizioni dei giocatori."""
         self._positions = {}
         self.update()
 
     def _outer_rect(self) -> QRectF:
+        # Calcola il rettangolo esterno con margine
+        # Calcola il rettangolo esterno con margine
         margin = 12.0
         return QRectF(
             margin,
@@ -101,6 +108,8 @@ class ReceptionCourtEditor(QWidget):
         )
 
     def _team_half_rect(self) -> QRectF:
+        # Restituisce la metà campo della squadra
+        # Restituisce la metà campo della squadra
         outer = self._outer_rect()
         half_w = outer.width() / 2.0
         if self.team_side == "home":
@@ -108,6 +117,8 @@ class ReceptionCourtEditor(QWidget):
         return QRectF(outer.left() + half_w, outer.top(), half_w, outer.height())
 
     def _canvas_point(self, player_number: str) -> tuple[float, float] | None:
+        # Converte coordinate normalizzate in pixel del canvas
+        # Converte coordinate normalizzate in pixel del canvas
         value = self._positions.get(str(player_number))
         if value is None:
             return None
@@ -120,6 +131,8 @@ class ReceptionCourtEditor(QWidget):
         )
 
     def _player_at_point(self, px: float, py: float) -> str | None:
+        # Trova il giocatore alle coordinate pixel date
+        # Trova il giocatore alle coordinate pixel date
         radius_sq = self.MARKER_RADIUS * self.MARKER_RADIUS
         for number in reversed(list(self._positions.keys())):
             center = self._canvas_point(number)
@@ -135,6 +148,7 @@ class ReceptionCourtEditor(QWidget):
     def _set_player_position_from_canvas(
         self, player_number: str, px: float, py: float
     ):
+        # Imposta posizione normalizzata da coordinate canvas
         half = self._team_half_rect()
         clamped_x = min(half.right(), max(half.left(), px))
         clamped_y = min(half.bottom(), max(half.top(), py))
@@ -148,6 +162,7 @@ class ReceptionCourtEditor(QWidget):
         )
 
     def mousePressEvent(self, event):
+        """Gestisce l'evento di pressione del mouse."""
         if event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
 
@@ -171,6 +186,7 @@ class ReceptionCourtEditor(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event):
+        """Gestisce l'evento di movimento del mouse."""
         if self._dragging_player is None:
             return super().mouseMoveEvent(event)
 
@@ -183,6 +199,7 @@ class ReceptionCourtEditor(QWidget):
         self.update()
 
     def mouseReleaseEvent(self, event):
+        """Gestisce l'evento di rilascio del mouse."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging_player = None
             self.update()
@@ -190,6 +207,7 @@ class ReceptionCourtEditor(QWidget):
         return super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
+        """Disegna il campo e i marcatori dei giocatori."""
         super().paintEvent(event)
 
         painter = QPainter(self)
@@ -248,6 +266,7 @@ class ReceptionPositionDialog(QDialog):
         lineup_positions: dict | None = None,
         parent=None,
     ):
+        """Inizializza il dialogo di posizionamento ricezione."""
         super().__init__(parent)
         self.team_side = "away" if team_side == "away" else "home"
         self._lineup_positions = dict(lineup_positions or {})
@@ -296,10 +315,14 @@ class ReceptionPositionDialog(QDialog):
         self._on_player_changed(0)
 
     def _on_player_changed(self, _index: int):
+        # Aggiorna il giocatore selezionato nell'editor
+        # Aggiorna il giocatore selezionato nell'editor
         current = self.player_selector.currentData()
         self.editor.set_selected_player(str(current) if current is not None else None)
 
     def _apply_rotation_preset(self):
+        # Applica il preset di rotazione per il posizionamento
+        # Applica il preset di rotazione per il posizionamento
         base_home = {
             "P4": (0.74, 0.20),
             "P3": (0.74, 0.50),
@@ -326,6 +349,7 @@ class ReceptionPositionDialog(QDialog):
             self.editor.set_positions(preset)
 
     def positions(self) -> dict[str, tuple[float, float]]:
+        """Restituisce le posizioni inserite dall'utente."""
         return self.editor.positions()
 
 
@@ -412,6 +436,7 @@ class ScoutPanel(QWidget):
     HISTORY_KIND_SYSTEM = "SY"
 
     def __init__(self, db_manager=None, parent=None):
+        """Inizializza il pannello di scouting live."""
         super().__init__(parent)
         self.db = db_manager
         self.formation_manager = FormationManager(db_manager)
@@ -505,6 +530,8 @@ class ScoutPanel(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def _setup_ui(self):
+        # Costruisce l'interfaccia utente del pannello
+        # Costruisce l'interfaccia utente del pannello
         root_layout = QHBoxLayout(self)
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
@@ -1061,12 +1088,16 @@ class ScoutPanel(QWidget):
         self._refresh_screen_selector()
 
     def _toggle_codes_panel(self, is_visible: bool):
+        # Mostra o nasconde il pannello dei codici
+        # Mostra o nasconde il pannello dei codici
         self.codes_group.setVisible(is_visible)
         self.btn_toggle_codes.setText(
             "Nascondi elenco codici" if is_visible else "Mostra elenco codici"
         )
 
     def _toggle_keypad_panel(self, visible: bool):
+        # Mostra o nasconde il tastierino DataVolley
+        # Mostra o nasconde il tastierino DataVolley
         if hasattr(self, "datavolley_keypad_group"):
             self.datavolley_keypad_group.setVisible(bool(visible))
         if hasattr(self, "btn_toggle_keypad"):
@@ -1075,6 +1106,8 @@ class ScoutPanel(QWidget):
             )
 
     def _refresh_screen_selector(self):
+        # Aggiorna la lista dei monitor disponibili
+        # Aggiorna la lista dei monitor disponibili
         if not hasattr(self, "video_screen_selector"):
             return
 
@@ -1118,6 +1151,8 @@ class ScoutPanel(QWidget):
         self._save_video_screen_index()
 
     def _on_video_screen_selector_changed(self, _index: int):
+        # Salva il monitor selezionato quando cambia
+        # Salva il monitor selezionato quando cambia
         if not hasattr(self, "video_screen_selector"):
             return
 
@@ -1129,6 +1164,8 @@ class ScoutPanel(QWidget):
         self._save_video_screen_index()
 
     def _selected_screen_index(self) -> int:
+        # Restituisce l'indice del monitor selezionato
+        # Restituisce l'indice del monitor selezionato
         if not hasattr(self, "video_screen_selector"):
             return 0
 
@@ -1139,6 +1176,8 @@ class ScoutPanel(QWidget):
             return 0
 
     def _remove_video_widget_from_current_parent(self):
+        # Rimuove il video widget dal suo genitore corrente
+        # Rimuove il video widget dal suo genitore corrente
         if self.video_widget is None:
             return
 
@@ -1148,6 +1187,8 @@ class ScoutPanel(QWidget):
         self.video_widget.setParent(None)
 
     def _attach_video_widget_to_panel(self):
+        # Collega il video widget al pannello principale
+        # Collega il video widget al pannello principale
         if self.video_widget is None:
             return
 
@@ -1158,6 +1199,8 @@ class ScoutPanel(QWidget):
             self.video_placeholder.setVisible(False)
 
     def _on_video_detached_window_closed(self, *_args):
+        # Riporta il video nel pannello quando la finestra esterna viene chiusa
+        # Riporta il video nel pannello quando la finestra esterna viene chiusa
         if self._is_docking_video:
             return
         if self.video_widget is None:
@@ -1167,6 +1210,8 @@ class ScoutPanel(QWidget):
         self._dock_video_in_panel()
 
     def _update_video_layout_controls(self):
+        # Aggiorna lo stato dei controlli di layout video
+        # Aggiorna lo stato dei controlli di layout video
         has_video = self.video_widget is not None
         detached = self.video_detached_window is not None
 
@@ -1184,6 +1229,8 @@ class ScoutPanel(QWidget):
             self.btn_video_dock.setEnabled(has_video and detached)
 
     def _detach_video_to_window(self):
+        # Sposta il video in una finestra esterna
+        # Sposta il video in una finestra esterna
         if self.video_widget is None:
             return
 
@@ -1218,6 +1265,8 @@ class ScoutPanel(QWidget):
         self._update_video_pause_controls()
 
     def _move_video_to_selected_screen(self):
+        # Sposta il video sul monitor selezionato
+        # Sposta il video sul monitor selezionato
         if self.video_widget is None:
             return
 
@@ -1264,6 +1313,8 @@ class ScoutPanel(QWidget):
         self._move_video_to_selected_screen()
 
     def _dock_video_in_panel(self):
+        # Riporta il video dalla finestra esterna al pannello
+        # Riporta il video dalla finestra esterna al pannello
         if self.video_widget is None:
             self.video_detached_window = None
             self._update_video_layout_controls()
@@ -1290,6 +1341,7 @@ class ScoutPanel(QWidget):
         self._update_video_pause_controls()
 
     def set_video_widget(self, widget: QWidget | None):
+        """Imposta o rimuove il widget video nel pannello."""
         if not hasattr(self, "video_group_layout"):
             return
 
@@ -1318,9 +1370,13 @@ class ScoutPanel(QWidget):
         self._update_video_pause_controls()
 
     def _request_back_to_scouts(self):
+        # Richiede il ritorno alla lista scout
+        # Richiede il ritorno alla lista scout
         self.back_requested.emit()
 
     def _set_video_mode_badge(self, text: str, color: str, border: str):
+        # Imposta il badge con testo e colori per la modalità video
+        # Imposta il badge con testo e colori per la modalità video
         if not hasattr(self, "video_mode_badge"):
             return
         self.video_mode_badge.setText(text)
@@ -1331,6 +1387,8 @@ class ScoutPanel(QWidget):
         )
 
     def _refresh_video_mode_badge(self):
+        # Aggiorna il badge della modalità video
+        # Aggiorna il badge della modalità video
         source_type = str(self.video_source_info.get("type", "") or "").strip().lower()
         connected = bool(source_type)
 
@@ -1349,6 +1407,8 @@ class ScoutPanel(QWidget):
         self._set_video_mode_badge("Video: FILE", "#065F46", "#047857")
 
     def _update_video_pause_controls(self):
+        # Aggiorna lo stato del pulsante pausa video
+        # Aggiorna lo stato del pulsante pausa video
         if not hasattr(self, "btn_pause_video_scout"):
             return
 
@@ -1369,6 +1429,8 @@ class ScoutPanel(QWidget):
         )
 
     def _toggle_video_and_timer_pause(self, paused: bool):
+        # Mette in pausa o riprende video e timer insieme
+        # Mette in pausa o riprende video e timer insieme
         if self.video_widget is None or self.video_is_live:
             if hasattr(self, "btn_pause_video_scout"):
                 self.btn_pause_video_scout.blockSignals(True)
@@ -1398,6 +1460,7 @@ class ScoutPanel(QWidget):
         )
 
     def set_video_playback_state(self, state: dict | None):
+        """Aggiorna lo stato di riproduzione del video."""
         payload = dict(state or {})
         self.video_is_live = bool(payload.get("is_live", False))
         self.video_paused = bool(payload.get("paused", False))
@@ -1439,9 +1502,11 @@ class ScoutPanel(QWidget):
         self._highlight_history_by_current_time(scroll_to_active=False)
 
     def _shortcuts_settings(self) -> QSettings:
+        # Restituisce le impostazioni QSettings per le scorciatoie
         return QSettings(self.SHORTCUTS_SETTINGS_ORG, self.SHORTCUTS_SETTINGS_APP)
 
     def _video_memory_key(self, match_id) -> str | None:
+        # Genera la chiave per salvare il tempo video di ripresa
         try:
             parsed = int(match_id)
             if parsed <= 0:
@@ -1451,6 +1516,7 @@ class ScoutPanel(QWidget):
             return None
 
     def _load_video_resume_seconds(self, match_id) -> float | None:
+        # Carica i secondi di ripresa video salvati
         key = self._video_memory_key(match_id)
         if key is None:
             return None
@@ -1466,6 +1532,7 @@ class ScoutPanel(QWidget):
             return None
 
     def _save_video_resume_seconds(self, seconds: float | None):
+        # Salva i secondi di ripresa video correnti
         if not self.current_context or seconds is None:
             return
 
@@ -1482,9 +1549,11 @@ class ScoutPanel(QWidget):
         settings.setValue(key, f"{value:.3f}")
 
     def get_video_resume_seconds(self) -> float | None:
+        """Restituisce i secondi di ripresa video salvati."""
         return self._resume_video_seconds
 
     def set_video_resume_badge(self, seconds: float | None):
+        """Mostra o nasconde il badge di ripresa video."""
         if not hasattr(self, "video_resume_badge"):
             return
 
@@ -1511,6 +1580,7 @@ class ScoutPanel(QWidget):
         editing_completed_match: bool = False,
         match_status: str | None = None,
     ):
+        """Imposta il badge della modalità partita."""
         if not hasattr(self, "match_mode_badge"):
             return
 
@@ -1529,19 +1599,23 @@ class ScoutPanel(QWidget):
         self.match_mode_badge.setVisible(False)
 
     def _load_keypad_size_mode(self) -> str:
+        # Carica la modalità dimensione tastierino
         settings = self._shortcuts_settings()
         value = settings.value(self.KEYPAD_SIZE_SETTINGS_KEY, "compact", type=str)
         mode = str(value or "compact").strip().lower()
         return mode if mode in {"compact", "large"} else "compact"
 
     def _save_keypad_size_mode(self):
+        # Salva la modalità dimensione tastierino
         settings = self._shortcuts_settings()
         settings.setValue(self.KEYPAD_SIZE_SETTINGS_KEY, self.keypad_size_mode)
 
     def _keypad_button_height(self) -> int:
+        # Restituisce l'altezza dei pulsanti tastierino
         return 38 if self.keypad_size_mode == "large" else 30
 
     def _scale_keypad_width(self, base_width: int | None) -> int | None:
+        # Scala la larghezza in base alla modalità
         if base_width is None:
             return None
         if self.keypad_size_mode == "large":
@@ -1549,6 +1623,7 @@ class ScoutPanel(QWidget):
         return base_width
 
     def _apply_keypad_size_mode(self):
+        # Applica la dimensione dei pulsanti tastierino
         min_h = self._keypad_button_height()
         for btn in self.code_keypad_buttons:
             btn.setMinimumHeight(min_h)
@@ -1557,6 +1632,7 @@ class ScoutPanel(QWidget):
                 btn.setMaximumWidth(self._scale_keypad_width(base_width) or base_width)
 
     def _on_keypad_size_changed(self):
+        # Gestisce il cambio dimensione tastierino
         if not hasattr(self, "keypad_size_selector"):
             return
 
@@ -1567,22 +1643,26 @@ class ScoutPanel(QWidget):
         self._apply_keypad_size_mode()
 
     def _load_keyboard_mode_enabled(self) -> bool:
+        # Carica se la modalità solo tastiera è attiva
         settings = self._shortcuts_settings()
         value = settings.value(self.KEYBOARD_MODE_SETTINGS_KEY, "0", type=str)
         return str(value or "0").strip() in {"1", "true", "True", "yes"}
 
     def _save_keyboard_mode_enabled(self):
+        # Salva lo stato della modalità solo tastiera
         settings = self._shortcuts_settings()
         settings.setValue(
             self.KEYBOARD_MODE_SETTINGS_KEY, "1" if self.keyboard_only_mode else "0"
         )
 
     def _load_timer_sync_with_video(self) -> bool:
+        # Carica l'impostazione di sincronizzazione timer con video
         settings = self._shortcuts_settings()
         value = settings.value(self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY, "1", type=str)
         return str(value or "1").strip().lower() in {"1", "true", "yes"}
 
     def _save_timer_sync_with_video(self):
+        # Salva l'impostazione di sincronizzazione timer con video
         settings = self._shortcuts_settings()
         settings.setValue(
             self.TIMER_SYNC_WITH_VIDEO_SETTINGS_KEY,
@@ -1590,16 +1670,19 @@ class ScoutPanel(QWidget):
         )
 
     def _load_default_attack_eval(self) -> str:
+        # Carica la valutazione attacco predefinita
         settings = self._shortcuts_settings()
         value = settings.value(self.DEFAULT_ATTACK_EVAL_SETTINGS_KEY, "!", type=str)
         eval_code = str(value or "!").strip()
         return eval_code if eval_code in {"#", "+", "!", "/", "-", "="} else "!"
 
     def _save_default_attack_eval(self):
+        # Salva la valutazione attacco predefinita
         settings = self._shortcuts_settings()
         settings.setValue(self.DEFAULT_ATTACK_EVAL_SETTINGS_KEY, self.default_attack_eval)
 
     def _load_rx_formation_config(self, scope: str | None = None) -> dict:
+        # Carica la configurazione formazioni ricezione
         settings = self._shortcuts_settings()
         if scope == "global" or scope is None:
             key = self.RX_FORMATION_CONFIG_KEY
@@ -1626,6 +1709,7 @@ class ScoutPanel(QWidget):
             return {}
 
     def _save_rx_formation_config(self, data: dict, scope: str | None = None):
+        # Salva la configurazione formazioni ricezione
         settings = self._shortcuts_settings()
         if scope == "global" or scope is None:
             key = self.RX_FORMATION_CONFIG_KEY
@@ -1635,6 +1719,7 @@ class ScoutPanel(QWidget):
         settings.setValue(key, json.dumps(data, ensure_ascii=False))
 
     def _rx_formation_for_side(self, side: str) -> dict:
+        # Restituisce la configurazione ricezione per una squadra
         config = self._load_rx_formation_config("global")
         if config:
             return config
@@ -1646,6 +1731,7 @@ class ScoutPanel(QWidget):
         return {}
 
     def _load_video_screen_index(self) -> int:
+        # Carica l'indice del monitor preferito per il video
         settings = self._shortcuts_settings()
         value = settings.value(self.VIDEO_SCREEN_INDEX_SETTINGS_KEY, "0", type=str)
         try:
@@ -1654,6 +1740,7 @@ class ScoutPanel(QWidget):
             return 0
 
     def _save_video_screen_index(self):
+        # Salva l'indice del monitor preferito per il video
         settings = self._shortcuts_settings()
         settings.setValue(
             self.VIDEO_SCREEN_INDEX_SETTINGS_KEY,
@@ -1661,6 +1748,7 @@ class ScoutPanel(QWidget):
         )
 
     def _hotkey_action_definitions(self) -> list[tuple[str, str, bool]]:
+        # Restituisce la lista delle definizioni azioni hotkey
         macro_1 = (
             self.KEYPAD_MACRO_PRESETS[0][0]
             if len(self.KEYPAD_MACRO_PRESETS) > 0
@@ -1687,12 +1775,14 @@ class ScoutPanel(QWidget):
         ]
 
     def _normalize_hotkey_token(self, token: str | None) -> str | None:
+        # Normalizza un token hotkey F1-F12
         value = str(token or "").strip().upper()
         if re.fullmatch(r"F([1-9]|1[0-2])", value):
             return value
         return None
 
     def _qt_key_to_hotkey_token(self, key: int) -> str | None:
+        # Converte un tasto Qt in token hotkey
         for idx in range(1, 13):
             qt_key = getattr(Qt.Key, f"Key_F{idx}", None)
             if qt_key is not None and key == int(qt_key):
@@ -1700,6 +1790,7 @@ class ScoutPanel(QWidget):
         return None
 
     def _default_hotkey_map(self) -> dict[str, str]:
+        # Restituisce la mappa hotkey predefinita
         defaults = {}
         valid_actions = {action for action, _, _ in self._hotkey_action_definitions()}
         for action, token in self.HOTKEY_DEFAULTS.items():
@@ -1710,6 +1801,7 @@ class ScoutPanel(QWidget):
         return defaults
 
     def _load_hotkey_map(self) -> dict[str, str]:
+        # Carica la mappa hotkey salvata
         settings = self._shortcuts_settings()
         serialized = settings.value(self.HOTKEY_MAP_SETTINGS_KEY, "", type=str) or ""
 
@@ -1730,6 +1822,7 @@ class ScoutPanel(QWidget):
         return result
 
     def _save_hotkey_map(self):
+        # Salva la mappa hotkey corrente
         settings = self._shortcuts_settings()
         lines = []
         for action, _, _ in self._hotkey_action_definitions():
@@ -1742,6 +1835,7 @@ class ScoutPanel(QWidget):
     def _hotkey_conflicts(
         self, hotkey_map: dict[str, str] | None = None
     ) -> dict[str, list[str]]:
+        # Trova conflitti nella mappa hotkey
         source_map = hotkey_map or self.hotkey_map
         defaults = self._default_hotkey_map()
 
@@ -1760,6 +1854,7 @@ class ScoutPanel(QWidget):
         }
 
     def _format_hotkey_conflicts(self, conflicts: dict[str, list[str]]) -> str:
+        # Formatta i conflitti hotkey in testo leggibile
         if not conflicts:
             return ""
 
@@ -1773,6 +1868,7 @@ class ScoutPanel(QWidget):
         return "\n".join(lines)
 
     def _active_hotkey_bindings(self) -> dict[str, str]:
+        # Restituisce le associazioni hotkey attive
         bindings = {}
         defaults = self._default_hotkey_map()
         for action, _, _ in self._hotkey_action_definitions():
@@ -1783,6 +1879,7 @@ class ScoutPanel(QWidget):
         return bindings
 
     def _hotkeys_to_text(self, hotkey_map: dict[str, str]) -> str:
+        # Converte la mappa hotkey in testo modificabile
         rows = [
             "# Una riga per hotkey (formato: azione=Fx)",
             "# Esempio: macro_1=F1",
@@ -1799,6 +1896,7 @@ class ScoutPanel(QWidget):
         return "\n".join(rows)
 
     def _parse_hotkeys_text(self, text: str) -> dict[str, str]:
+        # Analizza il testo della mappa hotkey
         action_aliases = {
             "macro1": "macro_1",
             "macro_1": "macro_1",
@@ -1845,6 +1943,7 @@ class ScoutPanel(QWidget):
         return parsed
 
     def _configure_hotkeys_map(self):
+        # Mostra il dialogo di configurazione hotkey
         current_text = self._hotkeys_to_text(self.hotkey_map)
         new_text, ok = QInputDialog.getMultiLineText(
             self,
@@ -1886,12 +1985,14 @@ class ScoutPanel(QWidget):
         self._update_hotkeys_map_label()
 
     def _reset_hotkeys_map(self):
+        # Reimposta la mappa hotkey ai valori predefiniti
         self.hotkey_map = self._default_hotkey_map()
         self._save_hotkey_map()
         self._update_keyboard_hotkeys_hint()
         self._update_hotkeys_map_label()
 
     def _point_outcome_scope_options(self) -> list[tuple[str, str]]:
+        # Restituisce le opzioni di scope per la mappa punti
         return [
             ("global", "Globale"),
             ("match", "Solo match corrente"),
@@ -1899,6 +2000,7 @@ class ScoutPanel(QWidget):
         ]
 
     def _load_point_outcome_scope(self) -> str:
+        # Carica lo scope della mappa punto
         settings = self._shortcuts_settings()
         value = settings.value(
             self.POINT_OUTCOME_SCOPE_SETTINGS_KEY, "global", type=str
@@ -1908,12 +2010,14 @@ class ScoutPanel(QWidget):
         return scope if scope in valid else "global"
 
     def _save_point_outcome_scope(self):
+        # Salva lo scope della mappa punto
         settings = self._shortcuts_settings()
         settings.setValue(
             self.POINT_OUTCOME_SCOPE_SETTINGS_KEY, self.point_outcome_scope
         )
 
     def _point_outcome_storage_key(self, scope: str | None = None) -> str:
+        # Genera la chiave di archiviazione per la mappa punti
         chosen = str(scope or self.point_outcome_scope or "global").strip().lower()
         if chosen == "match" and self.current_context:
             match_id = self.current_context.get("match_id")
@@ -1927,12 +2031,14 @@ class ScoutPanel(QWidget):
         return self.POINT_OUTCOME_MAP_SETTINGS_KEY
 
     def _load_point_outcome_map(self, scope: str | None = None) -> dict[str, str]:
+        # Carica la mappa punto vinto/perso
         settings = self._shortcuts_settings()
         key = self._point_outcome_storage_key(scope)
         serialized = settings.value(key, "", type=str)
         return decode_point_outcome_map(serialized)
 
     def _save_point_outcome_map(self, scope: str | None = None):
+        # Salva la mappa punto vinto/perso
         settings = self._shortcuts_settings()
         lines = []
         for key in sorted(self.point_outcome_map.keys()):
@@ -1946,6 +2052,7 @@ class ScoutPanel(QWidget):
         settings.setValue(storage_key, "\n".join(lines))
 
     def _configure_point_outcome_map(self):
+        # Mostra il dialogo di configurazione mappa punti
         current_text = point_outcome_map_to_text(self.point_outcome_map)
         new_text, ok = QInputDialog.getMultiLineText(
             self,
@@ -1969,6 +2076,7 @@ class ScoutPanel(QWidget):
         self._save_point_outcome_map()
 
     def _shortcuts_preview_text(self) -> str:
+        # Restituisce il testo di anteprima delle scorciatoie
         if not self.code_shortcuts:
             return "Tasti rapidi codifica: -"
         preview = [f"{label}→{token}" for label, token in self.code_shortcuts[:6]]
@@ -1976,6 +2084,7 @@ class ScoutPanel(QWidget):
         return "Tasti rapidi codifica: " + " | ".join(preview) + suffix
 
     def _hotkeys_preview_text(self) -> str:
+        # Restituisce il testo di anteprima delle hotkey
         bindings = self._active_hotkey_bindings()
         if not bindings:
             return "Hotkeys: -"
@@ -1990,6 +2099,7 @@ class ScoutPanel(QWidget):
         return "Hotkeys: " + " | ".join(items)
 
     def _point_outcome_preview_text(self) -> str:
+        # Restituisce il testo di anteprima della mappa punti
         scope_label = dict(self._point_outcome_scope_options()).get(
             self.point_outcome_scope, self.point_outcome_scope
         )
@@ -2001,6 +2111,7 @@ class ScoutPanel(QWidget):
         return f"Mappa punti ({scope_label}): " + " | ".join(sample) + suffix
 
     def _configure_rx_formation(self):
+        # Mostra il dialogo di configurazione formazioni ricezione
         dialog = QDialog(self)
         dialog.setWindowTitle("Configura formazioni ricezione")
         dialog.setMinimumWidth(750)
@@ -2082,17 +2193,21 @@ class ScoutPanel(QWidget):
         _current_rotation = 1
 
         def _save_current_rotation(rotation):
+            # Salva la rotazione corrente
             nonlocal _current_rotation
             _current_rotation = rotation
             configs[rotation] = court.get_positions()
 
         def _load_current_rotation(rotation):
+            # Carica la rotazione corrente
             court.set_positions(configs.get(rotation, {}))
 
         def _save_config():
+            # Salva la configurazione
             self._save_rx_formation_config(configs, "global")
 
         def on_rotation(btn_id):
+            """Gestisce il cambio rotazione."""
             if btn_id >= 0:
                 prev = _current_rotation
                 if prev != btn_id:
@@ -2102,6 +2217,7 @@ class ScoutPanel(QWidget):
         rot_group.idClicked.connect(on_rotation)
 
         def gen_scheme(scheme):
+            """Genera lo schema selezionato."""
             nonlocal _current_rotation
             new_cfg = self.formation_manager.generate_all_rotations(scheme)
             configs.clear()
@@ -2118,6 +2234,7 @@ class ScoutPanel(QWidget):
         btn_pcs.clicked.connect(lambda checked: gen_scheme("P-C-S"))
 
         def on_positions_changed():
+            """Gestisce il cambiamento posizioni."""
             rid = rot_group.checkedId()
             if rid >= 0:
                 _save_current_rotation(rid)
@@ -2126,6 +2243,7 @@ class ScoutPanel(QWidget):
         court.positionsChanged.connect(on_positions_changed)
 
         def on_cell_clicked(nx, ny):
+            """Gestisce il click su cella nel campo."""
             rid = rot_group.checkedId()
             if rid < 0:
                 return
@@ -2154,6 +2272,7 @@ class ScoutPanel(QWidget):
         court.cellClicked.connect(on_cell_clicked)
 
         def on_pulisci():
+            """Pulisce la rotazione corrente."""
             rid = rot_group.checkedId()
             if rid >= 0:
                 court.clear_positions()
@@ -2171,6 +2290,7 @@ class ScoutPanel(QWidget):
         dialog.exec()
 
     def open_settings_dialog(self):
+        """Apre il dialogo delle impostazioni di scouting."""
         dialog = QDialog(self)
         dialog.setWindowTitle("Impostazioni Scouting")
         dialog.setMinimumWidth(520)
@@ -2221,6 +2341,7 @@ class ScoutPanel(QWidget):
         layout.addWidget(lbl_points)
 
         def refresh_preview_labels():
+            """Aggiorna le etichette di anteprima."""
             lbl_shortcuts.setText(self._shortcuts_preview_text())
             lbl_hotkeys.setText(self._hotkeys_preview_text())
             lbl_points.setText(self._point_outcome_preview_text())
@@ -2234,6 +2355,7 @@ class ScoutPanel(QWidget):
             )
 
         def on_scope_changed():
+            """Gestisce il cambio scope mappa punti."""
             selected = cmb_scope.currentData()
             new_scope = str(selected or "global").strip().lower()
             self.point_outcome_scope = new_scope
@@ -2242,6 +2364,7 @@ class ScoutPanel(QWidget):
             refresh_preview_labels()
 
         def duplicate_global_rules_to_current_scope():
+            """Copia le regole globali nello scope corrente."""
             if self.point_outcome_scope == "global":
                 QMessageBox.information(
                     dialog,
@@ -2268,10 +2391,12 @@ class ScoutPanel(QWidget):
         btn_copy_global.clicked.connect(duplicate_global_rules_to_current_scope)
 
         def run_and_refresh(callback):
+            """Esegue un callback e aggiorna le anteprime."""
             callback()
             refresh_preview_labels()
 
         def on_sync_timer_changed(state: int):
+            """Gestisce il cambio sincronizzazione timer."""
             self.sync_timer_with_video = state == int(Qt.CheckState.Checked)
             self._save_timer_sync_with_video()
 
@@ -2290,6 +2415,7 @@ class ScoutPanel(QWidget):
         layout.addLayout(eval_row)
 
         def on_attack_eval_changed():
+            """Gestisce il cambio valutazione attacco predefinita."""
             selected = cmb_attack_eval.currentData()
             self.default_attack_eval = str(selected or "!")
             self._save_default_attack_eval()
@@ -2345,6 +2471,7 @@ class ScoutPanel(QWidget):
         dialog.exec()
 
     def _update_hotkeys_map_label(self):
+        # Aggiorna l'etichetta della mappa hotkey attiva
         if not hasattr(self, "hotkeys_map_label"):
             return
 
@@ -2370,6 +2497,7 @@ class ScoutPanel(QWidget):
         self.hotkeys_map_label.setText(base_text)
 
     def _update_keyboard_hotkeys_hint(self):
+        # Aggiorna il suggerimento hotkey nella UI
         if not hasattr(self, "keyboard_hotkeys_hint"):
             return
 
@@ -2388,6 +2516,7 @@ class ScoutPanel(QWidget):
         self.keyboard_hotkeys_hint.setText(f"{prefix}: " + " | ".join(preview))
 
     def _apply_keyboard_mode_ui(self):
+        # Applica le modifiche UI per la modalità tastiera
         self._update_keyboard_hotkeys_hint()
         self._update_hotkeys_map_label()
 
@@ -2408,6 +2537,7 @@ class ScoutPanel(QWidget):
                 self._toggle_keypad_panel(False)
 
     def _on_keyboard_mode_changed(self):
+        # Gestisce il cambio modalità input tastiera
         if not hasattr(self, "keyboard_mode_selector"):
             return
 
@@ -2420,6 +2550,7 @@ class ScoutPanel(QWidget):
             self.code_input.setFocus()
 
     def _execute_hotkey_action(self, action: str) -> bool:
+        # Esegue l'azione associata a un hotkey
         if action.startswith("macro_"):
             try:
                 idx = int(action.split("_", 1)[1]) - 1
@@ -2462,6 +2593,7 @@ class ScoutPanel(QWidget):
         return False
 
     def _handle_function_hotkey(self, key: int) -> bool:
+        # Gestisce la pressione di un tasto funzione
         token = self._qt_key_to_hotkey_token(key)
         if token is None:
             return False
@@ -2473,6 +2605,7 @@ class ScoutPanel(QWidget):
         return self._execute_hotkey_action(action)
 
     def _shortcuts_to_text(self, shortcuts: list[tuple[str, str]]) -> str:
+        # Converte le scorciatoie in testo modificabile
         rows = [
             "# Una riga per bottone (formato: Etichetta=Token)",
             "# Esempio: Battuta=S",
@@ -2482,6 +2615,7 @@ class ScoutPanel(QWidget):
         return "\n".join(rows)
 
     def _parse_shortcuts_text(self, text: str) -> list[tuple[str, str]]:
+        # Analizza il testo delle scorciatoie
         result = []
         for raw_line in str(text or "").splitlines():
             line = raw_line.strip()
@@ -2510,6 +2644,7 @@ class ScoutPanel(QWidget):
         return result
 
     def _save_shortcuts_config(self):
+        # Salva la configurazione delle scorciatoie
         settings = self._shortcuts_settings()
         serialized = "\n".join(
             f"{label}|{token}" for label, token in self.code_shortcuts
@@ -2517,6 +2652,7 @@ class ScoutPanel(QWidget):
         settings.setValue(self.SHORTCUTS_SETTINGS_KEY, serialized)
 
     def _load_shortcuts_config(self) -> list[tuple[str, str]]:
+        # Carica la configurazione delle scorciatoie
         settings = self._shortcuts_settings()
         serialized = settings.value(self.SHORTCUTS_SETTINGS_KEY, "", type=str) or ""
         if not serialized.strip():
@@ -2537,6 +2673,7 @@ class ScoutPanel(QWidget):
         return parsed or list(self.CODE_SHORTCUTS)
 
     def _rebuild_code_shortcut_buttons(self):
+        # Ricostruisce i pulsanti delle scorciatoie codice
         if not hasattr(self, "shortcuts_layout"):
             return
 
@@ -2557,6 +2694,7 @@ class ScoutPanel(QWidget):
             self.shortcuts_layout.addWidget(btn, idx // 4, idx % 4)
 
     def _configure_code_shortcuts(self):
+        # Mostra il dialogo di configurazione scorciatoie
         current_text = self._shortcuts_to_text(self.code_shortcuts)
         new_text, ok = QInputDialog.getMultiLineText(
             self,
@@ -2581,6 +2719,7 @@ class ScoutPanel(QWidget):
         self._rebuild_code_shortcut_buttons()
 
     def _reset_code_shortcuts(self):
+        # Reimposta le scorciatoie ai valori predefiniti
         self.code_shortcuts = list(self.CODE_SHORTCUTS)
         self._save_shortcuts_config()
         self._rebuild_code_shortcut_buttons()
@@ -2593,6 +2732,7 @@ class ScoutPanel(QWidget):
         min_h: int | None = None,
         max_w: int | None = None,
     ) -> QPushButton:
+        # Crea un pulsante per il tastierino DataVolley
         btn = QPushButton(text)
         btn.setMinimumHeight(min_h or self._keypad_button_height())
 
@@ -2606,6 +2746,7 @@ class ScoutPanel(QWidget):
         return btn
 
     def _set_or_replace_team_prefix(self, prefix: str):
+        # Imposta o sostituisce il prefisso squadra nel codice
         if not hasattr(self, "code_input"):
             return
 
@@ -2618,6 +2759,7 @@ class ScoutPanel(QWidget):
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
     def _remove_last_code_char(self):
+        # Rimuove l'ultimo carattere dal campo codice
         if not hasattr(self, "code_input"):
             return
         current = self.code_input.text()
@@ -2626,6 +2768,7 @@ class ScoutPanel(QWidget):
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
     def _apply_macro_preset(self, token: str):
+        # Applica un preset macro al campo codice
         if not hasattr(self, "code_input"):
             return
 
@@ -2650,6 +2793,7 @@ class ScoutPanel(QWidget):
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
     def _create_datavolley_keypad(self, parent_layout: QVBoxLayout):
+        # Crea il tastierino DataVolley nella UI
         keypad_group = QGroupBox("Tastierino DataVolley")
         self.datavolley_keypad_group = keypad_group
         keypad_layout = QVBoxLayout(keypad_group)
@@ -2758,6 +2902,7 @@ class ScoutPanel(QWidget):
             self._toggle_keypad_panel(False)
 
     def _insert_code_token(self, token: str):
+        # Inserisce un token nel campo codice
         if not hasattr(self, "code_input"):
             return
 
@@ -2770,6 +2915,7 @@ class ScoutPanel(QWidget):
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
     def _append_code_char(self, char: str):
+        # Aggiunge un carattere al campo codice
         if not hasattr(self, "code_input"):
             return
 
@@ -2779,6 +2925,7 @@ class ScoutPanel(QWidget):
         self.code_input.setCursorPosition(len(self.code_input.text()))
 
     def keyPressEvent(self, event):
+        """Gestisce gli eventi di pressione tasti."""
         if not self.current_context or not hasattr(self, "code_input"):
             super().keyPressEvent(event)
             return
@@ -2833,6 +2980,7 @@ class ScoutPanel(QWidget):
         super().keyPressEvent(event)
 
     def _selected_code_team_side(self) -> str:
+        # Restituisce la squadra selezionata per il codice
         if hasattr(self, "code_team_selector"):
             selected = self.code_team_selector.currentData()
             if selected in {"home", "away"}:
@@ -2840,6 +2988,7 @@ class ScoutPanel(QWidget):
         return "home"
 
     def _set_code_team_side(self, side: str):
+        # Imposta la squadra selezionata per il codice
         if not hasattr(self, "code_team_selector"):
             return
 
@@ -2848,6 +2997,7 @@ class ScoutPanel(QWidget):
             self.code_team_selector.setCurrentIndex(idx)
 
     def _persist_current_match_video_path(self, video_path: str | None):
+        # Salva il percorso video nel record match
         if self.db is None or not self.current_context or not video_path:
             return
 
@@ -2958,10 +3108,12 @@ class ScoutPanel(QWidget):
         return max(0.0, base_time + offset)
 
     def _reset_code_input_feedback_style(self):
+        # Ripristina lo stile predefinito del campo codice
         if hasattr(self, "code_input"):
             self.code_input.setStyleSheet("")
 
     def _feedback_code_submission(self, success: bool, message: str | None = None):
+        # Mostra feedback visivo per l'invio codice
         if hasattr(self, "code_input"):
             border_color = "#16A34A" if success else "#DC2626"
             self.code_input.setStyleSheet(
@@ -2977,12 +3129,14 @@ class ScoutPanel(QWidget):
             QTimer.singleShot(120, QApplication.beep)
 
     def _team_context(self, side: str) -> dict:
+        # Restituisce il contesto della squadra indicata
         key = "home_team" if side == "home" else "away_team"
         return self.current_context.get(key, {}) if self.current_context else {}
 
     def _resolve_player_id(
         self, side: str, player_number: str | int | None
     ) -> int | None:
+        # Risolve l'ID giocatore dal numero maglia
         if player_number is None:
             return None
 
@@ -3012,12 +3166,14 @@ class ScoutPanel(QWidget):
         return None
 
     def _clear_player_highlight(self):
+        # Rimuove l'evidenziazione da tutti i campi
         if hasattr(self, "home_court"):
             self.home_court.clear_highlight()
         if hasattr(self, "away_court"):
             self.away_court.clear_highlight()
 
     def _highlight_player_on_courts(self, side: str, player_number: str | None):
+        # Evidenzia un giocatore sul campo
         self._clear_player_highlight()
         if not player_number:
             return
@@ -3028,6 +3184,7 @@ class ScoutPanel(QWidget):
             self.away_court.set_highlight_player(player_number)
 
     def _apply_point_logic(self, side: str) -> dict:
+        # Applica la logica punto e side-out
         score_key = "score_home" if side == "home" else "score_away"
         self.current_context[score_key] = self.current_context.get(score_key, 0) + 1
 
@@ -3058,6 +3215,7 @@ class ScoutPanel(QWidget):
         }
 
     def _register_datavolley_code(self):
+        # Registra un codice DataVolley inserito
         if not self.current_context:
             return
 
@@ -3155,11 +3313,13 @@ class ScoutPanel(QWidget):
             self.btn_toggle_keypad.setChecked(False)
 
     def _is_editing_completed_match(self) -> bool:
+        # Verifica se si sta modificando un match terminato
         if not self.current_context:
             return False
         return bool(self.current_context.get("editing_completed_match", False))
 
     def _set_controls_enabled(self, enabled: bool):
+        # Abilita o disabilita i controlli della UI
         self.btn_point_home.setEnabled(enabled)
         self.btn_point_away.setEnabled(enabled)
         self.btn_undo.setEnabled(enabled)
@@ -3240,6 +3400,7 @@ class ScoutPanel(QWidget):
         self._update_video_layout_controls()
 
     def _timeout_limit_per_set(self) -> int:
+        # Restituisce il limite di timeout per set
         try:
             return max(
                 1, int(self.current_context.get("timeout_limit_per_set", 2) or 2)
@@ -3248,6 +3409,7 @@ class ScoutPanel(QWidget):
             return 2
 
     def _update_timeout_labels(self):
+        # Aggiorna le etichette dei timeout
         limit = self._timeout_limit_per_set()
         self.timeout_home_label.setText(
             f"TO Casa: {self.timeouts_used.get('home', 0)}/{limit}"
@@ -3257,24 +3419,29 @@ class ScoutPanel(QWidget):
         )
 
     def _format_seconds(self, total_seconds: int) -> str:
+        # Formatta i secondi in MM:SS
         minutes = max(0, int(total_seconds)) // 60
         seconds = max(0, int(total_seconds)) % 60
         return f"{minutes:02d}:{seconds:02d}"
 
     def _format_elapsed(self) -> str:
+        # Restituisce il tempo trascorso formattato
         return self._format_seconds(int(max(0.0, float(self.elapsed_seconds_exact))))
 
     def _reset_timer_ui(self):
+        # Reimposta l'interfaccia del timer
         self.timer_label.setText(self._format_elapsed())
         self.btn_timer_toggle.setText("Avvia timer")
 
     def _on_timer_tick(self):
+        # Gestisce il tick del timer
         self.elapsed_seconds_exact = max(0.0, float(self.elapsed_seconds_exact) + 1.0)
         self.elapsed_seconds = int(self.elapsed_seconds_exact)
         self.timer_label.setText(self._format_elapsed())
         self._highlight_history_by_current_time()
 
     def _toggle_timer(self):
+        # Avvia o mette in pausa il timer
         if self.timer_running:
             self.timer.stop()
             self.timer_running = False
@@ -3285,12 +3452,14 @@ class ScoutPanel(QWidget):
             self.btn_timer_toggle.setText("Pausa timer")
 
     def _reset_timer(self):
+        # Reimposta il timer a zero
         self.elapsed_seconds_exact = 0.0
         self.elapsed_seconds = 0
         self.timer_label.setText(self._format_elapsed())
         self._highlight_history_by_current_time()
 
     def _refresh_setter_numbers(self):
+        # Aggiorna i numeri dei palleggiatori
         for side in ("home", "away"):
             team_data = self._team_context(side)
             lineup_numbers = {
@@ -3319,6 +3488,7 @@ class ScoutPanel(QWidget):
                 self.setter_number_by_side[side] = self._prompt_for_setter(side)
 
     def _update_outer_service_hints(self):
+        # Aggiorna i suggerimenti servizio esterni
         entries = {
             "home": getattr(self, "home_team_label", None),
             "away": getattr(self, "away_team_label", None),
@@ -3372,6 +3542,7 @@ class ScoutPanel(QWidget):
             btn.setVisible(False)
 
     def _update_initial_service_controls(self):
+        # Aggiorna i controlli della battuta iniziale
         if not hasattr(self, "initial_service_status"):
             return
 
@@ -3398,6 +3569,7 @@ class ScoutPanel(QWidget):
             self.initial_service_status.setText("Seleziona chi batte ad inizio set")
 
     def _set_initial_service(self, side: str):
+        # Imposta la squadra al servizio iniziale
         if not self.current_context or self.initial_service_selected:
             return
 
@@ -3428,6 +3600,7 @@ class ScoutPanel(QWidget):
         self._refresh_view()
 
     def _require_initial_service_selected(self) -> bool:
+        # Richiede la selezione della battuta iniziale
         if self.initial_service_selected:
             return True
 
@@ -3527,6 +3700,7 @@ class ScoutPanel(QWidget):
         self._update_reception_formation_display()
 
     def _exit_serve_mode(self):
+        # Esce dalla modalità battuta
         logger.debug("_exit_serve_mode")
         self._reset_serve_hint()
         self._serve_mode_active = False
@@ -3551,6 +3725,7 @@ class ScoutPanel(QWidget):
             )
 
     def _toggle_attack_mode(self):
+        # Attiva o disattiva la modalità attacco
         if not self.current_context or not self.initial_service_selected:
             return
         self._attack_mode_active = not self._attack_mode_active
@@ -3592,6 +3767,7 @@ class ScoutPanel(QWidget):
         self._show_attack_formation()
 
     def _exit_attack_mode(self):
+        # Esce dalla modalità attacco
         self._clear_attack_formation()
         self._attack_mode_active = False
         self._attack_side = None
@@ -3620,6 +3796,7 @@ class ScoutPanel(QWidget):
         self._show_attack_formation()
 
     def _on_attack_cell_clicked(self, side: str, pos_code: str, zone: str, click_x: float = 0, click_y: float = 0):
+        # Gestisce il click su una cella in modalità attacco
         lineup = self._team_context(side).get("lineup", {})
         player = normalize_lineup_number(lineup.get(pos_code))
         if player is None:
@@ -3676,6 +3853,7 @@ class ScoutPanel(QWidget):
             self._show_attack_eval_buttons(True)
 
     def _show_attack_eval_buttons(self, visible: bool):
+        # Mostra o nasconde i pulsanti valutazione attacco
         for btn in self._attack_eval_buttons:
             btn.setVisible(visible)
         self._attack_eval_label.setVisible(visible)
@@ -3683,12 +3861,14 @@ class ScoutPanel(QWidget):
             self._attack_eval_label.setText("  Attacco:")
 
     def _on_attack_eval_clicked(self, eval_code: str):
+        # Gestisce il click su un pulsante valutazione attacco
         if not self._attack_mode_active or self._attack_player is None:
             return
         self._submit_attack_code(eval_code)
         self._reset_attack_state()
 
     def _submit_attack_code(self, evaluation: str):
+        # Invia il codice DataVolley per l'attacco
         lineup = self._team_context(self._attack_side).get("lineup", {})
         attacker = normalize_lineup_number(lineup.get(
             find_player_position_in_lineup(lineup, self._attack_player)
@@ -3700,6 +3880,7 @@ class ScoutPanel(QWidget):
         self._register_datavolley_code()
 
     def _on_court_cell_clicked(self, side: str, pos_code: str, zone: str, click_x: float = 0, click_y: float = 0):
+        # Gestisce il click su una cella del campo
         if self._attack_mode_active:
             self._on_attack_cell_clicked(side, pos_code, zone, click_x, click_y)
             return
@@ -3756,11 +3937,13 @@ class ScoutPanel(QWidget):
         self._show_reception_eval_buttons(True)
 
     def _show_reception_eval_buttons(self, visible: bool):
+        # Mostra o nasconde i pulsanti valutazione ricezione
         self._eval_label.setVisible(visible)
         for btn in self._reception_eval_buttons:
             btn.setVisible(visible)
 
     def _on_reception_eval_clicked(self, eval_code: str):
+        # Gestisce il click su un pulsante valutazione ricezione
         logger.debug("_on_reception_eval_clicked code=%s receiver=%s", eval_code, self._serve_receiver)
         if not self._serve_mode_active or self._serve_receiver is None:
             return
@@ -3897,6 +4080,7 @@ class ScoutPanel(QWidget):
         self.code_input.setFocus()
 
     def _team_name(self, side: str) -> str:
+        # Restituisce il nome della squadra per il lato
         if not self.current_context:
             return "Casa" if side == "home" else "Ospiti"
         return self.current_context.get(
@@ -3904,6 +4088,7 @@ class ScoutPanel(QWidget):
         ).get("name", "Casa" if side == "home" else "Ospiti")
 
     def _open_formation_editor(self):
+        # Apre l'editor formazioni ricezione
         from volleyball_scout.ui.formation_editor import FormationEditorDialog
 
         if not self.current_context:
@@ -3987,12 +4172,14 @@ class ScoutPanel(QWidget):
         return None
 
     def _show_attack_formation(self):
+        # Mostra la formazione di attacco sul campo
         if not self.current_context or not self._attack_mode_active:
             return
         attacking_side = "away" if self.serving_side == "home" else "home"
         self._apply_scheme_formation(attacking_side)
 
     def _apply_scheme_formation(self, side: str):
+        # Applica la formazione schema per la rotazione
         court = self.home_court if side == "home" else self.away_court
         rotation = self._get_current_rotation(side)
         if rotation is None:
@@ -4030,6 +4217,7 @@ class ScoutPanel(QWidget):
         court.set_reception_positions(positions)
 
     def _clear_attack_formation(self):
+        # Pulisce le formazioni di attacco dai campi
         self.home_court.set_reception_positions(None)
         self.away_court.set_reception_positions(None)
 
@@ -4180,6 +4368,7 @@ class ScoutPanel(QWidget):
                 court.set_reception_positions(None)
 
     def _position_reception_with_prompt(self):
+        # Posiziona la ricezione con dialogo di scelta
         if not self.current_context:
             return
 
@@ -4270,6 +4459,7 @@ class ScoutPanel(QWidget):
         self._update_outer_service_hints()
 
     def _resolve_serving_side(self, context: dict) -> str:
+        # Determina il lato al servizio dal contesto
         away_id = context.get("away_team", {}).get("id")
         serving_team_id = context.get("serving_team_id")
 
@@ -4278,6 +4468,7 @@ class ScoutPanel(QWidget):
         return "home"
 
     def _apply_serving_side(self, side: str):
+        # Applica il lato al servizio
         self.serving_side = "away" if side == "away" else "home"
 
         if self.current_context:
@@ -4378,6 +4569,7 @@ class ScoutPanel(QWidget):
         ))
 
     def _snapshot_state(self) -> dict:
+        # Cattura lo stato corrente per undo
         return {
             "score_home": self.current_context.get("score_home", 0),
             "score_away": self.current_context.get("score_away", 0),
@@ -4392,6 +4584,7 @@ class ScoutPanel(QWidget):
         }
 
     def _restore_state(self, snapshot: dict):
+        # Ripristina uno stato precedente
         self.current_context["score_home"] = snapshot.get("score_home", 0)
         self.current_context["score_away"] = snapshot.get("score_away", 0)
 
@@ -4517,6 +4710,7 @@ class ScoutPanel(QWidget):
             print(f"⚠️ Errore delete evento scouting: {e}")
 
     def _normalize_history_kind(self, kind: str | None) -> str:
+        # Normalizza il tipo di storico evento
         kind_upper = str(kind or self.HISTORY_KIND_SYSTEM).upper()
         if kind_upper in {
             self.HISTORY_KIND_POINT,
@@ -4527,6 +4721,7 @@ class ScoutPanel(QWidget):
         return self.HISTORY_KIND_SYSTEM
 
     def _matches_history_filter(self, kind: str) -> bool:
+        # Verifica se un evento corrisponde al filtro
         selected = (
             self.history_filter.currentText()
             if hasattr(self, "history_filter")
@@ -4541,12 +4736,14 @@ class ScoutPanel(QWidget):
         return True
 
     def _extract_note_from_history_text(self, text: str) -> str:
+        # Estrae la nota dal testo storico
         parts = str(text or "").split("|", 1)
         if len(parts) == 2:
             return parts[1].strip()
         return str(text or "").strip()
 
     def _timestamp_from_history_text(self, text: str) -> float | None:
+        # Estrae il timestamp dal testo storico
         match = re.match(r"^\s*(\d+):([0-5]\d)\s*\|", str(text or ""))
         if not match:
             return None
@@ -4558,6 +4755,7 @@ class ScoutPanel(QWidget):
             return None
 
     def _compose_history_text(self, note: str, timestamp_seconds: float | None) -> str:
+        # Compone il testo storico con timestamp
         if timestamp_seconds is None:
             return str(note or "")
         return (
@@ -4566,6 +4764,7 @@ class ScoutPanel(QWidget):
         )
 
     def _history_timestamp_from_record(self, record: dict) -> float | None:
+        # Restituisce il timestamp da un record storico
         value = record.get("timestamp_seconds")
         if value is not None:
             try:
@@ -4575,12 +4774,14 @@ class ScoutPanel(QWidget):
         return self._timestamp_from_history_text(record.get("text", ""))
 
     def _set_record_timestamp(self, record: dict, timestamp_seconds: float):
+        # Imposta il timestamp su un record storico
         ts = float(max(0.0, float(timestamp_seconds)))
         note = self._extract_note_from_history_text(record.get("text", ""))
         record["timestamp_seconds"] = ts
         record["text"] = self._compose_history_text(note, ts)
 
     def _current_reference_seconds(self) -> float:
+        # Restituisce i secondi di riferimento correnti
         if self.video_timestamp_seconds is not None:
             try:
                 return float(max(0.0, float(self.video_timestamp_seconds)))
@@ -4589,6 +4790,7 @@ class ScoutPanel(QWidget):
         return float(max(0.0, float(self.elapsed_seconds_exact)))
 
     def _event_item_timestamp(self, item: QListWidgetItem | None) -> float | None:
+        # Restituisce il timestamp da un item della lista
         if item is None:
             return None
 
@@ -4602,6 +4804,7 @@ class ScoutPanel(QWidget):
         return self._timestamp_from_history_text(item.text())
 
     def _find_history_record_index_by_event_id(self, event_id: int | None) -> int:
+        # Trova l'indice del record storico per ID evento
         if event_id is None:
             return -1
 
@@ -4611,6 +4814,7 @@ class ScoutPanel(QWidget):
         return -1
 
     def _highlight_history_by_current_time(self, scroll_to_active: bool = True):
+        # Evidenzia l'evento storico al tempo corrente
         if not hasattr(self, "events_list"):
             return
 
@@ -4680,6 +4884,7 @@ class ScoutPanel(QWidget):
             )
 
     def _seek_video_to_timestamp(self, seconds: float | None):
+        # Cerca il video al timestamp specificato
         if seconds is None or self.video_widget is None:
             return
 
@@ -4693,9 +4898,11 @@ class ScoutPanel(QWidget):
             pass
 
     def _on_event_item_double_clicked(self, item: QListWidgetItem):
+        # Gestisce il doppio click su un evento storico
         self._seek_video_to_timestamp(self._event_item_timestamp(item))
 
     def _event_timestamp_for_event_id(self, event_id: int | None) -> float | None:
+        # Restituisce il timestamp per un ID evento
         if event_id is None:
             return None
 
@@ -4705,6 +4912,7 @@ class ScoutPanel(QWidget):
         return None
 
     def _nudge_event_timestamp(self, event_id: int | None, delta_seconds: float):
+        # Sposta il timestamp di un evento di delta secondi
         base = self._event_timestamp_for_event_id(event_id)
         if base is None:
             base = self._current_reference_seconds()
@@ -4713,6 +4921,7 @@ class ScoutPanel(QWidget):
         )
 
     def _update_event_timestamp(self, event_id: int | None, new_seconds: float):
+        # Aggiorna il timestamp di un evento
         if event_id is None:
             return
 
@@ -4738,6 +4947,7 @@ class ScoutPanel(QWidget):
         self._highlight_history_by_current_time(scroll_to_active=False)
 
     def _insert_code_before_event(self, item: QListWidgetItem):
+        # Inserisce un codice DataVolley prima di un evento
         if not self.current_context:
             return
 
@@ -4806,6 +5016,7 @@ class ScoutPanel(QWidget):
         self.subtitle.setText(f"Inserito codice prima: {raw_code}")
 
     def _open_events_context_menu(self, pos):
+        # Apre il menu contestuale degli eventi
         item = self.events_list.itemAt(pos)
         if item is None:
             return
@@ -4847,6 +5058,7 @@ class ScoutPanel(QWidget):
         menu.exec(self.events_list.viewport().mapToGlobal(pos))
 
     def _apply_history_filter(self, _value=None):
+        # Applica il filtro alla lista degli eventi
         self.events_list.clear()
         for record in self.history_records:
             kind = self._normalize_history_kind(record.get("kind"))
@@ -4875,6 +5087,7 @@ class ScoutPanel(QWidget):
         timestamp_seconds: float | None = None,
         insert_before_event_id: int | None = None,
     ):
+        # Aggiunge un record alla cronologia
         normalized_kind = self._normalize_history_kind(kind)
         ts = timestamp_seconds
         if ts is None:
@@ -4905,6 +5118,7 @@ class ScoutPanel(QWidget):
         self._apply_history_filter()
 
     def _remove_history_item_by_event_id(self, event_id: int | None):
+        # Rimuove un item dalla cronologia per ID
         if event_id is None:
             return
 
@@ -4916,6 +5130,7 @@ class ScoutPanel(QWidget):
         self._apply_history_filter()
 
     def _refresh_view(self):
+        # Aggiorna tutta la vista dello scouting
         logger.debug("_refresh_view serving_side=%s serve_mode=%s reception_active=%s",
                       self.serving_side, self._serve_mode_active, self._reception_active)
         if not self.current_context:
@@ -4952,6 +5167,7 @@ class ScoutPanel(QWidget):
         self._update_reception_formation_display()
 
     def _register_skill_event(self, skill_name: str):
+        # Registra un evento skill rapido
         if not self.current_context:
             return
 
@@ -4978,6 +5194,7 @@ class ScoutPanel(QWidget):
         )
 
     def _register_timeout(self, side: str):
+        # Registra un timeout per la squadra
         if not self.current_context:
             return
 
@@ -5092,12 +5309,14 @@ class ScoutPanel(QWidget):
         self._refresh_view()
 
     def _find_side_for_replaced_player(self, replaced_player: str) -> str | None:
+        # Trova il lato per un giocatore sostituito dal libero
         for side in ("home", "away"):
             if self._libero_active_player.get(side) == replaced_player:
                 return side
         return None
 
     def _register_substitution(self, side: str):
+        # Registra una sostituzione
         if not self.current_context:
             return
 
@@ -5140,6 +5359,7 @@ class ScoutPanel(QWidget):
         )
 
     def _register_point(self, side: str):
+        # Registra un punto per la squadra
         if not self.current_context:
             return
 
@@ -5171,6 +5391,7 @@ class ScoutPanel(QWidget):
         self._refresh_view()
 
     def _undo_last_rally(self):
+        # Annulla l'ultimo rally
         if not self.rally_history:
             return
 
@@ -5184,6 +5405,7 @@ class ScoutPanel(QWidget):
         self.subtitle.setText("Ultimo rally annullato.")
 
     def _on_serving_selected(self, side: str):
+        # Gestisce la selezione della squadra al servizio
         if not self.current_context:
             return
 
@@ -5207,6 +5429,7 @@ class ScoutPanel(QWidget):
         return home_sets_won, away_sets_won
 
     def _resolve_video_path_for_match(self) -> str | None:
+        # Determina il percorso video per il match
         if not self.current_context:
             return None
 
@@ -5227,6 +5450,7 @@ class ScoutPanel(QWidget):
         return None
 
     def _persist_video_link_on_match_close(self):
+        # Salva il link video alla chiusura del match
         video_path = self._resolve_video_path_for_match()
         if not video_path:
             return
@@ -5513,6 +5737,7 @@ class ScoutPanel(QWidget):
         )
 
     def _history_kind_from_event(self, event) -> str:
+        # Determina il tipo di storico da un evento DB
         raw_kind = str(getattr(event, "special_code", "") or "").upper()
         if raw_kind in {
             self.HISTORY_KIND_POINT,
@@ -5781,6 +6006,7 @@ class ScoutPanel(QWidget):
         self.setFocus()
 
     def closeEvent(self, event):
+        """Gestisce la chiusura del pannello di scouting."""
         if self.timer_running:
             self.timer.stop()
             self.timer_running = False

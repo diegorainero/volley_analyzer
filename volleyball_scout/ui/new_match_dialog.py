@@ -32,6 +32,7 @@ class NewMatchDialog(QDialog):
     match_created = pyqtSignal(int)  # Emette l'ID della nuova partita
 
     def __init__(self, db_manager, parent=None):
+        """Inizializza dialog nuova partita."""
         super().__init__(parent)
         self.db = db_manager
         self.teams = []

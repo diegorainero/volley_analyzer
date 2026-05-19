@@ -35,6 +35,7 @@ except ImportError as e:
 
 
 def main():
+    """Avvia l'applicazione Volleyball Scout."""
     print("🏐 Volleyball Scout v0.1 - avvio...")
 
     # Init DB

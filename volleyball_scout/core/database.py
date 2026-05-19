@@ -52,6 +52,7 @@ class DatabaseManager:
         return f"sqlite:///{sqlite_path}"
 
     def _create_engine(self):
+        # Crea il motore SQLAlchemy per SQLite o PostgreSQL.
         if self.db_url.startswith("sqlite"):
             engine = create_engine(
                 self.db_url,
@@ -63,6 +64,7 @@ class DatabaseManager:
             # Abilita foreign keys su SQLite
             @event.listens_for(engine, "connect")
             def set_sqlite_pragma(dbapi_conn, _):
+                # Abilita i vincoli foreign key su SQLite.
                 dbapi_conn.execute("PRAGMA foreign_keys=ON")
         else:
             engine = create_engine(
@@ -84,6 +86,7 @@ class DatabaseManager:
     # ──────────────────────────────────
 
     def get_session(self) -> Session:
+        """Restituisce una nuova sessione del database."""
         return self.SessionLocal()
 
     def session_scope(self):
@@ -92,6 +95,7 @@ class DatabaseManager:
 
         @contextmanager
         def _scope():
+            # Context manager interno con commit/rollback automatico.
             session = self.SessionLocal()
             try:
                 yield session
@@ -119,9 +123,11 @@ class DatabaseManager:
             return False
 
     def is_cloud(self) -> bool:
+        """Indica se il database è PostgreSQL cloud."""
         return not self.db_url.startswith("sqlite")
 
     def get_db_info(self) -> dict:
+        """Restituisce info sulla connessione al database."""
         return {
             "type": "PostgreSQL" if self.is_cloud() else "SQLite",
             "url_safe": self.db_url.split("@")[-1]
@@ -136,6 +142,7 @@ _db_manager: DatabaseManager | None = None
 
 
 def get_db() -> DatabaseManager:
+    """Restituisce l'istanza singleton del database."""
     global _db_manager
     if _db_manager is None:
         _db_manager = DatabaseManager()

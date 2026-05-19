@@ -33,6 +33,7 @@ class FormationSetupMatches(QWidget):
     match_selected = pyqtSignal(dict)  # Emette il match dict
 
     def __init__(self, db_manager, parent=None):
+        """Inizializza widget selezione partite."""
         super().__init__(parent)
         self.db = db_manager
         self.matches = []
@@ -181,6 +182,7 @@ class FormationSetupComplete(QWidget):
     scout_ready = pyqtSignal(dict)
 
     def __init__(self, db_manager, parent=None):
+        """Inizializza widget formazione completo."""
         super().__init__(parent)
         self.db = db_manager
         self.current_match = None
@@ -473,6 +475,7 @@ class FormationSetupComplete(QWidget):
         video_path = None
 
         def build_number_map(session, team_id: int | None) -> dict:
+            """Mappa numeri maglia a ID giocatori."""
             if team_id is None or match_id is None:
                 return {}
 
@@ -607,6 +610,7 @@ class FormationSetupComplete(QWidget):
 
         # Quando il roster è completato, carica la formazione
         def on_roster_completed():
+            """Callback completamento roster."""
             # Ricarica i match e apri direttamente la formation del match appena configurato
             opened = self.open_match_by_id(match_id)
             if not opened:

@@ -86,17 +86,19 @@ class SyncEngine:
         self._stop_event.clear()
 
         def _poll():
+            # Legge la posizione del player VLC in un loop.
             while not self._stop_event.is_set():
                 if self.player_get_time and self.state.is_playing:
                     t = self.player_get_time()
                     if t >= 0:
                         self.update_position(t / 1000.0)  # VLC usa ms
-                self._stop_event.wait(interval_ms / 1000.0)
+            self._stop_event.wait(interval_ms / 1000.0)
 
         self._position_thread = Thread(target=_poll, daemon=True, name="SyncPoll")
         self._position_thread.start()
 
     def stop_polling(self):
+        """Arresta il thread di polling della posizione video."""
         self._stop_event.set()
 
     # ──────────────────────────────────
@@ -122,18 +124,21 @@ class SyncEngine:
     # ──────────────────────────────────
 
     def point_home(self):
+        """Registra un punto per la squadra di casa."""
         self.state.score_home += 1
         self.state.rally_number += 1
         self._check_set_end()
         self._notify()
 
     def point_away(self):
+        """Registra un punto per la squadra ospite."""
         self.state.score_away += 1
         self.state.rally_number += 1
         self._check_set_end()
         self._notify()
 
     def _check_set_end(self):
+        # Verifica se il set è terminato e passa al successivo.
         h, a = self.state.score_home, self.state.score_away
         min_pts = 15 if self.state.set_number == 5 else 25
         if (h >= min_pts or a >= min_pts) and abs(h - a) >= 2:
@@ -143,6 +148,7 @@ class SyncEngine:
             self.state.score_away = 0
 
     def new_set(self, set_number: int):
+        """Imposta un nuovo numero di set azzerando il punteggio."""
         self.state.set_number = set_number
         self.state.score_home = 0
         self.state.score_away = 0
@@ -169,9 +175,11 @@ class SyncEngine:
         self._callbacks.append(fn)
 
     def remove_callback(self, fn: Callable[[SyncState], None]):
+        """Rimuove una callback registrata."""
         self._callbacks.remove(fn)
 
     def _notify(self):
+        # Notifica tutti i callback registrati del cambio stato.
         for cb in self._callbacks:
             try:
                 cb(self.state)
@@ -183,5 +191,6 @@ class SyncEngine:
     # ──────────────────────────────────
 
     def set_playing(self, playing: bool):
+        """Imposta lo stato di riproduzione del video."""
         self.state.is_playing = playing
         self._notify()

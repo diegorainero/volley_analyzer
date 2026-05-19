@@ -9,6 +9,7 @@ from .datavolley_codes import normalize_lineup_number, find_player_position_in_l
 
 class FormationManager:
     def __init__(self, db=None):
+        """Inizializza il gestore formazioni."""
         self.db = db
 
     # ----- Reception positions persistence -----
@@ -16,6 +17,7 @@ class FormationManager:
     def reception_memory_key(
         self, side: str, match_id, set_number, settings_prefix: str
     ) -> str | None:
+        """Genera la chiave di memoria per le ricezioni."""
         try:
             parsed_match = int(str(match_id))
             parsed_set = int(str(set_number))
@@ -31,6 +33,7 @@ class FormationManager:
         )
 
     def normalize_reception_positions(self, parsed) -> dict[str, tuple[float, float]]:
+        """Normalizza le posizioni di ricezione."""
         if not isinstance(parsed, dict):
             return {}
 
@@ -49,6 +52,7 @@ class FormationManager:
     def load_reception_positions_from_db(
         self, side: str, match_id, set_number
     ) -> dict[str, tuple[float, float]]:
+        """Carica le posizioni di ricezione dal DB."""
         if self.db is None:
             return {}
 
@@ -82,6 +86,7 @@ class FormationManager:
         settings,
         settings_prefix: str,
     ) -> dict[str, tuple[float, float]]:
+        """Carica le posizioni di ricezione."""
         db_positions = self.load_reception_positions_from_db(side, match_id, set_number)
         if db_positions:
             return db_positions
@@ -115,6 +120,7 @@ class FormationManager:
         settings,
         settings_prefix: str,
     ):
+        """Salva le posizioni di ricezione."""
         key = self.reception_memory_key(side, match_id, set_number, settings_prefix)
         serializable = {
             str(number): [float(value[0]), float(value[1])]
@@ -158,6 +164,7 @@ class FormationManager:
     def get_player_roles(
         self, match_id, team_id
     ) -> dict[str, str]:
+        """Recupera i ruoli dei giocatori."""
         if not team_id or not match_id or self.db is None:
             return {}
         try:
@@ -185,6 +192,7 @@ class FormationManager:
         lineup_numbers: set[str],
         explicit_setter: str | None = None,
     ) -> str | None:
+        """Individua il numero del palleggiatore."""
         if explicit_setter and explicit_setter in lineup_numbers:
             return explicit_setter
 
@@ -228,6 +236,7 @@ class FormationManager:
         game_method_by_team: dict,
         libero_number: str | None,
     ) -> dict | None:
+        """Genera automaticamente le posizioni di ricezione."""
         if len(lineup) < 6 or setter_number is None or not roles:
             return None
 
@@ -307,6 +316,7 @@ class FormationManager:
     # ----- Formation persistence -----
 
     def load_formations(self, side: str, match_id, set_number) -> dict:
+        """Carica le formazioni salvate."""
         logger.debug("load_formations side=%s match=%s set=%s", side, match_id, set_number)
         if self.db is not None:
             try:
@@ -348,6 +358,7 @@ class FormationManager:
     def save_formations(
         self, side: str, match_id, set_number, formations: dict
     ):
+        """Salva le formazioni."""
         if not formations:
             logger.debug("save_formations skip empty side=%s", side)
             return
@@ -402,6 +413,7 @@ class FormationManager:
     ]
 
     def generate_formation_from_scheme(self, scheme: str, rotation: int) -> dict:
+        """Genera una formazione dallo schema."""
         base_role_order = {
             "P-S-C": ["P", "S1", "C2", "O", "S2", "C1"],
             "P-C-S": ["P", "C1", "S2", "O", "C2", "S1"],
@@ -414,6 +426,7 @@ class FormationManager:
         return result
 
     def generate_all_rotations(self, scheme: str) -> dict:
+        """Genera le formazioni per tutte le rotazioni."""
         result = {}
         for r in range(1, 7):
             result[r] = self.generate_formation_from_scheme(scheme, r)
@@ -421,6 +434,7 @@ class FormationManager:
 
     @staticmethod
     def is_old_format_config(config: dict) -> bool:
+        """Verifica se la configurazione è in vecchio formato."""
         for rot, data in config.items():
             if isinstance(data, dict):
                 for key in data:
@@ -430,6 +444,7 @@ class FormationManager:
 
     @staticmethod
     def convert_to_new_format(old_config: dict) -> dict:
+        """Converte la configurazione nel nuovo formato."""
         pos_to_zone = {
             "P1": 0, "P2": 1, "P3": 2,
             "P4": 3, "P5": 4, "P6": 5,
@@ -454,6 +469,7 @@ class FormationManager:
         libero_number: str | None = None,
         known_setter: str | None = None,
     ) -> dict[str, tuple[float, float]] | None:
+        """Assegna i giocatori alle posizioni dello schema."""
         rot_map = formation_config.get(rotation)
         if not rot_map:
             logger.debug("resolve no config for rotation %s", rotation)
@@ -480,6 +496,7 @@ class FormationManager:
         libero_number: str | None = None,
         known_setter: str | None = None,
     ) -> dict[str, str]:
+        # Mappa i giocatori ai codici ruolo.
         ROLE_MAP = {
             "palleggiatore": None,
             "schiacciatore": None,
@@ -571,6 +588,7 @@ class FormationManager:
     def _assign_s1_s2_from_lineup(
         self, lineup: dict[str, str], setter: str, hitters: list[str]
     ) -> dict[str, str]:
+        # Assegna S1/S2 ai schiacciatori.
         result = {}
         if not hitters:
             return result
@@ -606,6 +624,7 @@ class FormationManager:
     def _assign_c1_c2_from_lineup(
         self, lineup: dict[str, str], setter: str, middles: list[str]
     ) -> dict[str, str]:
+        # Assegna C1/C2 ai centrali.
         result = {}
         if not middles:
             return result

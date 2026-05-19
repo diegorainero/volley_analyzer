@@ -135,6 +135,7 @@ except ImportError:
 # Simple placeholder widgets
 class PlaceholderWidget(QWidget):
     def __init__(self, title="Coming Soon", parent=None):
+        # Inizializza il widget segnaposto con un titolo.
         super().__init__(parent)
         layout = QVBoxLayout()
         layout.addWidget(QLabel(f"<h2>{title}</h2>"))
@@ -147,6 +148,7 @@ if RosterSetupWidget is None:
 
     class RosterSetupWidget(QWidget):
         def __init__(self, db_manager, parent=None):
+            # Inizializza il widget segnaposto per la gestione incontri.
             super().__init__(parent)
             layout = QVBoxLayout()
             layout.addWidget(QLabel("🧾 Gestione incontri (non ancora implementato)"))
@@ -161,6 +163,7 @@ class DashboardView(QWidget):
     draft_resumed = pyqtSignal(int)
 
     def __init__(self, db_manager, parent=None):
+        # Inizializza la dashboard con griglia match e bozze.
         super().__init__(parent)
         self.db = db_manager
 
@@ -222,6 +225,7 @@ class NavigationMenu(QWidget):
     section_selected = pyqtSignal(str)  # section name
 
     def __init__(self, parent=None):
+        # Inizializza il menu di navigazione laterale.
         super().__init__(parent)
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 10, 5, 10)
@@ -285,6 +289,7 @@ class VolleyballScoutApp(QMainWindow):
     """Main Application Window with integrated navigation"""
 
     def __init__(self):
+        # Inizializza l'applicazione principale con navigazione integrata.
         super().__init__()
         self.setWindowTitle("🏐 Volleyball Scout")
         self.setGeometry(100, 100, 1600, 900)
@@ -613,6 +618,7 @@ class VolleyballScoutApp(QMainWindow):
 
 
 def main():
+    """Avvia l'applicazione Volleyball Scout."""
     app = QApplication(sys.argv)
 
     # Use native system style (not Fusion)

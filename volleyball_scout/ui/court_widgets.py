@@ -47,11 +47,13 @@ class LiberoDragLabel(QLabel):
     """A label that can be dragged to swap the libero with a court player."""
 
     def __init__(self, parent=None):
+        """Inizializza l'etichetta del libero."""
         super().__init__(parent)
         self._drag_start_pos: QPointF | None = None
         self._libero_num: str | None = None
 
     def set_libero_number(self, num: str | None):
+        """Imposta il numero del libero."""
         self._libero_num = num
         self.setText(num if num else "")
         self.setStyleSheet(
@@ -60,11 +62,13 @@ class LiberoDragLabel(QLabel):
         )
 
     def mousePressEvent(self, event):
+        """Gestisce la pressione del mouse."""
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_pos = event.position()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        """Gestisce il movimento del mouse per il drag."""
         if not (event.buttons() & Qt.MouseButton.LeftButton):
             return
         if self._drag_start_pos is None:
@@ -106,11 +110,13 @@ class DropCell(QFrame):
     """A court cell that accepts libero drops."""
 
     def __init__(self, pos_code: str, parent=None):
+        """Inizializza una cella del campo."""
         super().__init__(parent)
         self.setProperty("pos_code", pos_code)
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event):
+        """Gestisce l'ingresso del drag."""
         if event.mimeData().hasFormat("application/x-libero"):
             event.acceptProposedAction()
             self.setStyleSheet(
@@ -120,13 +126,16 @@ class DropCell(QFrame):
             event.ignore()
 
     def dragMoveEvent(self, event):
+        """Gestisce il movimento del drag."""
         if event.mimeData().hasFormat("application/x-libero"):
             event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
+        """Gestisce l'uscita del drag."""
         self.setStyleSheet("QFrame { border: none; background: transparent; }")
 
     def dropEvent(self, event):
+        """Gestisce il rilascio del drop."""
         self.setStyleSheet("QFrame { border: none; background: transparent; }")
         if not event.mimeData().hasFormat("application/x-libero"):
             return
@@ -147,6 +156,7 @@ class CourtFrame(QFrame):
     """QFrame customizzata che disegna linee campo e cerchi ricezione dopo lo sfondo."""
 
     def __init__(self, team_side: str, parent=None):
+        """Inizializza il frame del campo."""
         super().__init__(parent)
         self._team_side = team_side
         self._reception_positions: dict[str, tuple[float, float]] = {}
@@ -155,6 +165,7 @@ class CourtFrame(QFrame):
         )
 
     def paintEvent(self, event):
+        """Disegna le linee del campo."""
         super().paintEvent(event)
         r = self.rect()
         p = QPainter(self)
@@ -194,6 +205,7 @@ class TeamCourtWidget(QWidget):
     liberoRevertRequested = pyqtSignal(str)
 
     def __init__(self, team_side: str, team_name="Squadra", parent=None):
+        """Inizializza il widget del campo squadra."""
         super().__init__(parent)
         self.team_side = team_side
         self._number_labels = {}
@@ -216,11 +228,13 @@ class TeamCourtWidget(QWidget):
         self._replaced_player_label.clicked.connect(self._on_reverted_clicked)
 
     def _visual_grid(self) -> tuple[tuple[str, ...], ...]:
+        # Restituisce la griglia visiva in base al lato.
         return (
             self.VISUAL_GRID_AWAY if self.team_side == "away" else self.VISUAL_GRID_HOME
         )
 
     def _setup_ui(self, team_name: str):
+        # Configura l'interfaccia utente.
         self.setStyleSheet(
             """
             TeamCourtWidget {
@@ -279,6 +293,7 @@ class TeamCourtWidget(QWidget):
         self._court_frame = court_frame
 
     def _update_libero_icon_position(self):
+        # Aggiorna la posizione dell'icona del libero.
         if not self._court_frame or not self._libero_drag_label.isVisible():
             return
         cf = self._court_frame
@@ -289,12 +304,14 @@ class TeamCourtWidget(QWidget):
         self._libero_drag_label.setGeometry(x, y, size, size)
 
     def resizeEvent(self, event):
+        """Gestisce il ridimensionamento del widget."""
         super().resizeEvent(event)
         self._update_libero_icon_position()
         self._update_replaced_player_position()
         self._set_reception_label_positions()
 
     def _normalize_player_number(self, value) -> str | None:
+        # Normalizza il numero del giocatore.
         if value is None:
             return None
         raw = str(value).strip().upper()
@@ -308,6 +325,7 @@ class TeamCourtWidget(QWidget):
             return raw.lstrip("0") or raw
 
     def _apply_number_style(self, label: QLabel, highlighted: bool, is_libero: bool = False):
+        # Applica lo stile al label del numero.
         if is_libero:
             label.setStyleSheet(
                 "font-size: 18px; font-weight: bold; color: #FFFFFF;"
@@ -325,6 +343,7 @@ class TeamCourtWidget(QWidget):
             )
 
     def set_highlight_player(self, player_number):
+        """Evidenzia il giocatore specificato."""
         self._highlight_number = self._normalize_player_number(player_number)
         for label in self._number_labels.values():
             current = self._normalize_player_number(label.text())
@@ -335,6 +354,7 @@ class TeamCourtWidget(QWidget):
             )
 
     def clear_highlight(self):
+        """Rimuove l'evidenziazione dai giocatori."""
         self._highlight_number = None
         for label in self._number_labels.values():
             current = self._normalize_player_number(label.text())
@@ -345,6 +365,7 @@ class TeamCourtWidget(QWidget):
             self._apply_number_style(label, False, is_libero=is_libero)
 
     def setClickable(self, enabled: bool):
+        """Imposta se il widget è cliccabile."""
         self._clickable = enabled
 
     def update_lineup(
@@ -356,6 +377,7 @@ class TeamCourtWidget(QWidget):
         serving=False,
         setter_number: str | None = None,
     ):
+        """Aggiorna la disposizione dei giocatori."""
         setter_norm = self._normalize_player_number(setter_number)
 
         # Reset libero cell tracking
@@ -403,6 +425,7 @@ class TeamCourtWidget(QWidget):
         self._update_replaced_player_label()
 
     def _update_replaced_player_label(self):
+        # Aggiorna l'etichetta del giocatore sostituito.
         if self._replaced_player:
             self._replaced_player_label.setText(f"#{self._replaced_player}")
             self._replaced_player_label.setStyleSheet(
@@ -416,6 +439,7 @@ class TeamCourtWidget(QWidget):
             self._replaced_player_label.setVisible(False)
 
     def _update_replaced_player_position(self):
+        # Aggiorna la posizione dell'etichetta del sostituito.
         if not self._court_frame or not self._replaced_player_label.isVisible():
             return
         cf = self._court_frame
@@ -430,16 +454,19 @@ class TeamCourtWidget(QWidget):
         self._replaced_player_label.setGeometry(x, y, size + 16, size - 4)
 
     def _on_reverted_clicked(self):
+        # Emette il segnale di annullamento sostituzione.
         if self._replaced_player:
             self.liberoRevertRequested.emit(self._replaced_player)
 
     def get_cell_center(self, pos_code: str):
+        """Restituisce il centro della cella."""
         cell = self._cell_frames.get(pos_code)
         if cell is None:
             return None
         return cell.geometry().center()
 
     def mousePressEvent(self, event):
+        """Gestisce il click del mouse sulla cella."""
         if not self._clickable or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
 
@@ -475,6 +502,7 @@ class TeamCourtWidget(QWidget):
         super().mousePressEvent(event)
 
     def set_reception_positions(self, positions: dict[str, tuple[float, float]] | None):
+        """Imposta le posizioni di ricezione."""
         prev_count = len(self._reception_label_origins)
         for label, (orig_parent, orig_layout) in self._reception_label_origins.items():
             label.setParent(orig_parent)
@@ -490,6 +518,7 @@ class TeamCourtWidget(QWidget):
         self._set_reception_label_positions()
 
     def _set_reception_label_positions(self):
+        # Posiziona le etichette di ricezione.
         cf = self._court_frame
         if not cf:
             logger.warning("%s _set_reception_label_positions no court_frame", self.team_side)
@@ -532,6 +561,7 @@ class TeamCourtWidget(QWidget):
         self.update()
 
     def _on_libero_dropped(self, pos_code: str, libero_number: str):
+        # Gestisce il drop del libero sulla cella.
         label = self._number_labels.get(pos_code)
         if label is None:
             return
@@ -546,15 +576,18 @@ class ReceptionOverlay(QWidget):
     """Overlay trasparente che disegna i cerchi di ricezione sopra la griglia."""
 
     def __init__(self, parent=None):
+        """Inizializza l'overlay di ricezione."""
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._positions: dict[str, tuple[float, float]] = {}
 
     def set_positions(self, positions: dict[str, tuple[float, float]] | None):
+        """Imposta le posizioni da disegnare."""
         self._positions = dict(positions or {})
         self.update()
 
     def paintEvent(self, event):
+        """Disegna i cerchi di ricezione."""
         if not self._positions:
             return
         p = QPainter(self)
@@ -580,19 +613,23 @@ class ServeTrajectoryOverlay(QWidget):
     """Transparent overlay on the full-court container to draw serve/attack lines."""
 
     def __init__(self, parent=None):
+        """Inizializza l'overlay di traiettoria."""
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._trajectory: list[QPointF] = []
 
     def set_trajectory(self, start: QPointF, end: QPointF):
+        """Imposta la traiettoria da disegnare."""
         self._trajectory = [QPointF(start), QPointF(end)]
         self.update()
 
     def clear_trajectory(self):
+        """Cancella la traiettoria."""
         self._trajectory = []
         self.update()
 
     def paintEvent(self, event):
+        """Disegna la linea di traiettoria."""
         if not self._trajectory:
             return
         p = QPainter(self)

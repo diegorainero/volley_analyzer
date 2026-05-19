@@ -28,6 +28,7 @@ class MatchCardWidget(QFrame):
     clicked = pyqtSignal(int)  # match_id
 
     def __init__(self, match, parent=None):
+        """Inizializza card match."""
         super().__init__(parent)
         self.match_id = match.id
         self.status = match.status
@@ -108,6 +109,7 @@ class MatchesGridWidget(QWidget):
     match_selected = pyqtSignal(int)  # match_id
 
     def __init__(self, db_manager, parent=None):
+        """Inizializza widget griglia match."""
         super().__init__(parent)
         self.db = db_manager
 

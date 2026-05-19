@@ -424,6 +424,7 @@ class LoginDialog(QDialog):
     """Dialog semplice per il login"""
 
     def __init__(self, parent=None):
+        # Inizializza il dialogo di login con layout e credenziali predefinite.
         super().__init__(parent)
         self.setWindowTitle("Volleyball Scout - Login")
         self.setGeometry(400, 300, 400, 200)
@@ -493,6 +494,7 @@ class PlaceholderWidget(QWidget):
     """Placeholder widget per sezioni non disponibili"""
 
     def __init__(self, title="Coming Soon", parent=None):
+        # Inizializza il widget segnaposto con un titolo.
         super().__init__(parent)
         layout = QVBoxLayout()
         layout.addStretch()
@@ -513,6 +515,7 @@ class DashboardView(QWidget):
     """Enhanced Dashboard widget with cards cliccabili e logo"""
 
     def __init__(self, db_manager, on_navigate=None, parent=None):
+        # Inizializza la dashboard con griglia di carte e logo.
         super().__init__(parent)
         self.db = db_manager
         self.on_navigate = on_navigate
@@ -606,6 +609,7 @@ class DashboardView(QWidget):
         self.set_theme(True)
 
     def _card_stylesheet(self):
+        # Restituisce il foglio di stile per le carte in base al tema.
         if self.is_dark_theme:
             return """
                 QPushButton {
@@ -650,6 +654,7 @@ class DashboardView(QWidget):
         """
 
     def set_theme(self, is_dark: bool):
+        """Imposta il tema scuro o chiaro per la dashboard."""
         self.is_dark_theme = is_dark
         if hasattr(self, "subtitle_label"):
             self.subtitle_label.setStyleSheet(
@@ -696,6 +701,7 @@ class VolleyballScoutApp(QMainWindow):
     """Main Application Window"""
 
     def __init__(self):
+        # Inizializza l'applicazione principale con menu e sezioni.
         super().__init__()
         self.setWindowTitle("Volleyball Scout")
         self.setGeometry(100, 100, 1600, 900)
@@ -1154,6 +1160,7 @@ class VolleyballScoutApp(QMainWindow):
                 )
 
     def _open_scout_settings(self):
+        # Apre il dialogo delle impostazioni di scouting.
         if hasattr(self, "scout_panel") and hasattr(
             self.scout_panel, "open_settings_dialog"
         ):
@@ -1167,6 +1174,7 @@ class VolleyballScoutApp(QMainWindow):
         )
 
     def _open_formation_editor(self):
+        # Apre l'editor delle formazioni di ricezione.
         if hasattr(self, "scout_panel"):
             self.scout_panel._configure_rx_formation()
         else:
@@ -1292,6 +1300,7 @@ class VolleyballScoutApp(QMainWindow):
 
 
 def main():
+    """Avvia l'applicazione Volleyball Scout."""
     import argparse
     parser = argparse.ArgumentParser(description="Volleyball Scout")
     parser.add_argument("--debug", action="store_true", help="Abilita log di debug")

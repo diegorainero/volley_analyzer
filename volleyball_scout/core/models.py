@@ -109,6 +109,7 @@ class Player(Base):
 
     @property
     def full_name(self):
+        """Restituisce il nome completo del giocatore."""
         return f"{self.first_name} {self.last_name}".strip()
 
     def __repr__(self):

@@ -49,6 +49,7 @@ class ModifyPlayerDialog(QDialog):
     ROLES = ["Palleggiatore", "Opposto", "Schiacciatore", "Centrale", "Libero"]
 
     def __init__(self, player=None, parent=None):
+        """Inizializza dialog modifica giocatore."""
         super().__init__(parent)
         self.player = player
         self.photo_path = player.photo if player else None
@@ -180,6 +181,7 @@ class TeamManagementWidget(QWidget):
     """Widget per gestire squadre e giocatori"""
 
     def __init__(self, db_manager: DatabaseManager, parent=None):
+        """Inizializza widget gestione squadre."""
         super().__init__(parent)
         self.db = db_manager
         self.current_team_id = None
@@ -323,6 +325,7 @@ class TeamManagementWidget(QWidget):
         self.setLayout(main_layout)
 
     def _resolve_image_path(self, image_path):
+        # Risolve il path immagine se esiste.
         if not image_path:
             return None
         p = Path(str(image_path))

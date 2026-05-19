@@ -75,6 +75,7 @@ class DataVolleyExporter:
     # ──────────────────────────────────
 
     def _write_header(self, f: TextIO, match: Match):
+        # Scrive l'intestazione [3SCOUT] del file DVW.
         f.write("[3SCOUT]\n")
         f.write(f"GAME DATE:{match.date:%d/%m/%Y}\n")
         f.write(f"GAME TIME:{match.date:%H:%M}\n")
@@ -96,6 +97,7 @@ class DataVolleyExporter:
         f.write("\n")
 
     def _write_players(self, f: TextIO, team: Team, side: str):
+        # Scrive la sezione [3PLAYERS] del file DVW.
         f.write(f"[3PLAYERS-{side}]\n")
         players = sorted(team.players, key=lambda p: p.number)
         for p in players:
@@ -106,6 +108,7 @@ class DataVolleyExporter:
         f.write("\n")
 
     def _write_sets(self, f: TextIO, sets: list[MatchSet]):
+        # Scrive la sezione [3SETS] del file DVW.
         f.write("[3SETS]\n")
         for s in sets:
             duration = s.duration or 0
@@ -117,6 +120,7 @@ class DataVolleyExporter:
         f.write("\n")
 
     def _write_scout_section(self, f: TextIO, events: list[ScoutEvent]):
+        # Scrive la sezione eventi [3SCOUT] del file DVW.
         f.write("[3SCOUT]\n")
         for ev in events:
             line = self._event_to_dvw_line(ev)

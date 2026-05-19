@@ -3,6 +3,7 @@ from copy import deepcopy
 
 
 def infer_code_team_side(normalized: str) -> str | None:
+    """Inferisce il lato squadra dal codice DataVolley."""
     scan_code = str(normalized or "").strip().upper().replace(" ", "")
     if not scan_code:
         return None
@@ -28,6 +29,7 @@ def parse_datavolley_code(
     skill_aliases: dict[str, str],
     evaluations: set[str],
 ) -> dict:
+    """Analizza un codice DataVolley grezzo."""
     normalized = str(raw_code or "").strip().upper().replace(" ", "")
     if not normalized:
         return {"valid": False, "error": "Codice vuoto"}
@@ -116,6 +118,7 @@ def resolve_point_team_from_evaluation(
     point_outcome_map: dict[str, str],
     skill_aliases: dict[str, str] | None = None,
 ) -> str | None:
+    """Determina chi ha fatto punto dalla valutazione."""
     eval_token = str(evaluation or "").strip()
     if not eval_token:
         return None
@@ -141,6 +144,7 @@ def resolve_point_team_from_evaluation(
 
 
 def default_point_outcome_map() -> dict[str, str]:
+    """Mappa predefinita esiti punto per skill."""
     return {
         "*#": "self",
         "*=": "opponent",
@@ -155,6 +159,7 @@ def decode_point_outcome_map(
     serialized: str | None,
     base_map: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    """Decodifica mappa esiti da testo serializzato."""
     result = dict(base_map) if base_map is not None else default_point_outcome_map()
     if not str(serialized or "").strip():
         return result
@@ -176,6 +181,7 @@ def decode_point_outcome_map(
 
 
 def point_outcome_map_to_text(rules: dict[str, str]) -> str:
+    """Converte mappa esiti in testo leggibile."""
     rows = [
         "# Formato: SkillValutazione=esito",
         "# Esito: self | opponent | none",
@@ -191,6 +197,7 @@ def point_outcome_map_to_text(rules: dict[str, str]) -> str:
 
 
 def parse_point_outcome_map_text(text: str) -> dict[str, str]:
+    """Analizza testo mappa esiti in dict."""
     result = default_point_outcome_map()
     if not str(text or "").strip():
         return result
@@ -211,6 +218,7 @@ def parse_point_outcome_map_text(text: str) -> dict[str, str]:
 
 
 def normalize_lineup_number(value) -> str | None:
+    """Normalizza numero maglia in formato stringa."""
     if value is None:
         return None
     raw = str(value).strip()
@@ -223,6 +231,7 @@ def normalize_lineup_number(value) -> str | None:
 
 
 def lineup_numbers_for_side(lineup: dict) -> list[str]:
+    """Estrae numeri maglia ordinati dal lineup."""
     ordered = []
     for pos in ("P1", "P2", "P3", "P4", "P5", "P6"):
         normalized = normalize_lineup_number(lineup.get(pos))
@@ -234,6 +243,7 @@ def lineup_numbers_for_side(lineup: dict) -> list[str]:
 def find_player_position_in_lineup(
     lineup: dict, player_number
 ) -> str | None:
+    """Trova posizione giocatore nel lineup."""
     target = normalize_lineup_number(player_number)
     if target is None:
         return None

@@ -43,6 +43,7 @@ class CaptureWorker(QThread):
         *,
         parent=None,
     ):
+        """Inizializza worker acquisizione frame."""
         super().__init__(parent)
         self.capture = capture
         self.source_kind = str(source_kind or "")
@@ -56,36 +57,43 @@ class CaptureWorker(QThread):
         self._paused = False
 
     def request_stop(self):
+        """Richiede arresto worker."""
         with self._lock:
             self._stop_requested = True
 
     def request_seek(self, seconds: float):
+        """Richiede seek a un secondo specifico."""
         if self.source_kind != "file":
             return
         with self._lock:
             self._seek_seconds = max(0.0, float(seconds))
 
     def request_pause(self, paused: bool):
+        """Richiede pausa/ripresa riproduzione."""
         if self.source_kind != "file":
             return
         with self._lock:
             self._paused = bool(paused)
 
     def _consume_seek(self) -> float | None:
+        # Consuma e restituisce target seek in sospeso.
         with self._lock:
             target = self._seek_seconds
             self._seek_seconds = None
         return target
 
     def _is_stop_requested(self) -> bool:
+        # Verifica se arresto richiesto.
         with self._lock:
             return bool(self._stop_requested)
 
     def _is_paused(self) -> bool:
+        # Verifica se in pausa.
         with self._lock:
             return bool(self._paused)
 
     def run(self):
+        """Esegue il loop di acquisizione frame."""
         if cv2 is None or self.capture is None:
             return
 
@@ -164,6 +172,7 @@ class RecordingWorker(QThread):
         queue_size: int = 180,
         parent=None,
     ):
+        """Inizializza worker registrazione video."""
         super().__init__(parent)
         self.output_path = Path(output_path)
         self.crashsafe_segment_dir = Path(crashsafe_segment_dir)
@@ -198,12 +207,15 @@ class RecordingWorker(QThread):
 
     @property
     def dropped_frames(self) -> int:
+        """Frame persi per coda piena."""
         return int(self._dropped_frames)
 
     def is_ready(self) -> bool:
+        """Verifica se worker è pronto."""
         return self.startup_error is None and self._main_writer is not None
 
     def enqueue_frame(self, frame, current_seconds: float) -> bool:
+        """Accoda frame per scrittura asincrona."""
         if not self.is_ready():
             return False
 
@@ -220,9 +232,11 @@ class RecordingWorker(QThread):
             return False
 
     def request_stop(self):
+        """Richiede arresto worker."""
         self._stop_requested = True
 
     def _create_writer(self, path: Path, codec_candidates: list[str]):
+        # Crea writer video con codec candidati.
         if cv2 is None:
             return None
 
@@ -245,6 +259,7 @@ class RecordingWorker(QThread):
         return None
 
     def _open_new_segment(self, start_seconds: float) -> bool:
+        # Apre nuovo segmento crash-safe.
         if self._segment_writer is not None:
             try:
                 self._segment_writer.release()
@@ -263,6 +278,7 @@ class RecordingWorker(QThread):
         return self._segment_writer is not None
 
     def _rotate_segment_if_needed(self, current_seconds: float):
+        # Ruota segmento se durata superata.
         if self._segment_writer is None:
             return
 
@@ -272,6 +288,7 @@ class RecordingWorker(QThread):
             self._open_new_segment(current_seconds)
 
     def run(self):
+        """Esegue loop scrittura frame."""
         while True:
             if self._stop_requested and self._queue.empty():
                 break
@@ -317,6 +334,7 @@ class VideoPlayer(QWidget):
     playback_state_changed = pyqtSignal(dict)
 
     def __init__(self, parent=None):
+        """Inizializza player video."""
         super().__init__(parent)
         self.current_source = None
         self.capture = None
@@ -393,6 +411,7 @@ class VideoPlayer(QWidget):
         self.metrics_timer.start()
 
     def _setup_ui(self):
+        # Costruisce interfaccia utente.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -541,6 +560,7 @@ class VideoPlayer(QWidget):
         layout.addWidget(self.metrics_label)
 
     def _on_source_type_changed(self):
+        # Gestisce cambio tipo sorgente.
         source_kind = self.source_type.currentData()
 
         current_kind = str((self.current_source or {}).get("type") or "")
@@ -589,6 +609,7 @@ class VideoPlayer(QWidget):
         self._emit_playback_state()
 
     def _browse_file(self):
+        # Apre dialog selezione file video.
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Seleziona video",
@@ -600,6 +621,7 @@ class VideoPlayer(QWidget):
             self.connect_current_source(force_reconnect=True)
 
     def _on_source_input_edited(self):
+        # Gestisce modifica manuale percorso sorgente.
         source_kind = self.source_type.currentData()
         if source_kind != "file":
             return
@@ -609,6 +631,7 @@ class VideoPlayer(QWidget):
             self.connect_current_source(force_reconnect=True)
 
     def _scan_webcam_sources(self, max_indices: int = 10) -> list[tuple[str, str]]:
+        # Scansiona webcam disponibili.
         if cv2 is None:
             return []
 
@@ -634,6 +657,7 @@ class VideoPlayer(QWidget):
         return detected
 
     def _refresh_webcam_sources(self):
+        # Aggiorna lista webcam disponibili.
         previous_value = self.source_input.text().strip()
         devices = self._scan_webcam_sources()
 
@@ -658,6 +682,7 @@ class VideoPlayer(QWidget):
         self._on_webcam_source_changed(selected_index)
 
     def _on_webcam_source_changed(self, index: int):
+        # Gestisce cambio webcam selezionata.
         if index < 0:
             return
 
@@ -669,6 +694,7 @@ class VideoPlayer(QWidget):
             self.connect_current_source(force_reconnect=True)
 
     def _on_performance_profile_changed(self, _index: int | None = None):
+# Applica profilo prestazioni selezionato.
         profile = str(self.performance_preset.currentData() or "low_latency")
         self._apply_performance_profile(profile)
 
@@ -687,14 +713,17 @@ class VideoPlayer(QWidget):
                 pass
 
     def _on_ip_reconnect_toggle(self, _state: int | None = None):
+# Attiva/disattiva riconnessione IP.
         self.ip_reconnect_enabled = bool(self.chk_ip_auto_reconnect.isChecked())
         if not self.ip_reconnect_enabled:
             self._cancel_ip_reconnect(reset_attempts=True)
 
     def _on_ip_reconnect_max_changed(self, value: int):
+# Aggiorna ritardo max riconnessione IP.
         self.ip_reconnect_max_delay_seconds = float(max(1, int(value)))
 
     def _apply_performance_profile(self, profile: str):
+# Applica profilo prestazioni video.
         selected = str(profile or "low_latency")
         if selected == "quality":
             self.preview_target_fps = 0.0
@@ -716,6 +745,7 @@ class VideoPlayer(QWidget):
         self.performance_profile = selected
 
     def _cancel_ip_reconnect(self, reset_attempts: bool = True):
+# Annulla timer riconnessione IP.
         if hasattr(self, "ip_reconnect_timer") and self.ip_reconnect_timer.isActive():
             self.ip_reconnect_timer.stop()
 
@@ -724,6 +754,7 @@ class VideoPlayer(QWidget):
             self.ip_reconnect_reason = ""
 
     def _schedule_ip_reconnect(self, reason: str = ""):
+# Pianifica tentativo riconnessione IP.
         if not self.ip_reconnect_enabled:
             return
 
@@ -755,6 +786,7 @@ class VideoPlayer(QWidget):
         self.ip_reconnect_timer.start(max(1, int(delay_seconds * 1000.0)))
 
     def _attempt_ip_reconnect(self):
+# Tenta riconnessione stream IP.
         if not self.ip_reconnect_enabled:
             return
 
@@ -792,6 +824,7 @@ class VideoPlayer(QWidget):
             self._schedule_ip_reconnect("retry")
 
     def _reset_runtime_metrics(self):
+# Azzera metriche runtime.
         self.metrics_window_start_ts = time.perf_counter()
         self.metrics_input_frames = 0
         self.metrics_rendered_frames = 0
@@ -810,6 +843,7 @@ class VideoPlayer(QWidget):
         decode_ms: float | None = None,
         render_ms: float | None = None,
     ):
+        # Aggiorna metriche runtime con nuovi dati.
         self.metrics_input_frames += max(0, int(input_frames))
         self.metrics_rendered_frames += max(0, int(rendered_frames))
         self.metrics_dropped_frames += max(0, int(dropped_frames))
@@ -823,6 +857,7 @@ class VideoPlayer(QWidget):
             self.metrics_render_samples += 1
 
     def _refresh_metrics_label(self):
+# Aggiorna etichetta metriche a schermo.
         if not hasattr(self, "metrics_label"):
             return
 
@@ -878,6 +913,7 @@ class VideoPlayer(QWidget):
         self._reset_runtime_metrics()
 
     def _resize_preview_frame_if_needed(self, source_kind: str | None, frame):
+# Ridimensiona frame anteprima se necessario.
         kind = str(source_kind or "")
         max_width = int(self.preview_max_width or 0)
         if kind not in {"webcam", "ip"} or max_width <= 0:
@@ -899,6 +935,7 @@ class VideoPlayer(QWidget):
             return frame
 
     def _build_capture_source(self, source_kind: str, source_value: str):
+# Costruisce sorgente per cv2.VideoCapture.
         if source_kind == "webcam":
             try:
                 return int(source_value)
@@ -907,6 +944,7 @@ class VideoPlayer(QWidget):
         return source_value
 
     def _set_preview_delay(self, seconds: float):
+# Imposta delay anteprima in secondi.
         try:
             value = max(0.0, min(120.0, float(seconds)))
         except Exception:
@@ -917,6 +955,7 @@ class VideoPlayer(QWidget):
         self._refresh_delay_label()
 
     def _change_preview_delay(self, delta_seconds: float):
+# Modifica delay anteprima di un delta.
         try:
             delta = float(delta_seconds)
         except Exception:
@@ -924,15 +963,18 @@ class VideoPlayer(QWidget):
         self._set_preview_delay(self.preview_delay_seconds + delta)
 
     def _refresh_delay_label(self):
+# Aggiorna etichetta delay.
         if hasattr(self, "delay_label"):
             self.delay_label.setText(f"Delay attivo: {self.preview_delay_seconds:.1f}s")
 
     def _recordings_dir(self) -> Path:
+# Directory registrazioni in home.
         target = Path.home() / "VolleyballScoutRecordings"
         target.mkdir(parents=True, exist_ok=True)
         return target
 
     def _can_record_live_source(self) -> bool:
+# Verifica se registrazione live possibile.
         source_kind = (self.current_source or {}).get("type")
         return bool(
             cv2 is not None
@@ -941,6 +983,7 @@ class VideoPlayer(QWidget):
         )
 
     def _is_file_source_connected(self) -> bool:
+# Verifica se sorgente file connessa.
         source_kind = str((self.current_source or {}).get("type") or "")
         return bool(
             source_kind == "file"
@@ -949,6 +992,7 @@ class VideoPlayer(QWidget):
         )
 
     def _update_pause_button_state(self):
+# Aggiorna stato pulsante pausa.
         if not hasattr(self, "btn_pause"):
             return
 
@@ -959,6 +1003,7 @@ class VideoPlayer(QWidget):
         )
 
     def _set_pause_state(self, paused: bool, emit_state: bool = True):
+# Imposta stato pausa e notifica worker.
         next_paused = bool(paused)
         self.file_playback_paused = (
             next_paused if self._is_file_source_connected() else False
@@ -995,9 +1040,11 @@ class VideoPlayer(QWidget):
         self._set_pause_state(not self.file_playback_paused, emit_state=True)
 
     def _toggle_pause_playback(self):
+# Toggle pausa riproduzione.
         self.toggle_pause()
 
     def _update_record_button_state(self):
+# Aggiorna stato pulsante registrazione.
         if not hasattr(self, "btn_record"):
             return
 
@@ -1008,6 +1055,7 @@ class VideoPlayer(QWidget):
         )
 
     def _emit_playback_state(self):
+# Emette stato riproduzione corrente.
         source_kind = str((self.current_source or {}).get("type") or "")
         payload = {
             "connected": bool(self.capture is not None),
@@ -1019,6 +1067,7 @@ class VideoPlayer(QWidget):
         self.playback_state_changed.emit(payload)
 
     def _emit_source_changed(self):
+# Emette evento cambio sorgente.
         payload = dict(self.current_source or {})
         if self.recording_output_path:
             payload["recorded_path"] = self.recording_output_path
@@ -1029,6 +1078,7 @@ class VideoPlayer(QWidget):
         self._emit_playback_state()
 
     def _compute_recording_queue_size(self, fps: float) -> int:
+# Calcola dimensione coda registrazione.
         safe_fps = max(1.0, float(fps))
         if self.performance_profile == "quality":
             window_seconds = 6.0
@@ -1039,12 +1089,14 @@ class VideoPlayer(QWidget):
         return int(max(60, min(900, safe_fps * window_seconds)))
 
     def _toggle_recording(self):
+# Avvia/ferma registrazione.
         if self.recording_enabled:
             self._stop_recording(silent=False)
         else:
             self._start_recording()
 
     def _start_recording(self):
+# Avvia registrazione video.
         if cv2 is None:
             return
         if not self._can_record_live_source():
@@ -1136,12 +1188,14 @@ class VideoPlayer(QWidget):
         self._emit_source_changed()
 
     def _on_recording_worker_error(self, message: str):
+# Gestisce errore worker registrazione.
         source_kind = str((self.current_source or {}).get("type") or "live")
         self.status_label.setText(f"Stato: connesso ({source_kind}) • REC warning")
         if message:
             self.status_label.setToolTip(message)
 
     def _enqueue_record_frame(self, frame, current_seconds: float):
+# Accoda frame al worker registrazione.
         worker = self.recording_worker
         if not self.recording_enabled or worker is None:
             return
@@ -1158,6 +1212,7 @@ class VideoPlayer(QWidget):
         worker.enqueue_frame(frame_to_save, float(current_seconds))
 
     def _stop_recording(self, silent: bool = False):
+# Ferma registrazione video.
         was_recording = self.recording_enabled
         worker = self.recording_worker
 
@@ -1242,6 +1297,7 @@ class VideoPlayer(QWidget):
         self.set_resume_position(seconds)
 
     def _current_source_value(self) -> str:
+# Valore sorgente corrente dai controlli.
         source_kind = self.source_type.currentData()
         if source_kind == "webcam":
             webcam_value = str(self.webcam_sources.currentData() or "").strip()
@@ -1250,6 +1306,7 @@ class VideoPlayer(QWidget):
         return self.source_input.text().strip()
 
     def _connect_source(self, show_errors: bool = True):
+# Connette effettivamente la sorgente video.
         if cv2 is None:
             if show_errors:
                 QMessageBox.critical(
@@ -1386,6 +1443,7 @@ class VideoPlayer(QWidget):
         frame,
         current_seconds: float,
     ):
+        # Seleziona frame con delay per anteprima.
         kind = str(source_kind or "")
         if kind not in {"webcam", "ip"} or self.preview_delay_seconds <= 0.0:
             self.delay_buffer.clear()
@@ -1414,6 +1472,7 @@ class VideoPlayer(QWidget):
         return frm, max(0.0, float(ts))
 
     def _stop_capture_worker(self):
+# Ferma worker acquisizione frame.
         worker = self.capture_worker
         if worker is None:
             return
@@ -1425,6 +1484,7 @@ class VideoPlayer(QWidget):
         self.capture_worker = None
 
     def _on_capture_warning(self, status_text: str):
+# Gestisce warning dal worker.
         if self.capture is None:
             return
 
@@ -1446,6 +1506,7 @@ class VideoPlayer(QWidget):
         decode_ms: float,
         source_kind: str,
     ):
+        # Gestisce frame catturato dal worker.
         if self.capture is None:
             return
 
@@ -1473,6 +1534,7 @@ class VideoPlayer(QWidget):
         self._track_runtime_metrics(input_frames=1, decode_ms=decode_ms)
 
     def _render_pending_frame(self):
+# Renderizza frame in attesa.
         if self.capture is None or not self.pending_preview_dirty:
             return
 
@@ -1507,6 +1569,7 @@ class VideoPlayer(QWidget):
         self._track_runtime_metrics(rendered_frames=1, render_ms=render_ms)
 
     def _render_frame(self, frame):
+# Converte e mostra frame nell'anteprima.
         if cv2 is None or frame is None:
             return
 
@@ -1531,6 +1594,7 @@ class VideoPlayer(QWidget):
         self.preview_label.setPixmap(scaled)
 
     def _disconnect_source(self, silent: bool = False, user_requested: bool = True):
+# Disconnette sorgente video.
         if user_requested:
             self._cancel_ip_reconnect(reset_attempts=True)
 
@@ -1584,11 +1648,13 @@ class VideoPlayer(QWidget):
         self._emit_playback_state()
 
     def resizeEvent(self, event):
+        """Ridimensiona anteprima con la finestra."""
         super().resizeEvent(event)
         if self.last_frame is not None:
             self._render_frame(self.last_frame)
 
     def closeEvent(self, event):
+        """Pulisce risorse alla chiusura."""
         self.metrics_timer.stop()
         self._cancel_ip_reconnect(reset_attempts=True)
         self._disconnect_source(silent=True, user_requested=False)

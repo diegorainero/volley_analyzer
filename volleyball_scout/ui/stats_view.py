@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 class StatsView(QWidget):
     def __init__(self, parent=None):
+        """Inizializza la vista statistiche."""
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
@@ -64,6 +65,7 @@ class StatsView(QWidget):
         layout.addStretch()
 
     def run_migration(self):
+        """Esegue migrazione database con Alembic."""
         project_root = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../../../")
         )

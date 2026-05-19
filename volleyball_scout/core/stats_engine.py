@@ -50,12 +50,14 @@ class PlayerStats:
 
     @property
     def attack_efficiency(self) -> float:
+        """Efficienza in attacco (punti - errori) / totale."""
         if self.attack_total == 0:
             return 0.0
         return (self.attack_perfect - self.attack_error) / self.attack_total
 
     @property
     def reception_efficiency(self) -> float:
+        """Efficienza in ricezione su scala 0-1."""
         if self.reception_total == 0:
             return 0.0
         return (self.reception_perfect * 3 + self.reception_positive * 2) / (
@@ -64,11 +66,13 @@ class PlayerStats:
 
     @property
     def serve_efficiency(self) -> float:
+        """Efficienza in battuta (ace - errori) / totale."""
         if self.serve_total == 0:
             return 0.0
         return (self.serve_ace - self.serve_error) / self.serve_total
 
     def to_dict(self) -> dict:
+        """Converte le statistiche in un dizionario."""
         return {
             "name": self.player_name,
             "number": self.number,
@@ -128,6 +132,7 @@ class StatsEngine:
     # ──────────────────────────────────
 
     def compute_match_stats(self, match_id: int) -> MatchStats:
+        """Calcola le statistiche complete per una partita."""
         match = self.session.get(Match, match_id)
         if not match:
             raise ValueError(f"Match {match_id} non trovato")
@@ -156,6 +161,7 @@ class StatsEngine:
         return stats
 
     def _apply_event(self, ps: PlayerStats, ev: ScoutEvent):
+        # Applica un evento scout alle statistiche del giocatore.
         skill = ev.skill or ""
         evcode = ev.evaluation or ""
 
@@ -209,6 +215,7 @@ class StatsEngine:
     # ──────────────────────────────────
 
     def top_attackers(self, match_id: int, top_n: int = 5) -> list[PlayerStats]:
+        """Restituisce i migliori attaccanti della partita."""
         ms = self.compute_match_stats(match_id)
         ranked = sorted(
             ms.players.values(), key=lambda p: (-p.attack_perfect, -p.attack_efficiency)
@@ -216,6 +223,7 @@ class StatsEngine:
         return ranked[:top_n]
 
     def top_servers(self, match_id: int, top_n: int = 5) -> list[PlayerStats]:
+        """Restituisce i migliori battitori della partita."""
         ms = self.compute_match_stats(match_id)
         ranked = sorted(
             ms.players.values(), key=lambda p: (-p.serve_ace, -p.serve_efficiency)
@@ -227,6 +235,7 @@ class StatsEngine:
     # ──────────────────────────────────
 
     def quick_report(self, match_id: int) -> str:
+        """Genera un report testuale delle statistiche."""
         ms = self.compute_match_stats(match_id)
         lines = [f"=== STATISTICHE: {ms.home_team_name} vs {ms.away_team_name} ===", ""]
         for pid, ps in sorted(ms.players.items(), key=lambda x: x[1].number):

@@ -512,6 +512,7 @@ class RosterSetupWidget(QWidget):
                 from volleyball_scout.core.models import MatchSet, ScoutEvent
 
                 def compute_match_activity(match_id: int) -> tuple[int, int, bool]:
+                    """Calcola attività scout per una partita."""
                     set_rows = (
                         session.query(MatchSet)
                         .filter(MatchSet.match_id == match_id)
@@ -686,6 +687,7 @@ class RosterSetupWidget(QWidget):
                         target_set_number = int(latest_open_set.set_number or 1)
 
                 def build_team_context(team_id: int | None, default_name: str) -> dict:
+                    """Costruisce contesto squadra per payload."""
                     roster_rows = (
                         session.query(MatchPlayer)
                         .filter_by(match_id=match_id, team_id=team_id)
@@ -761,6 +763,7 @@ class RosterSetupWidget(QWidget):
         return payload
 
     def _extract_match_item_metadata(self, item: QListWidgetItem) -> dict:
+        # Estrae metadati da item partita.
         raw_data = item.data(Qt.ItemDataRole.UserRole)
 
         metadata = {
@@ -1002,12 +1005,15 @@ class RosterSetupWidget(QWidget):
         return icon
 
     def _is_dark_theme(self) -> bool:
+        # Verifica se il tema scuro è attivo.
         return self.palette().window().color().lightness() < 128
 
     def _muted_text_color(self) -> QColor:
+        # Colore testo attenuato per il tema.
         return QColor("#9D8878") if self._is_dark_theme() else QColor("#7D6757")
 
     def _base_text_color(self) -> QColor:
+        # Colore testo base per il tema.
         return QColor("#F6EFE9") if self._is_dark_theme() else QColor("#2B211C")
 
     def _update_roster_counter(self):
@@ -1425,6 +1431,7 @@ class RosterSetupWidget(QWidget):
         layout.addRow(btn_ok, btn_cancel)
 
         def on_ok():
+            """Salva modifiche giocatore nel roster."""
             self.selected_players[player_id]["number"] = spin_number.value()
             self.selected_players[player_id]["role"] = combo_role.currentText()
             self.selected_players[player_id]["is_captain"] = check_captain.isChecked()

@@ -32,6 +32,7 @@ class EditMatchRolesDialog(QDialog):
     """Finestra di dialogo per modificare i ruoli dei giocatori per una partita specifica"""
 
     def __init__(self, team_name, players, parent=None):
+        """Inizializza dialog modifica ruoli."""
         super().__init__(parent)
         self.team_name = team_name
         self.players = players  # Copia della lista dei giocatori
@@ -154,6 +155,7 @@ class PlayerButton(QPushButton):
         is_titolare=False,
         photo_path=None,
     ):
+        """Inizializza bottone giocatore."""
         super().__init__(str(number), parent)
         self.player_id = player_id
         self.number = number
@@ -189,6 +191,7 @@ class PlayerButton(QPushButton):
         return None
 
     def _update_style(self):
+        # Aggiorna stile visivo del bottone.
         # Determina il testo del bottone
         button_text = str(self.number)
         # Aggiunge "P" se il giocatore è palleggiatore
@@ -283,6 +286,7 @@ class PlayerButton(QPushButton):
         self.setText(button_text)
 
     def set_selected(self, selected):
+        """Imposta stato selezionato."""
         self.is_selected = selected
         self._update_style()
 
@@ -320,6 +324,7 @@ class FormationSlot(QFrame):
     """Slot per posizionare un giocatore in campo (rettangolo giallo) - DROP ZONE. SOLO TITOLARI!"""
 
     def __init__(self, position_name, parent=None):
+        """Inizializza slot formazione."""
         super().__init__(parent)
         self.position_name = position_name
         self.player_id = None
@@ -347,6 +352,7 @@ class FormationSlot(QFrame):
         self._update_style()
 
     def _resolved_photo_path(self):
+        # Path foto valido se disponibile.
         if not self.player_photo_path:
             return None
 
@@ -357,6 +363,7 @@ class FormationSlot(QFrame):
         return None
 
     def _update_style(self):
+        # Aggiorna stile in base allo stato.
         photo_path = self._resolved_photo_path()
 
         if self.player_id is None:
@@ -534,6 +541,7 @@ class LiberoSlot(QFrame):
     """Slot per il libero (più piccolo) - DROP ZONE"""
 
     def __init__(self, label_text="Libero", parent=None):
+        """Inizializza slot libero."""
         super().__init__(parent)
         self.label_text = label_text
         self.player_id = None
@@ -563,6 +571,7 @@ class LiberoSlot(QFrame):
         self._update_style()
 
     def _resolved_photo_path(self):
+        # Path foto valido se disponibile.
         if not self.player_photo_path:
             return None
 
@@ -573,6 +582,7 @@ class LiberoSlot(QFrame):
         return None
 
     def _update_style(self):
+        # Aggiorna stile in base allo stato.
         photo_path = self._resolved_photo_path()
 
         if self.player_id is None:
@@ -736,6 +746,7 @@ class TeamFormationWidget(QWidget):
     """Widget per la formazione di una singola squadra"""
 
     def __init__(self, team, players, parent=None):
+        """Inizializza widget formazione squadra."""
         super().__init__(parent)
         self.team = team
         self.players = players  # [{id, number, last_name, role}]
@@ -1062,6 +1073,7 @@ class FormationPanel(QWidget):
     back_requested = pyqtSignal()  # Emesso quando l'utente clicca "Torna Indietro"
 
     def __init__(self, teams, players_by_team, parent=None, matches=None):
+        """Inizializza pannello formazione."""
         super().__init__(parent)
         self.teams = teams  # [{id, name}]
         self.players_by_team = (
