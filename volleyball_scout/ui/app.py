@@ -37,25 +37,6 @@ except ImportError:
 
 # Import UI components with error handling
 try:
-    from volleyball_scout.ui.formation_setup_complete import FormationSetupComplete
-except ImportError:
-    try:
-        from .formation_setup_complete import FormationSetupComplete
-    except ImportError as e:
-        print(f"⚠️ Warning: FormationSetupComplete not available: {e}")
-        FormationSetupComplete = None
-
-try:
-    from volleyball_scout.ui.formation_panel import FormationPanel
-except ImportError:
-    try:
-        from .formation_panel import FormationPanel
-    except ImportError as e:
-        print(f"⚠️ Warning: FormationPanel not available: {e}")
-        FormationPanel = None
-
-
-try:
     from volleyball_scout.core.models import Player, Team
     from volleyball_scout.ui.team_management import TeamManagementWidget
 except ImportError:
@@ -246,7 +227,6 @@ class NavigationMenu(QWidget):
             ("🏠 Dashboard", "dashboard"),
             ("👥 Squadre e Giocatori", "teams"),
             ("🧾 Gestione incontri", "roster"),
-            ("🏐 Formazioni", "formation"),
             ("📡 Scouting Live", "scout"),
             ("📈 Statistiche", "stats"),
         ]
@@ -366,18 +346,7 @@ class VolleyballScoutApp(QMainWindow):
             self.roster_widget = PlaceholderWidget("🧾 Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)
 
-        # 4. Formation Setup Complete (with match selector)
-        if FormationSetupComplete:
-            try:
-                self.formation_widget = FormationSetupComplete(self.db)
-            except Exception as e:
-                print(f"⚠️ Error loading FormationSetupComplete: {e}")
-                self.formation_widget = PlaceholderWidget("🏐 Formazioni")
-        else:
-            self.formation_widget = PlaceholderWidget("🏐 Formazioni")
-        self.content_stack.addWidget(self.formation_widget)
-
-        # 5. Scout & Video
+        # 4. Scout & Video
         scout_container = QWidget()
         scout_layout = QHBoxLayout()
 
@@ -438,13 +407,7 @@ class VolleyballScoutApp(QMainWindow):
         scout_container.setLayout(scout_layout)
         self.content_stack.addWidget(scout_container)
 
-        # Collega il completamento formazione al passaggio in scouting live
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "scout_ready"
-        ):
-            self.formation_widget.scout_ready.connect(self._on_scout_ready)
-
-        # 6. Statistics
+        # 5. Statistics
         if StatsView:
             self.stats_view = StatsView()
         else:
@@ -452,10 +415,6 @@ class VolleyballScoutApp(QMainWindow):
         self.content_stack.addWidget(self.stats_view)
 
     def _on_match_deleted(self, match_id: int):
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "matches_widget"
-        ):
-            self.formation_widget.matches_widget._load_matches()
         if hasattr(self, "dashboard") and hasattr(self.dashboard, "refresh"):
             self.dashboard.refresh()
 
@@ -465,9 +424,8 @@ class VolleyballScoutApp(QMainWindow):
             "dashboard": 0,
             "teams": 1,
             "roster": 2,
-            "formation": 3,
-            "scout": 4,
-            "stats": 5,
+            "scout": 3,
+            "stats": 4,
         }
 
         if section_id in section_map:
@@ -477,10 +435,6 @@ class VolleyballScoutApp(QMainWindow):
             # Refresh della dashboard quando viene visualizzata
             if section_id == "dashboard" and self.db:
                 self.dashboard.refresh()
-
-            # Refresh della formation quando viene visualizzata
-            if section_id == "formation" and self.db:
-                self._refresh_formation_panel()
 
     def _on_scout_ready(self, scout_payload: dict):
         """Quando la formazione è confermata, carica il contesto in Scouting Live e naviga."""
@@ -523,102 +477,27 @@ class VolleyballScoutApp(QMainWindow):
         self._on_section_selected("scout")
 
     def _on_set_finished(self, payload: dict):
-        """Dopo Fine Set, torna alla formazione o chiude il match se concluso."""
-        match_id = payload.get("match_id") if isinstance(payload, dict) else None
-        next_set_number = (
-            payload.get("next_set_number") if isinstance(payload, dict) else None
-        )
+        """Dopo Fine Set, torna alla gestione incontri o chiude il match se concluso."""
         match_completed = (
             bool(payload.get("match_completed")) if isinstance(payload, dict) else False
         )
 
-        self._on_section_selected("formation")
+        self._on_section_selected("roster")
 
         if match_completed:
-            if hasattr(self, "formation_widget") and hasattr(
-                self.formation_widget, "stacked_widget"
-            ):
-                self.formation_widget.stacked_widget.setCurrentIndex(0)
-            if hasattr(self, "formation_widget") and hasattr(
-                self.formation_widget, "matches_widget"
-            ):
-                self.formation_widget.matches_widget._load_matches()
-
+            if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+                self.roster_widget.refresh_matches()
             return
 
-        if (
-            match_id is not None
-            and next_set_number is not None
-            and hasattr(self, "formation_widget")
-            and hasattr(self.formation_widget, "open_match_by_id")
-        ):
-            opened = self.formation_widget.open_match_by_id(
-                match_id,
-                set_number=next_set_number,
-            )
-            if not opened:
-                print(
-                    f"⚠️ Impossibile aprire automaticamente la formation per match {match_id} (set {next_set_number})"
-                )
+        if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+            self.roster_widget.refresh_matches()
 
     def _on_back_to_scout_list(self):
-        """Ritorna alla lista match/formazioni dal pannello scouting live."""
-        self._on_section_selected("formation")
+        """Ritorna alla lista match dal pannello scouting live."""
+        self._on_section_selected("roster")
 
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "stacked_widget"
-        ):
-            self.formation_widget.stacked_widget.setCurrentIndex(0)
-
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "matches_widget"
-        ):
-            self.formation_widget.matches_widget._load_matches()
-
-    def _refresh_formation_panel(self):
-        """Ricarica il FormationPanel con i dati attuali dal database"""
-        try:
-            # Load teams and players from database
-            teams = []
-            players_by_team = {}
-            with self.db.session_scope() as session:
-                from volleyball_scout.core.models import Player, Team
-
-                teams_data = session.query(Team).all()
-                for team in teams_data:
-                    teams.append({"id": team.id, "name": team.name})
-                    players_data = (
-                        session.query(Player).filter_by(team_id=team.id).all()
-                    )
-                    players_by_team[team.id] = [
-                        {
-                            "id": p.id,
-                            "number": p.number,
-                            "last_name": p.last_name,
-                            "role": p.role,
-                        }
-                        for p in players_data
-                    ]
-
-            # Create formation panel with updated data
-            if teams:
-                new_widget = FormationPanel(teams, players_by_team)
-            else:
-                new_widget = PlaceholderWidget(
-                    "🏐 Formazioni\n(Nessuna squadra nel database)"
-                )
-
-            # Sostituisci il widget nella stack
-            old_widget = self.content_stack.widget(3)
-            if old_widget:
-                self.content_stack.removeWidget(old_widget)
-                old_widget.deleteLater()
-
-            self.formation_widget = new_widget
-            self.content_stack.insertWidget(3, self.formation_widget)
-
-        except Exception as e:
-            print(f"⚠️ Error refreshing FormationPanel: {e}")
+        if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+            self.roster_widget.refresh_matches()
 
     def closeEvent(self, event):
         """Cleanup quando si chiude l'app"""
@@ -631,10 +510,6 @@ def main():
     """Avvia l'applicazione Volleyball Scout."""
     app = QApplication(sys.argv)
 
-    # Use native system style (not Fusion)
-    # This will use the default theme of the operating system
-    # Don't set any specific style - let Qt use the native one
-
     window = VolleyballScoutApp()
     window.show()
 
@@ -644,7 +519,7 @@ def main():
     print("\n📋 Applicazione avviata!")
     print("   - Menu laterale con navigazione tra le sezioni")
     print("   - Dashboard: visualizza match e sessioni in bozza")
-    print("   - Formazioni: seleziona titolari e libero")
+    print("   - Gestione incontri: importa match, gestisci convocati")
     print("   - Scouting Live: inserisci eventi live")
     print("   - Statistiche: visualizza statistiche partita\n")
 

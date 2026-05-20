@@ -3233,6 +3233,7 @@ class ScoutPanel(QWidget):
                 logger.info("Popolamento campo: home=%s away=%s",
                            list(home_nums.values()) if home_nums else "vuoto",
                            list(away_nums.values()) if away_nums else "vuoto")
+                print(f"[DEBUG] Popolamento campo: home={list(home_nums.values()) if home_nums else 'vuoto'} away={list(away_nums.values()) if away_nums else 'vuoto'}")
 
                 if hasattr(self, "home_court"):
                     self.home_court.update_lineup(home_name, home_nums)
@@ -3240,6 +3241,36 @@ class ScoutPanel(QWidget):
                     self.away_court.update_lineup(away_name, away_nums)
         except Exception as e:
             logger.exception("Errore popolamento campo da formazione")
+
+    def _ensure_set_with_events(self):
+        match_id = self.current_context.get("match_id")
+        set_number = int(self.current_context.get("set_number", 1) or 1)
+        if not match_id:
+            return
+        try:
+            from sqlalchemy import func
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import ScoutEvent, MatchSet
+                cnt = session.query(func.count(ScoutEvent.id)).join(
+                    MatchSet, ScoutEvent.set_id == MatchSet.id,
+                ).filter(
+                    ScoutEvent.match_id == match_id,
+                    MatchSet.set_number == set_number,
+                    ScoutEvent.special_code == 'SK',
+                ).scalar()
+                if cnt and cnt > 0:
+                    return
+                first = session.query(MatchSet.set_number).join(
+                    ScoutEvent, ScoutEvent.set_id == MatchSet.id,
+                ).filter(
+                    MatchSet.match_id == match_id,
+                    ScoutEvent.special_code == 'SK',
+                ).order_by(MatchSet.set_number).first()
+                if first:
+                    self.current_context["set_number"] = first[0]
+                    logger.info("Reindirizzamento al set %d (il set %d non ha eventi)", first[0], set_number)
+        except Exception as e:
+            logger.exception("Errore _ensure_set_with_events")
 
     def _apply_point_logic(self, side: str) -> dict:
         # Applica la logica punto e side-out
@@ -6189,6 +6220,9 @@ class ScoutPanel(QWidget):
         if hasattr(self, "code_input"):
             self.code_input.clear()
         self._clear_player_highlight()
+
+        # Se il set corrente non ha eventi, passa al primo set con dati
+        self._ensure_set_with_events()
 
         self._load_set_state_from_db()
 

@@ -325,17 +325,24 @@ class DataVolleyImporter:
 
         for line in scout_lines:
             try:
+                # Set number dal campo raw DWV [8] (più affidabile dei marker **Nset)
+                parts = line.split(';')
+                if len(parts) > 8:
+                    raw_set_str = parts[8].strip()
+                    if raw_set_str.isdigit():
+                        raw_set = int(raw_set_str)
+                        if 1 <= raw_set <= len(set_scores) and raw_set != current_set:
+                            current_set = raw_set
+                            score_home = 0
+                            score_away = 0
+                            rotation_home = 1
+                            rotation_away = 1
+
                 parsed = self._parse_scout_line(line)
-                if not parsed:
+                if not parsed or parsed.get("kind") == "set_marker":
                     continue
                 kind = parsed["kind"]
                 team_side = parsed["team_side"]
-
-                if kind == "set_marker":
-                    current_set = parsed["set_number"]
-                    score_home = 0
-                    score_away = 0
-                    continue
 
                 if current_set not in lineup_stored:
                     lineup = self._extract_lineup(line)
@@ -590,7 +597,7 @@ class DataVolleyImporter:
                 else:
                     single_z = re.search(r"(\d)", combo_raw)
                     if single_z:
-                        result["zone_start"] = single_z.group(1)
+                        result["zone_end"] = single_z.group(1)
 
             result["line_raw"] = code_part
             return result

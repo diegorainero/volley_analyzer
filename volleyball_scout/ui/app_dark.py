@@ -30,24 +30,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import UI components with error handling
 try:
-    from volleyball_scout.ui.formation_setup_complete import FormationSetupComplete
-except ImportError:
-    try:
-        from .formation_setup_complete import FormationSetupComplete
-    except ImportError as e:
-        print(f"⚠️ Warning: FormationSetupComplete not available: {e}")
-        FormationSetupComplete = None
-
-try:
-    from volleyball_scout.ui.formation_panel import FormationPanel
-except ImportError:
-    try:
-        from .formation_panel import FormationPanel
-    except ImportError as e:
-        print(f"⚠️ Warning: FormationPanel not available: {e}")
-        FormationPanel = None
-
-try:
     from volleyball_scout.core.database import DatabaseManager
 except ImportError:
     try:
@@ -576,11 +558,6 @@ class DashboardView(QWidget):
                 "section_id": "roster",
             },
             {
-                "title": "Formazioni",
-                "description": "Imposta formazioni e titolari",
-                "section_id": "formation",
-            },
-            {
                 "title": "Scouting Live",
                 "description": "Registra e analizza video",
                 "section_id": "scout",
@@ -822,12 +799,6 @@ class VolleyballScoutApp(QMainWindow):
         action_roster.triggered.connect(lambda: self._show_section("roster"))
         view_menu.addAction(action_roster)
 
-        action_formation = QAction("Formazioni", self)
-        if callable(get_section_icon):
-            action_formation.setIcon(get_section_icon("formation", size=18))
-        action_formation.triggered.connect(lambda: self._show_section("formation"))
-        view_menu.addAction(action_formation)
-
         action_scout = QAction("Scouting Live", self)
         if callable(get_section_icon):
             action_scout.setIcon(get_section_icon("scout", size=18))
@@ -923,17 +894,13 @@ class VolleyballScoutApp(QMainWindow):
                     f"Partita importata: {result['home_team']} vs {result['away_team']}",
                 )
                 self._refresh_matches_list()
-                self._show_section("formation")
+                self._show_section("roster")
         except Exception as e:
             logger.exception("Errore import DataVolley")
             QMessageBox.critical(self, "Errore import", str(e))
 
     def _refresh_matches_list(self):
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "matches_widget"
-        ):
-            self.formation_widget.matches_widget._load_matches()
-        elif hasattr(self, "dashboard") and hasattr(self.dashboard, "refresh"):
+        if hasattr(self, "dashboard") and hasattr(self.dashboard, "refresh"):
             self.dashboard.refresh()
 
     def _on_match_deleted(self, match_id: int):
@@ -977,18 +944,7 @@ class VolleyballScoutApp(QMainWindow):
             self.roster_widget = PlaceholderWidget("Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)
 
-        # 4. Formation Setup Complete (con match selector e navigazione)
-        if FormationSetupComplete and self.db is not None:
-            try:
-                self.formation_widget = FormationSetupComplete(self.db)
-            except Exception as e:
-                print(f"⚠️ Error loading FormationSetupComplete: {e}")
-                self.formation_widget = PlaceholderWidget("Formation Setup")
-        else:
-            self.formation_widget = PlaceholderWidget("Formation Setup")
-        self.content_stack.addWidget(self.formation_widget)
-
-        # 5. Scout & Video
+        # 4. Scout & Video
         scout_container = QWidget()
         scout_layout = QHBoxLayout()
 
@@ -1049,13 +1005,7 @@ class VolleyballScoutApp(QMainWindow):
         scout_container.setLayout(scout_layout)
         self.content_stack.addWidget(scout_container)
 
-        # Collega il completamento formazione al passaggio in scouting live
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "scout_ready"
-        ):
-            self.formation_widget.scout_ready.connect(self._on_scout_ready)
-
-        # 6. Statistics
+        # 5. Statistics
         if StatsView:
             self.stats_view = StatsView()
         else:
@@ -1068,9 +1018,8 @@ class VolleyballScoutApp(QMainWindow):
             "dashboard": 0,
             "teams": 1,
             "roster": 2,
-            "formation": 3,
-            "scout": 4,
-            "stats": 5,
+            "scout": 3,
+            "stats": 4,
         }
 
         if section_id in section_map:
@@ -1128,60 +1077,30 @@ class VolleyballScoutApp(QMainWindow):
         self._show_section("scout")
 
     def _on_set_finished(self, payload: dict):
-        """Dopo Fine Set, torna alla formazione o chiude il match se concluso."""
-        match_id = payload.get("match_id") if isinstance(payload, dict) else None
-        next_set_number = (
-            payload.get("next_set_number") if isinstance(payload, dict) else None
-        )
+        """Dopo Fine Set, torna alla gestione incontri o chiude il match se concluso."""
         match_completed = (
             bool(payload.get("match_completed")) if isinstance(payload, dict) else False
         )
 
-        self._show_section("formation")
+        self._show_section("roster")
 
         if match_completed:
-            if hasattr(self, "formation_widget") and hasattr(
-                self.formation_widget, "stacked_widget"
-            ):
-                self.formation_widget.stacked_widget.setCurrentIndex(0)
-            if hasattr(self, "formation_widget") and hasattr(
-                self.formation_widget, "matches_widget"
-            ):
-                self.formation_widget.matches_widget._load_matches()
-
+            if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+                self.roster_widget.refresh_matches()
             return
 
-        if (
-            match_id is not None
-            and next_set_number is not None
-            and hasattr(self, "formation_widget")
-            and hasattr(self.formation_widget, "open_match_by_id")
-        ):
-            opened = self.formation_widget.open_match_by_id(
-                match_id,
-                set_number=next_set_number,
-            )
-            if not opened:
-                print(
-                    f"⚠️ Impossibile aprire automaticamente la formation per match {match_id} (set {next_set_number})"
-                )
+        if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+            self.roster_widget.refresh_matches()
 
     def _on_back_to_scout_list(self):
-        """Ritorna alla lista match/formazioni dal pannello scouting live."""
-        self._show_section("formation")
+        """Ritorna alla lista match dal pannello scouting live."""
+        self._show_section("roster")
 
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "stacked_widget"
-        ):
-            self.formation_widget.stacked_widget.setCurrentIndex(0)
-
-        if hasattr(self, "formation_widget") and hasattr(
-            self.formation_widget, "matches_widget"
-        ):
-            self.formation_widget.matches_widget._load_matches()
+        if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+            self.roster_widget.refresh_matches()
 
     def _on_roster_setup_completed(self):
-        """Dopo il roster completo, naviga automaticamente alla formation del match corrente."""
+        """Dopo il roster completo, torna alla gestione incontri."""
         match_id = None
 
         if hasattr(self, "roster_widget"):
@@ -1189,19 +1108,11 @@ class VolleyballScoutApp(QMainWindow):
             if isinstance(current_match, dict):
                 match_id = current_match.get("id")
 
-        # Vai sempre alla sezione formation
-        self._show_section("formation")
+        # Torna alla gestione incontri
+        self._show_section("roster")
 
-        if (
-            match_id is not None
-            and hasattr(self, "formation_widget")
-            and hasattr(self.formation_widget, "open_match_by_id")
-        ):
-            opened = self.formation_widget.open_match_by_id(match_id)
-            if not opened:
-                print(
-                    f"⚠️ Impossibile aprire automaticamente la formation per match {match_id}"
-                )
+        if hasattr(self, "roster_widget") and hasattr(self.roster_widget, "refresh_matches"):
+            self.roster_widget.refresh_matches()
 
     def _open_scout_settings(self):
         # Apre il dialogo delle impostazioni di scouting.
