@@ -1,9 +1,19 @@
 import re
-from copy import deepcopy
+
+
+# Codici DataVolley a due lettere mappati a codici interni singoli
+DV_CODE_MAP = {
+    "SQ": "S", "RQ": "R", "SE": "E",
+    "AH": "A", "AU": "A", "AM": "A", "AQ": "A",
+    "BH": "B", "BM": "B", "BO": "B",
+    "DH": "D", "FU": "F", "FH": "F",
+}
+
+# Costruito automaticamente: tutti i prefissi a 1 e 2 lettere
+_ALL_ALIAS_KEYS: list[str] = sorted(DV_CODE_MAP.keys(), key=len, reverse=True)
 
 
 def infer_code_team_side(normalized: str) -> str | None:
-    """Inferisce il lato squadra dal codice DataVolley."""
     scan_code = str(normalized or "").strip().upper().replace(" ", "")
     if not scan_code:
         return None
@@ -24,12 +34,29 @@ def infer_code_team_side(normalized: str) -> str | None:
     return None
 
 
+def _find_skill_in_scan(scan_code: str, skill_aliases: dict[str, str]) -> tuple[int, int, str] | None:
+    """
+    Cerca la prima occorrenza di un codice skill (1 o 2 lettere) nello scan_code.
+    Restituisce (skill_index, skill_length, internal_skill).
+    """
+    for alias_key in sorted(skill_aliases.keys(), key=len, reverse=True):
+        idx = scan_code.find(alias_key)
+        if idx >= 0:
+            return (idx, len(alias_key), skill_aliases[alias_key])
+    return None
+
+
 def parse_datavolley_code(
     raw_code: str,
-    skill_aliases: dict[str, str],
-    evaluations: set[str],
+    skill_aliases: dict[str, str] | None = None,
+    evaluations: set[str] | None = None,
 ) -> dict:
-    """Analizza un codice DataVolley grezzo."""
+    if skill_aliases is None:
+        skill_aliases = {k: v for k, v in DV_CODE_MAP.items()}
+        for v in set(DV_CODE_MAP.values()):
+            skill_aliases[v] = v
+    if evaluations is None:
+        evaluations = {"#", "+", "!", "-", "=", "/"}
     normalized = str(raw_code or "").strip().upper().replace(" ", "")
     if not normalized:
         return {"valid": False, "error": "Codice vuoto"}
@@ -50,22 +77,16 @@ def parse_datavolley_code(
     if not scan_code:
         return {"valid": False, "error": "Codice incompleto"}
 
-    skill_index = None
-    skill = None
-    for idx, ch in enumerate(scan_code):
-        if ch in skill_aliases:
-            skill_index = idx
-            skill = skill_aliases[ch]
-            break
-
-    if skill_index is None or skill is None:
+    found = _find_skill_in_scan(scan_code, skill_aliases)
+    if found is None:
         return {
             "valid": False,
-            "error": "Skill DataVolley non trovata (usa S/R/E/A/B/D/F)",
+            "error": "Skill DataVolley non trovata (usa SQ/RQ/SE/AH/BH/DH/FU o S/R/E/A/B/D/F)",
         }
 
+    skill_index, skill_length, skill = found
     prefix_part = scan_code[:skill_index]
-    suffix_part = scan_code[skill_index + 1:]
+    suffix_part = scan_code[skill_index + skill_length:]
 
     player_number = None
     player_match = re.search(r"(\d{1,2})$", prefix_part)

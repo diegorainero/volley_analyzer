@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -778,13 +779,12 @@ class VolleyballScoutApp(QMainWindow):
         file_menu = menubar.addMenu("File")
         file_menu.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
 
-        action_logout = QAction("Logout", self)
-        action_logout.setIcon(
-            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton)
+        action_import = QAction("Importa da DataVolley...", self)
+        action_import.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
         )
-        action_logout.setShortcut("Ctrl+L")
-        action_logout.triggered.connect(self._perform_logout)
-        file_menu.addAction(action_logout)
+        action_import.triggered.connect(self._import_datavolley)
+        file_menu.addAction(action_import)
 
         file_menu.addSeparator()
 
@@ -868,7 +868,7 @@ class VolleyballScoutApp(QMainWindow):
 
         preferences_menu.addSeparator()
 
-        action_scout_settings = QAction("Impostazioni Scouting", self)
+        action_scout_settings = QAction("Impostazioni Scouting...", self)
         action_scout_settings.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
         )
@@ -877,7 +877,7 @@ class VolleyballScoutApp(QMainWindow):
 
         preferences_menu.addSeparator()
 
-        action_formation_editor = QAction("Gestione formazioni ricezione", self)
+        action_formation_editor = QAction("Gestione formazioni ricezione...", self)
         action_formation_editor.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
         )
@@ -896,6 +896,48 @@ class VolleyballScoutApp(QMainWindow):
         )
         action_about.triggered.connect(self._show_about)
         help_menu.addAction(action_about)
+
+    def _import_datavolley(self):
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from volleyball_scout.importers.datavolley_importer import DataVolleyImporter
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Importa da DataVolley", "",
+            "File DataVolley (*.dvw);;Tutti i file (*)",
+        )
+        if not path:
+            return
+        try:
+            session = self.db.get_session()
+            importer = DataVolleyImporter(session)
+            result = importer.import_file(path)
+            session.close()
+            if result.get("duplicate"):
+                QMessageBox.information(
+                    self, "Import ignorato",
+                    f"Partita {result['home_team']} vs {result['away_team']} già importata.",
+                )
+            else:
+                QMessageBox.information(
+                    self, "Import completato",
+                    f"Partita importata: {result['home_team']} vs {result['away_team']}",
+                )
+                self._refresh_matches_list()
+                self._show_section("formation")
+        except Exception as e:
+            logger.exception("Errore import DataVolley")
+            QMessageBox.critical(self, "Errore import", str(e))
+
+    def _refresh_matches_list(self):
+        if hasattr(self, "formation_widget") and hasattr(
+            self.formation_widget, "matches_widget"
+        ):
+            self.formation_widget.matches_widget._load_matches()
+        elif hasattr(self, "dashboard") and hasattr(self.dashboard, "refresh"):
+            self.dashboard.refresh()
+
+    def _on_match_deleted(self, match_id: int):
+        self._refresh_matches_list()
 
     def _setup_sections(self):
         """Setup di tutte le sezioni disponibili"""
@@ -929,6 +971,8 @@ class VolleyballScoutApp(QMainWindow):
                 )
             if hasattr(self.roster_widget, "scout_resume_requested"):
                 self.roster_widget.scout_resume_requested.connect(self._on_scout_ready)
+            if hasattr(self.roster_widget, "match_deleted"):
+                self.roster_widget.match_deleted.connect(self._on_match_deleted)
         else:
             self.roster_widget = PlaceholderWidget("Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)

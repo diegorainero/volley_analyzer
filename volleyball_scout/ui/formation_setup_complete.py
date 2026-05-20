@@ -211,10 +211,10 @@ class FormationSetupComplete(QWidget):
         self.stacked_widget.setCurrentIndex(0)
 
     def _guess_next_set_number(self, match_id: int) -> int:
-        """Stima il set da configurare in base allo stato corrente del match."""
+        """Stima il set da caricare in base allo stato corrente del match."""
         try:
             with self.db.session_scope() as session:
-                from volleyball_scout.core.models import MatchSet
+                from volleyball_scout.core.models import MatchSet, ScoutEvent
 
                 sets = (
                     session.query(MatchSet)
@@ -225,6 +225,15 @@ class FormationSetupComplete(QWidget):
 
                 if not sets:
                     return 1
+
+                for set_obj in sets:
+                    event_count = (
+                        session.query(ScoutEvent.id)
+                        .filter(ScoutEvent.set_id == set_obj.id)
+                        .count()
+                    )
+                    if event_count > 0:
+                        return max(1, int(set_obj.set_number or 1))
 
                 # Se esiste un set senza winner e ancora a 0-0, considera quello come attivo
                 for set_obj in sets:

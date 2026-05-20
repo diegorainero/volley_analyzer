@@ -79,7 +79,23 @@ class DatabaseManager:
     def _init_db(self):
         """Crea tutte le tabelle se non esistono"""
         Base.metadata.create_all(bind=self.engine)
+        self._run_migrations()
         logger.info("✅ Schema database inizializzato")
+
+    def _run_migrations(self):
+        """Esegue le migrazioni dello schema per colonne aggiunte in versioni successive."""
+        migrations = [
+            "ALTER TABLE scout_events ADD COLUMN rotation INTEGER DEFAULT 1",
+            "ALTER TABLE match_sets ADD COLUMN home_lineup TEXT DEFAULT NULL",
+            "ALTER TABLE match_sets ADD COLUMN away_lineup TEXT DEFAULT NULL",
+        ]
+        with self.engine.connect() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
 
     # ──────────────────────────────────
     #  Session context manager

@@ -186,6 +186,8 @@ class MatchSet(Base):
     score_away = Column(Integer, default=0)
     duration = Column(Integer)  # durata in secondi
     winner = Column(String(10))  # "home" | "away"
+    home_lineup = Column(Text, default=None)  # JSON: {"P1":"8","P2":"20",...}
+    away_lineup = Column(Text, default=None)  # JSON: {"P1":"88","P2":"22",...}
 
     match = relationship("Match", back_populates="sets")
     events = relationship("ScoutEvent", back_populates="match_set")
@@ -248,6 +250,9 @@ class ScoutEvent(Base):
     # Score at moment of event
     score_home = Column(Integer, default=0)
     score_away = Column(Integer, default=0)
+
+    # Rotazione al momento dell'evento (1-6)
+    rotation = Column(Integer, default=1)
 
     # Video sync
     video_timestamp = Column(Float)  # secondi dall'inizio del video

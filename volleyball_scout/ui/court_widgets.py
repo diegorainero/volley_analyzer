@@ -613,14 +613,14 @@ class ServeTrajectoryOverlay(QWidget):
     """Transparent overlay on the full-court container to draw serve/attack lines."""
 
     def __init__(self, parent=None):
-        """Inizializza l'overlay di traiettoria."""
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._trajectory: list[QPointF] = []
+        self._trajectory_color = QColor("#EF4444")
 
-    def set_trajectory(self, start: QPointF, end: QPointF):
-        """Imposta la traiettoria da disegnare."""
+    def set_trajectory(self, start: QPointF, end: QPointF, color: str = "#EF4444"):
         self._trajectory = [QPointF(start), QPointF(end)]
+        self._trajectory_color = QColor(color)
         self.update()
 
     def clear_trajectory(self):
@@ -629,12 +629,12 @@ class ServeTrajectoryOverlay(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        """Disegna la linea di traiettoria."""
         if not self._trajectory:
             return
+        color = getattr(self, "_trajectory_color", QColor("#EF4444"))
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(QColor("#EF4444"), 3)
+        pen = QPen(color, 3)
         pen.setStyle(Qt.PenStyle.DashLine)
         p.setPen(pen)
         p.drawLine(self._trajectory[0], self._trajectory[-1])
@@ -654,5 +654,5 @@ class ServeTrajectoryOverlay(QWidget):
         ay1 = end.y() - arrow_len * __import__("math").sin(angle - arrow_angle)
         ax2 = end.x() - arrow_len * __import__("math").cos(angle + arrow_angle)
         ay2 = end.y() - arrow_len * __import__("math").sin(angle + arrow_angle)
-        p.setBrush(QColor("#EF4444"))
+        p.setBrush(color)
         p.drawPolygon(end, QPointF(ax1, ay1), QPointF(ax2, ay2))

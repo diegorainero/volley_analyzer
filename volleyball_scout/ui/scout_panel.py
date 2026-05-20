@@ -13,6 +13,7 @@ except ImportError:
 from PyQt6.QtCore import QPoint, QPointF, QRectF, QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QCursor
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QButtonGroup,
     QCheckBox,
@@ -360,35 +361,34 @@ class ScoutPanel(QWidget):
     back_requested = pyqtSignal()
 
     SKILL_CODES = {
-        "Attacco": "A",
-        "Muro": "B",
         "Battuta": "S",
         "Ricezione": "R",
         "Alzata": "E",
+        "Attacco": "A",
+        "Muro": "B",
         "Difesa": "D",
     }
 
-    # Tasti rapidi DataVolley (configurabili)
     CODE_SHORTCUTS = [
-        ("Battuta", "S"),
-        ("Ricezione", "R"),
-        ("Alzata", "E"),
-        ("Attacco", "A"),
-        ("Muro", "B"),
-        ("Difesa", "D"),
-        ("Ace", "S#"),
-        ("Err. Servizio", "S="),
+        ("Battuta", "SQ"),
+        ("Ricezione", "RQ"),
+        ("Alzata", "SE"),
+        ("Attacco", "AH"),
+        ("Muro", "BH"),
+        ("Difesa", "DH"),
+        ("Ace", "SQ#"),
+        ("Err. Servizio", "SQ="),
         ("Punto", "#"),
         ("Errore", "="),
     ]
 
-    KEYPAD_SKILL_TOKENS = ["S", "R", "E", "A", "B", "D", "F"]
+    KEYPAD_SKILL_TOKENS = ["SQ", "RQ", "SE", "AH", "BH", "DH", "FU"]
     KEYPAD_EVAL_TOKENS = ["#", "+", "!", "-", "=", "/"]
     KEYPAD_DIGIT_ROWS = [("7", "8", "9"), ("4", "5", "6"), ("1", "2", "3"), ("0",)]
     KEYPAD_MACRO_PRESETS = [
-        ("Ace", "S#"),
-        ("Err. Battuta", "S="),
-        ("Pipe Punto", "A#P"),
+        ("Ace", "SQ#"),
+        ("Err. Battuta", "SQ="),
+        ("Pipe Punto", "AH#P"),
     ]
     SHORTCUTS_SETTINGS_ORG = "VolleyballScout"
     SHORTCUTS_SETTINGS_APP = "ScoutPanel"
@@ -417,16 +417,14 @@ class ScoutPanel(QWidget):
         "submit_code": "F10",
     }
 
-    # Alias minimi supportati in input (es. V per battuta)
     DATA_VOLLEY_SKILL_ALIASES = {
-        "S": "S",
-        "V": "S",
-        "R": "R",
-        "E": "E",
-        "A": "A",
-        "B": "B",
-        "D": "D",
-        "F": "F",
+        "SQ": "S", "S": "S", "V": "S",
+        "RQ": "R", "R": "R",
+        "SE": "E", "E": "E",
+        "AH": "A", "AU": "A", "AM": "A", "AQ": "A", "AO": "A", "TT": "A", "A": "A",
+        "BH": "B", "BM": "B", "BO": "B", "BD": "B", "B": "B",
+        "DH": "D", "D": "D",
+        "FU": "F", "FH": "F", "F": "F",
     }
 
     DATA_VOLLEY_EVALUATIONS = {"#", "+", "!", "-", "=", "/"}
@@ -445,6 +443,7 @@ class ScoutPanel(QWidget):
         self.rally_history = []
         self.current_set_id = None
         self.event_counter = 0
+        self._history_target_index = None
 
         self.elapsed_seconds = 0
         self.elapsed_seconds_exact = 0.0
@@ -611,6 +610,12 @@ class ScoutPanel(QWidget):
         timer_layout.addStretch()
         layout.addLayout(timer_layout)
 
+        self.set_scores_label = QLabel("")
+        self.set_scores_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_scores_label.setStyleSheet("font-size: 11px; color: #999;")
+        self.set_scores_label.setVisible(False)
+        layout.addWidget(self.set_scores_label)
+
         scoreboard_layout = QHBoxLayout()
         scoreboard_layout.setSpacing(10)
 
@@ -620,9 +625,19 @@ class ScoutPanel(QWidget):
             "font-size: 18px; font-weight: bold; border: 1px solid #B79C8A; border-radius: 6px; padding: 4px 10px;"
         )
 
+        self.btn_prev_set = QPushButton("<")
+        self.btn_prev_set.setFixedWidth(32)
+        self.btn_prev_set.setToolTip("Set precedente")
+        self.btn_prev_set.clicked.connect(self._go_to_prev_set)
+
         self.set_info = QLabel("Set 1")
         self.set_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.set_info.setStyleSheet("font-weight: bold; font-size: 13px;")
+
+        self.btn_next_set = QPushButton(">")
+        self.btn_next_set.setFixedWidth(32)
+        self.btn_next_set.setToolTip("Set successivo")
+        self.btn_next_set.clicked.connect(self._go_to_next_set)
 
         self.away_score = QLabel("0")
         self.away_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -632,7 +647,9 @@ class ScoutPanel(QWidget):
 
         scoreboard_layout.addStretch()
         scoreboard_layout.addWidget(self.home_score)
+        scoreboard_layout.addWidget(self.btn_prev_set)
         scoreboard_layout.addWidget(self.set_info)
+        scoreboard_layout.addWidget(self.btn_next_set)
         scoreboard_layout.addWidget(self.away_score)
         scoreboard_layout.addStretch()
         layout.addLayout(scoreboard_layout)
@@ -3183,6 +3200,47 @@ class ScoutPanel(QWidget):
         elif side == "away" and hasattr(self, "away_court"):
             self.away_court.set_highlight_player(player_number)
 
+    def _populate_court_from_lineup(self):
+        import json
+        match_id = self.current_context.get("match_id")
+        set_number = self.current_context.get("set_number")
+        if not match_id or not set_number:
+            return
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSet
+                ms = (
+                    session.query(MatchSet)
+                    .filter_by(match_id=match_id, set_number=set_number)
+                    .first()
+                )
+                if not ms:
+                    return
+
+                home_nums = {} if not ms.home_lineup else json.loads(ms.home_lineup)
+                away_nums = {} if not ms.away_lineup else json.loads(ms.away_lineup)
+
+                home_data = self.current_context.setdefault("home_team", {})
+                away_data = self.current_context.setdefault("away_team", {})
+                home_name = home_data.get("name", "Casa")
+                away_name = away_data.get("name", "Trasferta")
+
+                if home_nums:
+                    home_data["lineup"] = home_nums
+                if away_nums:
+                    away_data["lineup"] = away_nums
+
+                logger.info("Popolamento campo: home=%s away=%s",
+                           list(home_nums.values()) if home_nums else "vuoto",
+                           list(away_nums.values()) if away_nums else "vuoto")
+
+                if hasattr(self, "home_court"):
+                    self.home_court.update_lineup(home_name, home_nums)
+                if hasattr(self, "away_court"):
+                    self.away_court.update_lineup(away_name, away_nums)
+        except Exception as e:
+            logger.exception("Errore popolamento campo da formazione")
+
     def _apply_point_logic(self, side: str) -> dict:
         # Applica la logica punto e side-out
         score_key = "score_home" if side == "home" else "score_away"
@@ -4599,6 +4657,25 @@ class ScoutPanel(QWidget):
         self.subtitle.setText(snapshot.get("subtitle", self.subtitle.text()))
         self._refresh_view()
 
+    def _save_set_scores(self):
+        if self.db is None or not self.current_context:
+            return
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSet
+                match_id = self.current_context.get("match_id")
+                set_number = int(self.current_context.get("set_number", 1))
+                set_record = (
+                    session.query(MatchSet)
+                    .filter_by(match_id=match_id, set_number=set_number)
+                    .first()
+                )
+                if set_record is not None:
+                    set_record.score_home = int(self.current_context.get("score_home", 0))
+                    set_record.score_away = int(self.current_context.get("score_away", 0))
+        except Exception as e:
+            print(f"⚠️ Errore salvataggio punteggio set: {e}")
+
     def _ensure_set_record(self, session):
         """Garantisce l'esistenza del set corrente nel DB e ritorna il record."""
         if self.db is None or not self.current_context:
@@ -4666,6 +4743,7 @@ class ScoutPanel(QWidget):
                     else max(0.0, float(video_timestamp_override))
                 )
 
+                rot = self._get_current_rotation(team_side) if team_side else None
                 event = ScoutEvent(
                     match_id=self.current_context.get("match_id"),
                     set_id=set_record.id if set_record is not None else None,
@@ -4681,6 +4759,7 @@ class ScoutPanel(QWidget):
                     score_away=int(self.current_context.get("score_away", 0) or 0),
                     rally_number=next_counter,
                     video_timestamp=event_timestamp,
+                    rotation=rot,
                     notes=notes,
                     special_code=self._normalize_history_kind(kind),
                 )
@@ -4873,15 +4952,13 @@ class ScoutPanel(QWidget):
             int(current_event_id) if current_event_id is not None else None
         )
 
-        if (
-            scroll_to_active
-            and self.active_history_event_id is not None
-            and self.active_history_event_id != previous_event_id
-        ):
-            self.events_list.scrollToItem(
-                active_item,
-                QListWidget.ScrollHint.PositionAtCenter,
-            )
+        if self.active_history_event_id is not None and self.active_history_event_id != previous_event_id:
+            self._render_event_on_courts(self.active_history_event_id)
+            if scroll_to_active:
+                self.events_list.scrollToItem(
+                    active_item,
+                    QListWidget.ScrollHint.PositionAtCenter,
+                )
 
     def _seek_video_to_timestamp(self, seconds: float | None):
         # Cerca il video al timestamp specificato
@@ -4898,8 +4975,107 @@ class ScoutPanel(QWidget):
             pass
 
     def _on_event_item_double_clicked(self, item: QListWidgetItem):
-        # Gestisce il doppio click su un evento storico
-        self._seek_video_to_timestamp(self._event_item_timestamp(item))
+        event_id = item.data(Qt.ItemDataRole.UserRole)
+        ts = self._event_item_timestamp(item)
+        self._seek_video_to_timestamp(ts)
+        self.events_list.scrollToItem(
+            item, QAbstractItemView.ScrollHint.PositionAtCenter
+        )
+        if event_id is not None:
+            self._restore_event_state(event_id)
+            self._render_event_on_courts(event_id)
+
+    def _restore_event_state(self, event_id: int):
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import ScoutEvent
+                event = session.query(ScoutEvent).filter_by(id=int(event_id)).first()
+                if not event:
+                    return
+                ts = float(max(0.0, float(event.video_timestamp or 0.0)))
+                self.elapsed_seconds = int(ts)
+                self.elapsed_seconds_exact = ts
+                self.timer_label.setText(self._format_elapsed())
+                sh = int(event.score_home or 0)
+                sa = int(event.score_away or 0)
+                self.current_context["score_home"] = sh
+                self.current_context["score_away"] = sa
+                self.home_score.setText(str(sh))
+                self.away_score.setText(str(sa))
+        except Exception as e:
+            logger.exception("Errore restore evento")
+
+    def _render_event_on_courts(self, event_id: int):
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import ScoutEvent, Player
+                event = session.query(ScoutEvent).filter_by(id=int(event_id)).first()
+                if not event:
+                    return
+
+                side = "home" if event.team_side == "a" else "away"
+                self._clear_player_highlight()
+                self.serve_overlay.clear_trajectory()
+
+                player_number = None
+                if event.player_id:
+                    player = session.query(Player).filter_by(id=event.player_id).first()
+                    if player:
+                        player_number = str(player.number)
+                        self._highlight_player_on_courts(side, player_number)
+
+                traj_color = self._eval_to_color(event.evaluation)
+                desc = self._describe_event(event)
+                rot = getattr(event, "rotation", None) or ""
+                rot_str = f" (Rot. {rot})" if rot else ""
+                self.subtitle.setText(
+                    f"{desc} | #{player_number or '?'}{rot_str}"
+                )
+
+                start_zone = event.zone_start
+                end_zone = event.zone_end
+                if start_zone and start_zone.isdigit() and end_zone and end_zone.isdigit():
+                    opposite = "away" if side == "home" else "home"
+                    start_pos = self._zone_to_overlay(side, start_zone)
+                    end_pos = self._zone_to_overlay(opposite, end_zone)
+                    if start_pos and end_pos:
+                        self.serve_overlay.set_trajectory(start_pos, end_pos, color=traj_color)
+                elif start_zone and start_zone.isdigit():
+                    start_pos = self._zone_to_overlay(side, start_zone)
+                    if start_pos:
+                        self.serve_overlay.set_trajectory(start_pos, start_pos, color=traj_color)
+                elif end_zone and end_zone.isdigit():
+                    opposite = "away" if side == "home" else "home"
+                    end_pos = self._zone_to_overlay(opposite, end_zone)
+                    if end_pos:
+                        self.serve_overlay.set_trajectory(end_pos, end_pos, color=traj_color)
+
+        except Exception as e:
+            logger.exception("Errore rendering evento sul campo")
+
+    ZONE_MAP = {"7": "P4", "8": "P3", "9": "P2"}
+
+    SKILL_NAMES = {"S": "Battuta", "R": "Ricezione", "E": "Alzata", "A": "Attacco", "B": "Muro", "D": "Difesa", "F": "Freeball"}
+    EVAL_LABELS = {"#": "perfetto", "+": "buono", "!": "impreciso", "-": "negativo", "=": "errore", "/": "muro"}
+
+    def _zone_to_overlay(self, side: str, zone: str) -> QPointF | None:
+        court = self.home_court if side == "home" else self.away_court
+        pos = self.ZONE_MAP.get(zone, f"P{zone}")
+        return self._cell_to_overlay(court, pos)
+
+    def _eval_to_color(self, evaluation: str | None) -> str:
+        return {
+            "#": "#22C55E", "+": "#86EFAC", "!": "#EAB308",
+            "-": "#F97316", "=": "#EF4444", "/": "#EF4444",
+        }.get(evaluation, "#EF4444")
+
+    def _describe_event(self, event) -> str:
+        skill_name = self.SKILL_NAMES.get(event.skill, "Evento")
+        eval_label = self.EVAL_LABELS.get(event.evaluation, "")
+        parts = [f"{skill_name}"]
+        if eval_label:
+            parts.append(eval_label)
+        return " ".join(parts)
 
     def _event_timestamp_for_event_id(self, event_id: int | None) -> float | None:
         # Restituisce il timestamp per un ID evento
@@ -5058,9 +5234,9 @@ class ScoutPanel(QWidget):
         menu.exec(self.events_list.viewport().mapToGlobal(pos))
 
     def _apply_history_filter(self, _value=None):
-        # Applica il filtro alla lista degli eventi
         self.events_list.clear()
-        for record in self.history_records:
+        target_item = None
+        for i, record in enumerate(self.history_records):
             kind = self._normalize_history_kind(record.get("kind"))
             if not self._matches_history_filter(kind):
                 continue
@@ -5076,7 +5252,18 @@ class ScoutPanel(QWidget):
 
             self.events_list.addItem(item)
 
-        self.events_list.scrollToBottom()
+            if (
+                self._history_target_index is not None
+                and i == self._history_target_index
+            ):
+                target_item = item
+
+        if target_item is not None:
+            self.events_list.scrollToItem(
+                target_item, QAbstractItemView.ScrollHint.PositionAtCenter
+            )
+        else:
+            self.events_list.scrollToBottom()
         self._highlight_history_by_current_time(scroll_to_active=False)
 
     def _append_history(
@@ -5165,6 +5352,67 @@ class ScoutPanel(QWidget):
         self._refresh_setter_numbers()
         self._update_outer_service_hints()
         self._update_reception_formation_display()
+        self._update_set_scores_display()
+        self._update_set_nav_buttons()
+
+    def _update_set_scores_display(self):
+        match_id = self.current_context.get("match_id") if self.current_context else None
+        if not match_id or not self.db:
+            self.set_scores_label.setVisible(False)
+            return
+        try:
+            from volleyball_scout.core.models import MatchSet
+            with self.db.session_scope() as session:
+                sets = (
+                    session.query(MatchSet)
+                    .filter(MatchSet.match_id == match_id)
+                    .order_by(MatchSet.set_number)
+                    .all()
+                )
+            parts = []
+            for s in sets:
+                sh = int(s.score_home or 0)
+                sa = int(s.score_away or 0)
+                if sh > 0 or sa > 0:
+                    parts.append(f"S{s.set_number}: {sh}-{sa}")
+            if parts:
+                self.set_scores_label.setText(" | ".join(parts))
+                self.set_scores_label.setVisible(True)
+            else:
+                self.set_scores_label.setVisible(False)
+        except Exception:
+            self.set_scores_label.setVisible(False)
+
+    def _update_set_nav_buttons(self):
+        current = int(self.current_context.get("set_number", 1))
+        print(f"[DEBUG] _update_set_nav_buttons: current={current}")
+        self.btn_prev_set.setEnabled(current > 1)
+        self.btn_next_set.setEnabled(current < 5)
+        self.set_info.setText(f"Set {current}")
+
+    def _switch_to_set(self, set_number: int):
+        set_number = max(1, min(5, int(set_number)))
+        current = int(self.current_context.get("set_number", 1))
+        print(f"[DEBUG] _switch_to_set: {current} -> {set_number}")
+        if set_number == current:
+            return
+        self.current_context["set_number"] = set_number
+        self.current_set_id = None
+        self._load_set_state_from_db(allow_redirect=False)
+        print(f"[DEBUG] _switch_to_set: dopo load, set_number={self.current_context.get('set_number')}")
+        self._populate_court_from_lineup()
+        self._refresh_view()
+        self._clear_player_highlight()
+        self.serve_overlay.clear_trajectory()
+        self.subtitle.setText(f"Set {set_number} caricato")
+
+    def _go_to_prev_set(self):
+        current = int(self.current_context.get("set_number", 1))
+        self._switch_to_set(current - 1)
+
+    def _go_to_next_set(self):
+        current = int(self.current_context.get("set_number", 1))
+        self._switch_to_set(current + 1)
 
     def _register_skill_event(self, skill_name: str):
         # Registra un evento skill rapido
@@ -5381,6 +5629,7 @@ class ScoutPanel(QWidget):
         )
 
         self.rally_history.append({"snapshot": snapshot, "event_id": event_id})
+        self._save_set_scores()
 
         self._append_history(
             f"{self._format_elapsed()} | Punto {point_result['team_name']} -> {point_result['score_home']}-{point_result['score_away']}",
@@ -5737,7 +5986,6 @@ class ScoutPanel(QWidget):
         )
 
     def _history_kind_from_event(self, event) -> str:
-        # Determina il tipo di storico da un evento DB
         raw_kind = str(getattr(event, "special_code", "") or "").upper()
         if raw_kind in {
             self.HISTORY_KIND_POINT,
@@ -5746,6 +5994,10 @@ class ScoutPanel(QWidget):
         }:
             return raw_kind
 
+        skill = getattr(event, "skill", None)
+        if skill and str(skill).strip():
+            return self.HISTORY_KIND_SKILL
+
         note = (getattr(event, "notes", "") or "").strip().lower()
         if note.startswith("punto"):
             return self.HISTORY_KIND_POINT
@@ -5753,8 +6005,8 @@ class ScoutPanel(QWidget):
             return self.HISTORY_KIND_SKILL
         return self.HISTORY_KIND_SYSTEM
 
-    def _load_set_state_from_db(self):
-        """Carica punteggio/eventi già salvati del set corrente (se disponibili)."""
+    def _load_set_state_from_db(self, allow_redirect=True):
+        """Carica punteggio/eventi già salvati del set corrente."""
         self.current_set_id = None
         self.event_counter = 0
         self.history_records = []
@@ -5766,27 +6018,31 @@ class ScoutPanel(QWidget):
 
         try:
             with self.db.session_scope() as session:
-                from volleyball_scout.core.models import ScoutEvent
+                from volleyball_scout.core.models import MatchSet, ScoutEvent
 
                 set_record = self._ensure_set_record(session)
                 if set_record is not None:
-                    self.current_context["score_home"] = int(set_record.score_home or 0)
-                    self.current_context["score_away"] = int(set_record.score_away or 0)
+                    self.current_context["score_home"] = 0
+                    self.current_context["score_away"] = 0
                     self.elapsed_seconds = int(set_record.duration or 0)
                     self.elapsed_seconds_exact = float(max(0, self.elapsed_seconds))
 
+                    match_id = self.current_context.get("match_id")
+
                     events = (
                         session.query(ScoutEvent)
-                        .filter(
-                            ScoutEvent.match_id == self.current_context.get("match_id")
-                        )
-                        .filter(ScoutEvent.set_id == set_record.id)
+                        .filter(ScoutEvent.match_id == match_id)
                         .order_by(ScoutEvent.id.asc())
                         .all()
                     )
 
+                    current_set_num = int(self.current_context.get("set_number", 1) or 1)
+                    self._history_target_index = None
                     for event in events:
+                        set_n = event.match_set.set_number if event.match_set else 1
                         note = event.notes or "Evento scouting"
+                        rot = getattr(event, "rotation", None)
+                        rot_str = f" [R{rot}]" if rot and rot > 0 else ""
                         timestamp_text = self._format_seconds(
                             int(getattr(event, "video_timestamp", 0) or 0)
                         )
@@ -5798,7 +6054,7 @@ class ScoutPanel(QWidget):
                         )
                         self.history_records.append(
                             {
-                                "text": f"{timestamp_text} | {note}",
+                                "text": f"[S{set_n}] {timestamp_text}{rot_str} | {note}",
                                 "event_id": event.id,
                                 "kind": self._history_kind_from_event(event),
                                 "timestamp_seconds": event_timestamp,
@@ -5808,6 +6064,8 @@ class ScoutPanel(QWidget):
                             self.event_counter = max(
                                 self.event_counter, int(event.rally_number)
                             )
+                        if set_n == current_set_num and self._history_target_index is None:
+                            self._history_target_index = len(self.history_records) - 1
 
             self._apply_history_filter()
 
@@ -5816,31 +6074,9 @@ class ScoutPanel(QWidget):
 
     def load_match_context(self, context: dict):
         """Carica match e formazioni nella vista scouting live."""
+        self._migrate_schema()
+        self._formations_by_rotation = {"home": {}, "away": {}}
         if not context:
-            self.current_context = {}
-            self.current_set_id = None
-            self.event_counter = 0
-            self.rally_history.clear()
-            self.serving_side = "home"
-            self.history_records = []
-            self.active_history_event_id = None
-            self.timeouts_used = {"home": 0, "away": 0}
-            self.video_timestamp_seconds = None
-            self.video_source_info = {}
-            self.video_is_live = False
-            self.video_paused = False
-            self.timer_was_running_before_video_pause = False
-            self._resume_video_seconds = None
-            self._last_saved_video_second = None
-            self.initial_service_selected = False
-            self._exit_serve_mode()
-            self._exit_attack_mode()
-            self.setter_number_by_side = {"home": None, "away": None}
-            self._libero_active_player = {"home": None, "away": None}
-            self._original_libero = {"home": None, "away": None}
-            self.reception_rotation_hint = {"home": "-", "away": "-"}
-            self.reception_manual_positions = {"home": {}, "away": {}}
-            self._formations_by_rotation = {"home": {}, "away": {}}
             self.point_outcome_map = self._load_point_outcome_map("global")
             self.events_list.clear()
             if self.timer_running:
@@ -5848,7 +6084,6 @@ class ScoutPanel(QWidget):
             self.elapsed_seconds = 0
             self.elapsed_seconds_exact = 0.0
             self._reset_timer_ui()
-
             self.subtitle.setText(
                 "Conferma una formazione del primo set per iniziare lo scouting"
             )
@@ -5880,6 +6115,8 @@ class ScoutPanel(QWidget):
         self.current_context.setdefault("score_home", 0)
         self.current_context.setdefault("score_away", 0)
         self.current_context.setdefault("set_number", 1)
+        print(f"[DEBUG] load_match_context: set_number iniziale = {self.current_context.get('set_number')}")
+        print(f"[DEBUG] load_match_context: match_id = {self.current_context.get('match_id')}")
         self.current_context.setdefault("home_team", {})
         self.current_context.setdefault("away_team", {})
         self.current_context["home_team"].setdefault("lineup", {})
@@ -5954,7 +6191,22 @@ class ScoutPanel(QWidget):
         self._clear_player_highlight()
 
         self._load_set_state_from_db()
-        if self._resume_video_seconds is not None:
+
+        self._populate_court_from_lineup()
+
+        n_events = len(self.history_records)
+        logger.info("load_match_context: n_eventi caricati=%d", n_events)
+        if hasattr(self, "subtitle"):
+            if n_events > 0:
+                self.subtitle.setText(f"{n_events} eventi caricati dal DB. Pronto.")
+            else:
+                self.subtitle.setText("Nessun evento trovato. Inizia lo scouting.")
+
+        if self.history_records:
+            first_ts = self.history_records[0].get("timestamp_seconds", 0)
+            self.elapsed_seconds = int(first_ts)
+            self.elapsed_seconds_exact = float(first_ts)
+        elif self._resume_video_seconds is not None:
             self.elapsed_seconds_exact = float(max(0.0, self._resume_video_seconds))
             self.elapsed_seconds = int(self.elapsed_seconds_exact)
         else:
@@ -5988,7 +6240,10 @@ class ScoutPanel(QWidget):
         match_id = self.current_context.get("match_id", "-")
 
         if self.initial_service_selected:
-            self.subtitle.setText("Formazioni set caricate. Pronto per scoutizzare.")
+            msg = "Formazioni set caricate. Pronto per scoutizzare."
+            if n_events:
+                msg = f"{n_events} eventi caricati. {msg}"
+            self.subtitle.setText(msg)
         else:
             self.subtitle.setText(
                 "Seleziona la battuta iniziale per iniziare lo scouting."
@@ -6004,6 +6259,29 @@ class ScoutPanel(QWidget):
 
         self._highlight_history_by_current_time(scroll_to_active=False)
         self.setFocus()
+
+    def _migrate_schema(self):
+        try:
+            if self.db:
+                from sqlalchemy import text as sa_text
+                with self.db.session_scope() as session:
+                    session.execute(sa_text("ALTER TABLE scout_events ADD COLUMN rotation INTEGER DEFAULT 1"))
+        except Exception:
+            pass
+        try:
+            if self.db:
+                from sqlalchemy import text as sa_text
+                with self.db.session_scope() as session:
+                    session.execute(sa_text("ALTER TABLE match_sets ADD COLUMN home_lineup TEXT DEFAULT NULL"))
+        except Exception:
+            pass
+        try:
+            if self.db:
+                from sqlalchemy import text as sa_text
+                with self.db.session_scope() as session:
+                    session.execute(sa_text("ALTER TABLE match_sets ADD COLUMN away_lineup TEXT DEFAULT NULL"))
+        except Exception:
+            pass
 
     def closeEvent(self, event):
         """Gestisce la chiusura del pannello di scouting."""

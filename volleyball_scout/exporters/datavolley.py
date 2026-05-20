@@ -1,9 +1,3 @@
-"""
-Volleyball Scout - DataVolley Exporter
-Genera file .dvw compatibile con DataVolley 4 / DataProject
-Formato documentato: DataProject DVW specification
-"""
-
 import logging
 import re
 from datetime import datetime
@@ -16,31 +10,22 @@ from volleyball_scout.core.models import Match, MatchSet, Player, ScoutEvent, Te
 
 logger = logging.getLogger(__name__)
 
+SKILL_TO_DV = {
+    "S": "SQ",
+    "R": "RQ",
+    "A": "AH",
+    "F": "FU",
+    "B": "BH",
+    "D": "DH",
+    "E": "SE",
+}
+
 
 class DataVolleyExporter:
-    """
-    Esporta una partita nel formato .dvw (DataVolley 4)
-
-    Struttura del file .dvw:
-    [3SCOUT]         - header versione
-    [3PLAYERS-H]     - roster squadra casa
-    [3PLAYERS-V]     - roster squadra ospite
-    [3SETS]          - punteggi set
-    [3SCOUT]         - eventi di scouting (corpo principale)
-    """
-
-    DVW_VERSION = "4"
-    DVW_ENCODING = "utf-8"
-
     def __init__(self, session: Session):
         self.session = session
 
-    # ──────────────────────────────────
-    #  Entry point pubblico
-    # ──────────────────────────────────
-
     def export(self, match_id: int, output_path: str | Path) -> Path:
-        """Esporta la partita match_id nel file output_path"""
         output_path = Path(output_path)
         match = self.session.get(Match, match_id)
         if not match:
@@ -60,216 +45,128 @@ class DataVolleyExporter:
             .all()
         )
 
-        with open(output_path, "w", encoding=self.DVW_ENCODING, newline="\r\n") as f:
-            self._write_header(f, match)
+        with open(output_path, "w", encoding="utf-8", newline="\r\n") as f:
+            self._write_dvheader(f, match)
+            self._write_match(f, match)
+            self._write_teams(f, match)
+            self._write_set(f, sets)
             self._write_players(f, match.home_team, "H")
             self._write_players(f, match.away_team, "V")
-            self._write_sets(f, sets)
-            self._write_scout_section(f, events)
+            self._write_video(f, match)
+            self._write_scout(f, events, match)
 
-        logger.info("✅ Export DVW: %s (%d eventi)", output_path, len(events))
+        logger.info("Export DVW: %s (%d eventi)", output_path, len(events))
         return output_path
 
-    # ──────────────────────────────────
-    #  Sezioni del file
-    # ──────────────────────────────────
+    def _write_dvheader(self, f: TextIO, match: Match):
+        f.write("[3DATAVOLLEYSCOUT]\n")
+        f.write("FILEFORMAT: 2.0\n")
+        f.write(f"GENERATOR-DAY: {match.date:%d/%m/%Y %H:%M}\n")
+        f.write("GENERATOR-IDP: SCOUT\n")
+        f.write("GENERATOR-PRG: Volleyball Scout\n")
+        f.write("GENERATOR-REL: 1.0\n")
+        f.write("GENERATOR-VER: Professional\n")
+        f.write("GENERATOR-NAM: \n")
+        f.write("LASTCHANGE-DAY: \n")
+        f.write("LASTCHANGE-IDP: DVW\n")
+        f.write("LASTCHANGE-PRG: Volleyball Scout\n")
+        f.write("LASTCHANGE-REL: 1.0\n")
+        f.write("LASTCHANGE-VER: Professional\n")
+        f.write("LASTCHANGE-NAM: \n")
 
-    def _write_header(self, f: TextIO, match: Match):
-        # Scrive l'intestazione [3SCOUT] del file DVW.
-        f.write("[3SCOUT]\n")
-        f.write(f"GAME DATE:{match.date:%d/%m/%Y}\n")
-        f.write(f"GAME TIME:{match.date:%H:%M}\n")
-        f.write(f"SEASON:{match.date.year}/{match.date.year + 1}\n")
-        f.write(f"CHAMPIONSHIP:{match.competition or ''}\n")
-        f.write(f"LEG:\n")
-        f.write(f"VENUE:{match.venue or ''}\n")
-        f.write(f"HOME TEAM:{match.home_team.name}\n")
-        f.write(f"VISITING TEAM:{match.away_team.name}\n")
-        f.write(f"HOME COACH:\n")
-        f.write(f"VISITING COACH:\n")
-        f.write(f"COMMENTS:{match.notes or ''}\n")
-        f.write(f"SCOUT:\n")
-        f.write(f"VIDEO:{Path(match.video_path).name if match.video_path else ''}\n")
-        # Set scores
-        sets = sorted(match.sets, key=lambda s: s.set_number)
-        for i, s in enumerate(sets, 1):
-            f.write(f"SET {i}:{s.score_home}-{s.score_away}\n")
-        f.write("\n")
+    def _write_match(self, f: TextIO, match: Match):
+        f.write("[3MATCH]\n")
+        home_code = (match.home_team.short_name or match.home_team.name[:3].upper()) if match.home_team else "HOME"
+        away_code = (match.away_team.short_name or match.away_team.name[:3].upper()) if match.away_team else "AWAY"
+        home_name = match.home_team.name if match.home_team else "Casa"
+        away_name = match.away_team.name if match.away_team else "Ospiti"
+        f.write(
+            f"{match.date:%d/%m/%Y};{match.date:%H.%M.%S};;{match.competition or ''};;;"
+            f"5;;1252;1;Z;0;{home_name};{home_code};{away_name};{away_code};\n"
+        )
+
+    def _write_teams(self, f: TextIO, match: Match):
+        f.write("[3TEAMS]\n")
+        if match.home_team:
+            code = match.home_team.short_name or match.home_team.name[:3].upper()
+            name = match.home_team.name
+            f.write(f"{code};{name};;; ;16777215;;;;\n")
+        if match.away_team:
+            code = match.away_team.short_name or match.away_team.name[:3].upper()
+            name = match.away_team.name
+            f.write(f"{code};{name};;; ;16777215;;;;\n")
+
+    def _write_set(self, f: TextIO, sets: list[MatchSet]):
+        f.write("[3SET]\n")
+        for s in sorted(sets, key=lambda x: x.set_number):
+            scores = [f"{s.score_home} -{s.score_away}"]
+            f.write(f"True;{' ;'.join(scores * 5)};\n")
+        for _ in range(5 - len(sets)):
+            f.write("False;;;;;;\n")
 
     def _write_players(self, f: TextIO, team: Team, side: str):
-        # Scrive la sezione [3PLAYERS] del file DVW.
         f.write(f"[3PLAYERS-{side}]\n")
         players = sorted(team.players, key=lambda p: p.number)
         for p in players:
-            libero_flag = "*" if p.is_libero else ""
+            libero_flag = "L" if p.is_libero else ""
             f.write(
-                f"{p.number};{p.last_name};{p.first_name or ''};{p.role or ''};{libero_flag}\n"
+                f"0;{p.number};{p.number};;;;;"
+                f"{p.last_name[:7]};{p.last_name};{p.first_name or ''};;;0;{libero_flag};;\n"
             )
+
+    def _write_video(self, f: TextIO, match: Match):
+        f.write("[3VIDEO]\n")
+        if match.video_path:
+            f.write(f"Camera0={match.video_path}\n")
         f.write("\n")
 
-    def _write_sets(self, f: TextIO, sets: list[MatchSet]):
-        # Scrive la sezione [3SETS] del file DVW.
-        f.write("[3SETS]\n")
-        for s in sets:
-            duration = s.duration or 0
-            minutes = duration // 60
-            seconds = duration % 60
-            f.write(
-                f"{s.set_number};{s.score_home};{s.score_away};{minutes:02d}:{seconds:02d}\n"
-            )
-        f.write("\n")
-
-    def _write_scout_section(self, f: TextIO, events: list[ScoutEvent]):
-        # Scrive la sezione eventi [3SCOUT] del file DVW.
+    def _write_scout(self, f: TextIO, events: list[ScoutEvent], match: Match):
         f.write("[3SCOUT]\n")
+        current_set = 0
         for ev in events:
-            line = self._event_to_dvw_line(ev)
-            f.write(line + "\n")
-        f.write("\n")
+            if ev.set_id:
+                ms = self.session.get(MatchSet, ev.set_id)
+                set_num = ms.set_number if ms else 1
+            else:
+                set_num = 1
 
-    # ──────────────────────────────────
-    #  Formato riga evento DataVolley
-    # ──────────────────────────────────
+            if set_num != current_set:
+                if current_set > 0:
+                    pass
+                current_set = set_num
 
-    def _event_to_dvw_line(self, ev: ScoutEvent) -> str:
-        """
-        Formato DVW riga scouting:
-        *aNN SS EE ZZ CC II VV TT score-h score-v video_time
+            line = self._event_to_line(ev, set_num)
+            if line:
+                f.write(line + "\n")
 
-        Campi:
-        a    = side (a=home, b=away)
-        NN   = numero maglia (02)
-        SS   = skill code (A/B/D/E/F/R/S)
-        EE   = evaluation code (#/+/!/−/=//)
-        ZZ   = zona partenza
-        CC   = codice combinazione
-        II   = codice alzata
-        VV   = zona fine
-        TT   = codice speciale
-        """
-        side = ev.team_side or "a"
+    def _event_to_line(self, ev: ScoutEvent, set_num: int) -> str | None:
+        skill_dv = SKILL_TO_DV.get(ev.skill, ev.skill or "??")
         number = f"{ev.player.number:02d}" if ev.player else "00"
-        skill = ev.skill or "-"
-        ev_code = ev.evaluation or "-"
-        z_start = ev.zone_start or "0"
-        z_end = ev.zone_end or "0"
-        combo = ev.attack_combo or "--"
-        setcode = ev.set_code or "--"
-        special = ev.special_code or "--"
-        score_h = f"{ev.score_home:02d}"
-        score_v = f"{ev.score_away:02d}"
+        eval_code = ev.evaluation or "-"
+        team_prefix = "*" if ev.team_side == "a" else "a"
+        combo = ev.attack_combo or ""
+        score_h = ev.score_home or 0
+        score_a = ev.score_away or 0
+        rally = ev.rally_number or 0
+        ts_str = ""
+        if ev.video_timestamp is not None:
+            vm = int(ev.video_timestamp) // 60
+            vs = int(ev.video_timestamp) % 60
+            ts_str = f"{vm:02d}:{vs:02d}"
 
-        # Timestamp video in formato mm:ss.ff
-        vt = ev.video_timestamp or 0.0
-        vm = int(vt) // 60
-        vs = int(vt) % 60
-        vf = int((vt % 1) * 100)
-        vid_str = f"{vm:02d}:{vs:02d}.{vf:02d}"
+        zone_suffix = ""
+        if ev.zone_start and ev.zone_end:
+            zone_suffix = f"{ev.zone_start}{ev.zone_end}"
+        elif ev.zone_start:
+            zone_suffix = f"{ev.zone_start}"
+
+        code = f"{team_prefix}{number}{skill_dv}{eval_code}"
+        if zone_suffix:
+            code += f"~{zone_suffix}"
+        if combo:
+            code += f"~{combo}"
 
         return (
-            f"*{side}{number}{skill}{ev_code}{z_start}{combo}{setcode}"
-            f"{z_end}{special} {score_h}{score_v} {vid_str}"
+            f"{code};;;;;;;{ts_str};{set_num};1;1;{score_h};{rally};;"
+            f"0;0;0;0;0;0;0;0;0;0;0;0;"
         )
-
-    # ──────────────────────────────────
-    #  Import da .dvw (reverse)
-    # ──────────────────────────────────
-
-    def import_dvw(self, dvw_path: str | Path) -> dict:
-        """
-        Legge un file .dvw esistente e ritorna i dati parsed.
-        Utile per importare partite già schedate con DataVolley ufficiale.
-        """
-        dvw_path = Path(dvw_path)
-        result = {
-            "header": {},
-            "players_home": [],
-            "players_away": [],
-            "sets": [],
-            "events": [],
-        }
-
-        with open(dvw_path, encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-
-        section = None
-        for raw in lines:
-            line = raw.strip()
-            if not line:
-                continue
-            if line.startswith("[3PLAYERS-H]"):
-                section = "players_home"
-                continue
-            elif line.startswith("[3PLAYERS-V]"):
-                section = "players_away"
-                continue
-            elif line.startswith("[3SETS]"):
-                section = "sets"
-                continue
-            elif line.startswith("[3SCOUT]"):
-                section = "scout"
-                continue
-            elif line.startswith("["):
-                section = None
-                continue
-
-            if section == "players_home" or section == "players_away":
-                parts = line.split(";")
-                if len(parts) >= 2:
-                    result[section].append(
-                        {
-                            "number": int(parts[0]) if parts[0].isdigit() else 0,
-                            "last_name": parts[1] if len(parts) > 1 else "",
-                            "first_name": parts[2] if len(parts) > 2 else "",
-                            "role": parts[3] if len(parts) > 3 else "",
-                            "is_libero": "*" in (parts[4] if len(parts) > 4 else ""),
-                        }
-                    )
-
-            elif section == "sets":
-                parts = line.split(";")
-                if len(parts) >= 3:
-                    result["sets"].append(
-                        {
-                            "set_number": int(parts[0]),
-                            "score_home": int(parts[1]),
-                            "score_away": int(parts[2]),
-                        }
-                    )
-
-            elif section == "scout" and line.startswith("*"):
-                parsed = self._parse_dvw_line(line)
-                if parsed:
-                    result["events"].append(parsed)
-
-        return result
-
-    def _parse_dvw_line(self, line: str) -> dict | None:
-        """Parsing di una singola riga scouting .dvw"""
-        try:
-            # *aNNSEZCCIIVTT ssss mm:ss.ff
-            m = re.match(
-                r"\*([ab])(\d{2})([ABDEFRS\-])([#+!\-=/])(\d)(..)(..)(.)(..)?\s+(\d{2})(\d{2})\s+(\d{2}):(\d{2})\.(\d{2})",
-                line,
-            )
-            if not m:
-                return None
-            g = m.groups()
-            vt = int(g[11]) * 60 + int(g[12]) + int(g[13]) / 100.0
-            return {
-                "team_side": g[0],
-                "player_number": int(g[1]),
-                "skill": g[2],
-                "evaluation": g[3],
-                "zone_start": g[4],
-                "attack_combo": g[5],
-                "set_code": g[6],
-                "zone_end": g[7],
-                "special_code": g[8],
-                "score_home": int(g[9]),
-                "score_away": int(g[10]),
-                "video_timestamp": vt,
-            }
-        except Exception as e:
-            logger.debug("Parse line failed '%s': %s", line[:40], e)
-            return None

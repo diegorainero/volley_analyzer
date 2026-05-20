@@ -360,6 +360,8 @@ class VolleyballScoutApp(QMainWindow):
             self.roster_widget = RosterSetupWidget(self.db)
             if hasattr(self.roster_widget, "scout_resume_requested"):
                 self.roster_widget.scout_resume_requested.connect(self._on_scout_ready)
+            if hasattr(self.roster_widget, "match_deleted"):
+                self.roster_widget.match_deleted.connect(self._on_match_deleted)
         else:
             self.roster_widget = PlaceholderWidget("🧾 Gestione incontri")
         self.content_stack.addWidget(self.roster_widget)
@@ -448,6 +450,14 @@ class VolleyballScoutApp(QMainWindow):
         else:
             self.stats_view = PlaceholderWidget("📈 Statistiche")
         self.content_stack.addWidget(self.stats_view)
+
+    def _on_match_deleted(self, match_id: int):
+        if hasattr(self, "formation_widget") and hasattr(
+            self.formation_widget, "matches_widget"
+        ):
+            self.formation_widget.matches_widget._load_matches()
+        if hasattr(self, "dashboard") and hasattr(self.dashboard, "refresh"):
+            self.dashboard.refresh()
 
     def _on_section_selected(self, section_id: str):
         """Cambia la sezione visualizzata"""

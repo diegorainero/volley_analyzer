@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -58,6 +59,8 @@ class RosterSetupWidget(QWidget):
     roster_completed = pyqtSignal()
     # Signal emesso quando va aperto direttamente lo scouting live
     scout_resume_requested = pyqtSignal(dict)
+    # Signal emesso quando una partita viene eliminata
+    match_deleted = pyqtSignal(int)
 
     def __init__(
         self, db_manager: DatabaseManager, match_id: int | None = None, parent=None
@@ -167,6 +170,10 @@ class RosterSetupWidget(QWidget):
 
         self.matches_list = QListWidget()
         self.matches_list.itemClicked.connect(self._on_match_selected)
+        self.matches_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.matches_list.customContextMenuRequested.connect(
+            lambda pos: self._show_context_menu(pos, "available")
+        )
         matches_layout.addWidget(self.matches_list)
 
         matches_section.setLayout(matches_layout)
@@ -182,6 +189,12 @@ class RosterSetupWidget(QWidget):
         )
         self.completed_matches_list.itemClicked.connect(
             self._on_completed_match_selected
+        )
+        self.completed_matches_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.completed_matches_list.customContextMenuRequested.connect(
+            lambda pos: self._show_context_menu(pos, "completed")
         )
         completed_layout.addWidget(self.completed_matches_list)
 
@@ -836,6 +849,84 @@ class RosterSetupWidget(QWidget):
             "Apertura scouting non riuscita",
             "Impossibile aprire la partita terminata in modalità modifica.",
         )
+
+    def _show_context_menu(self, pos, list_type: str):
+        """Mostra il menu contestuale al click destro su una lista partite."""
+        target_list = (
+            self.matches_list
+            if list_type == "available"
+            else self.completed_matches_list
+        )
+        item = target_list.itemAt(pos)
+        if not item:
+            return
+
+        metadata = self._extract_match_item_metadata(item)
+        match_id = metadata.get("match_id")
+        if not match_id:
+            return
+
+        menu = QMenu(self)
+
+        action_open = menu.addAction("Apri incontro")
+        action_open.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogStart)
+        )
+        action_open.triggered.connect(
+            lambda: self._open_match_from_item(item, list_type)
+        )
+
+        action_delete = menu.addAction("Elimina incontro")
+        action_delete.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
+        action_delete.triggered.connect(
+            lambda: self._confirm_and_delete_match(match_id)
+        )
+
+        menu.exec(target_list.viewport().mapToGlobal(pos))
+
+    def _open_match_from_item(self, item, list_type: str):
+        """Apre la partita in base al tipo di lista."""
+        if list_type == "available":
+            self.matches_list.setCurrentItem(item)
+            self._on_match_selected(item)
+        else:
+            self.completed_matches_list.setCurrentItem(item)
+            self._on_completed_match_selected(item)
+
+    def _confirm_and_delete_match(self, match_id: int):
+        """Elimina il match dopo conferma. Non elimina squadre e giocatori."""
+        reply = QMessageBox.question(
+            self,
+            "Conferma eliminazione",
+            "Eliminare la partita selezionata?\n"
+            "Tutti i dati associati (eventi scout, formazioni, roster) "
+            "verranno rimossi definitivamente.\n\n"
+            "Squadre e giocatori non verranno eliminati.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSetReceptionLayout
+
+                session.query(MatchSetReceptionLayout).filter(
+                    MatchSetReceptionLayout.match_id == match_id
+                ).delete()
+                match = session.query(Match).filter_by(id=match_id).first()
+                if match is not None:
+                    session.delete(match)
+
+            self.load_matches()
+            self.match_deleted.emit(match_id)
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Errore",
+                f"Impossibile eliminare la partita: {e}",
+            )
 
     def _on_new_match_clicked(self):
         """Apri il dialog per creare una nuova partita"""
