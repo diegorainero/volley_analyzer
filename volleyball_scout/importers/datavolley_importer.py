@@ -10,21 +10,12 @@ from volleyball_scout.core.models import Match, MatchSet, Player, ScoutEvent, Te
 logger = logging.getLogger(__name__)
 
 SKILL_MAP = {
-    "SQ": "S",
+    "SQ": "S", "SH": "S", "SM": "S", "SF": "S",
     "RQ": "R",
-    "SE": "E",
-    "AH": "A",
-    "AU": "A",
-    "AM": "A",
-    "AQ": "A",
-    "AO": "A",
-    "TT": "A",
-    "FU": "F",
-    "FH": "F",
-    "BH": "B",
-    "BM": "B",
-    "BO": "B",
-    "BD": "B",
+    "SE": "E", "EH": "E", "EU": "E", "EQ": "E", "EO": "E", "EM": "E", "EP": "E",
+    "AH": "A", "AU": "A", "AM": "A", "AQ": "A", "AO": "A", "TT": "A",
+    "FU": "F", "FH": "F",
+    "BH": "B", "BM": "B", "BO": "B", "BD": "B",
     "DH": "D",
 }
 
@@ -322,6 +313,8 @@ class DataVolleyImporter:
         rotation_home = 1
         rotation_away = 1
         lineup_stored = set()  # set_numbers for which lineup was already stored
+        setter_home: str | None = None
+        setter_away: str | None = None
 
         for line in scout_lines:
             try:
@@ -433,6 +426,25 @@ class DataVolleyImporter:
                     self.session.add(event)
                     continue
 
+                if kind in ("formation", "formation_zone"):
+                    # Linee formazione (P13>LUp, z4>LUp): i dati lineup/giratore
+                    # sono già estratti dal loop principale; non generano eventi.
+                    if kind == "formation":
+                        pn = parsed.get("player_number")
+                        if pn is not None:
+                            if team_side == "home" and setter_home is None:
+                                setter_home = str(pn)
+                            elif team_side == "away" and setter_away is None:
+                                setter_away = str(pn)
+                    if kind == "formation_zone" and parsed.get("zone_number") is not None:
+                        zn = parsed["zone_number"]
+                        if 1 <= zn <= 6:
+                            if team_side == "home":
+                                rotation_home = zn
+                            else:
+                                rotation_away = zn
+                    continue
+
                 if kind == "action":
                     rally += 1
                     ts = self._extract_timestamp(line)
@@ -487,6 +499,40 @@ class DataVolleyImporter:
                 logger.debug("Skipping unparsable line: %s", line[:60])
                 continue
 
+        # Imposta palleggiatore rilevato dalle linee P{n}>LUp
+        if setter_home:
+            self._store_setter_role(match, home_team, setter_home)
+        if setter_away:
+            self._store_setter_role(match, away_team, setter_away)
+
+    def _store_setter_role(self, match: Match, team: Team, player_number: str):
+        from volleyball_scout.core.models import MatchPlayer
+        player = (
+            self.session.query(Player)
+            .filter(Player.team_id == team.id, Player.number == int(player_number))
+            .first()
+        )
+        if player is None:
+            return
+        existing = (
+            self.session.query(MatchPlayer)
+            .filter_by(match_id=match.id, player_id=player.id)
+            .first()
+        )
+        if existing is not None:
+            if not existing.role:
+                existing.role = "palleggiatore"
+        else:
+            mp = MatchPlayer(
+                match_id=match.id,
+                team_id=team.id,
+                player_id=player.id,
+                number=player.number,
+                role="palleggiatore",
+                is_starter=True,
+            )
+            self.session.add(mp)
+
     def _extract_lineup(self, line: str) -> dict | None:
         parts = line.split(";")
         if len(parts) < 26:
@@ -537,6 +583,31 @@ class DataVolleyImporter:
             if m:
                 return {"kind": "set_marker", "set_number": int(m.group(1)), "team_side": team_side}
             return None
+
+        # Linee di formazione/azioni speciali con ">" (es: P13>LUp, z4>LUp)
+        if ">" in code_part:
+            left, right = code_part.split(">", 1)
+            action_code = right.strip()
+
+            p_m = re.match(r"P(\d+)", left)
+            if p_m:
+                return {
+                    "kind": "formation",
+                    "team_side": team_side,
+                    "player_number": int(p_m.group(1)),
+                    "action_code": action_code,
+                }
+
+            z_m = re.match(r"z(\d)", left)
+            if z_m:
+                return {
+                    "kind": "formation_zone",
+                    "team_side": team_side,
+                    "zone_number": int(z_m.group(1)),
+                    "action_code": action_code,
+                }
+
+            return {"kind": "formation", "team_side": team_side, "action_code": action_code}
 
         m_p = re.match(r"P(\d+)", code_part)
         if m_p:

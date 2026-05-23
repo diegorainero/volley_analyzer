@@ -5,6 +5,8 @@ Volleyball Scout - Main PyQt6 Application with Integrated Menu Navigation
 import sys
 from pathlib import Path
 
+from volleyball_scout.ui.window_utils import clamp_window_to_screen
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -272,7 +274,8 @@ class VolleyballScoutApp(QMainWindow):
         # Inizializza l'applicazione principale con navigazione integrata.
         super().__init__()
         self.setWindowTitle("🏐 Volleyball Scout")
-        self.setGeometry(100, 100, 1600, 900)
+        self.setGeometry(100, 100, 1400, 780)
+        clamp_window_to_screen(self, fallback_width=1400, fallback_height=780)
 
         # Initialize Database
         try:

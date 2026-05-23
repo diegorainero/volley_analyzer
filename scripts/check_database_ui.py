@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from volleyball_scout.core.database import DatabaseManager
 from volleyball_scout.core.models import Match, Player, Team
+from volleyball_scout.ui.window_utils import clamp_window_to_screen
 
 
 class DatabaseCheckUI(QMainWindow):
@@ -37,6 +38,7 @@ class DatabaseCheckUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("🏐 Database Scout - Verificatore Squadre e Giocatori")
         self.setGeometry(100, 100, 1400, 800)
+        clamp_window_to_screen(self, fallback_width=1400, fallback_height=800)
 
         # Database
         try:

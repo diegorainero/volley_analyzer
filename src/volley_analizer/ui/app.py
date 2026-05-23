@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from PyQt6.QtGui import QGuiApplication
 
 try:
     from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -699,6 +700,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Volley Analyzer - MVP Desktop")
         self.resize(1200, 820)
+        self._clamp_to_screen(1200, 820)
         self.worker: AnalysisWorker | None = None
         self.config_store = AppConfig()
         # Detector HOG di default, ma aggiornabile da UI
@@ -710,6 +712,23 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._apply_saved_preferences()
         self._build_menus()
+
+    def _clamp_to_screen(self, fallback_w: int, fallback_h: int) -> None:
+        screens = QGuiApplication.screens()
+        if not screens:
+            return
+        target = screens[0]
+        for s in screens:
+            if s.geometry().contains(self.pos()):
+                target = s
+                break
+        geo = target.availableGeometry()
+        cur = self.geometry()
+        new_w = min(cur.width(), geo.width())
+        new_h = min(cur.height(), geo.height())
+        new_x = max(geo.x(), min(cur.x(), geo.x() + geo.width() - new_w))
+        new_y = max(geo.y(), min(cur.y(), geo.y() + geo.height() - new_h))
+        self.setGeometry(new_x, new_y, new_w, new_h)
 
     def _apply_saved_preferences(self) -> None:
         prefs = self.config_store.load_preferences()
@@ -859,6 +878,16 @@ class MainWindow(QMainWindow):
         open_report_action = QAction("Apri report...", self)
         open_report_action.triggered.connect(self._open_report_dialog)
         report_menu.addAction(open_report_action)
+
+        scout_menu = menu_bar.addMenu("Scouting DV")
+        import_dvw_action = QAction("Importa file DataVolley (.dvw)...", self)
+        import_dvw_action.triggered.connect(self._open_import_dvw_dialog)
+        scout_menu.addAction(import_dvw_action)
+
+        scout_menu.addSeparator()
+        dv_codes_action = QAction("Legenda codici DataVolley...", self)
+        dv_codes_action.triggered.connect(self._open_dv_codes_dialog)
+        scout_menu.addAction(dv_codes_action)
 
         app_menu = menu_bar.addMenu("Applicazione")
         preferences_action = QAction("Preferenze...", self)
@@ -2667,6 +2696,23 @@ DETAGLI PER ZONA:
 
     def _append_log(self, message: str) -> None:
         self.log_output.appendPlainText(message)
+
+    def _open_import_dvw_dialog(self) -> None:
+        from src.volley_analizer.ui.dvw_dialog import DvwImportDialog
+
+        dialog = DvwImportDialog(self)
+        dialog.exec()
+
+    def _open_dv_codes_dialog(self) -> None:
+        from PyQt6.QtWidgets import QDialog
+        from src.volley_analizer.ui.widgets.dv_code_legend import DvSkillTable
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Legenda Codici DataVolley")
+        dialog.resize(800, 600)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(DvSkillTable(dialog))
+        dialog.exec()
 
     def _calibration_summary(self) -> str:
         points = self.config_store.load_field_points()

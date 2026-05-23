@@ -4,9 +4,12 @@ import re
 # Codici DataVolley a due lettere mappati a codici interni singoli
 DV_CODE_MAP = {
     "SQ": "S", "RQ": "R", "SE": "E",
-    "AH": "A", "AU": "A", "AM": "A", "AQ": "A",
-    "BH": "B", "BM": "B", "BO": "B",
-    "DH": "D", "FU": "F", "FH": "F",
+    "AH": "A", "AU": "A", "AM": "A", "AQ": "A", "AO": "A", "TT": "A",
+    "BH": "B", "BM": "B", "BO": "B", "BD": "B",
+    "DH": "D",
+    "FU": "F", "FH": "F",
+    "EH": "E", "EU": "E", "EQ": "E", "EO": "E", "EM": "E", "EP": "E",
+    "SH": "S", "SM": "S", "SF": "S",
 }
 
 # Costruito automaticamente: tutti i prefissi a 1 e 2 lettere
@@ -77,6 +80,41 @@ def parse_datavolley_code(
     if not scan_code:
         return {"valid": False, "error": "Codice incompleto"}
 
+    # Gestione linee formazione/azioni speciali con ">" (es: P13>LUp, z4>LUp)
+    if ">" in scan_code:
+        left, right = scan_code.split(">", 1)
+        action_code = right.strip()
+
+        player_number = None
+        zone_number = None
+        action_type = "formation"
+
+        if left.startswith("P"):
+            p_match = re.match(r"P(\d{1,2})", left)
+            if p_match:
+                player_number = p_match.group(1).zfill(2)
+        elif left.startswith("Z"):
+            z_match = re.match(r"Z(\d)", left)
+            if z_match:
+                zone_number = z_match.group(1)
+
+        return {
+            "valid": True,
+            "raw": normalized,
+            "team_side": team_side,
+            "player_number": player_number,
+            "zone_number": zone_number,
+            "action_code": action_code,
+            "special_action": action_type,
+            "skill_code": action_code,
+            "skill": "SYS",
+            "evaluation": None,
+            "zone_start": None,
+            "zone_end": None,
+            "attack_combo": None,
+            "set_code": None,
+        }
+
     found = _find_skill_in_scan(scan_code, skill_aliases)
     if found is None:
         return {
@@ -85,6 +123,7 @@ def parse_datavolley_code(
         }
 
     skill_index, skill_length, skill = found
+    skill_code_raw = scan_code[skill_index:skill_index + skill_length]
     prefix_part = scan_code[:skill_index]
     suffix_part = scan_code[skill_index + skill_length:]
 
@@ -123,6 +162,7 @@ def parse_datavolley_code(
         "raw": normalized,
         "team_side": team_side,
         "player_number": player_number,
+        "skill_code": skill_code_raw,
         "skill": skill,
         "evaluation": evaluation,
         "zone_start": zone_start,

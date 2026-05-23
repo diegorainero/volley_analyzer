@@ -61,6 +61,8 @@ try:
 except ImportError:
     RosterSetupWidget = None
 
+from volleyball_scout.ui.window_utils import clamp_window_to_screen
+
 try:
     from volleyball_scout.ui.scout_panel import ScoutPanel
 except ImportError:
@@ -682,7 +684,8 @@ class VolleyballScoutApp(QMainWindow):
         # Inizializza l'applicazione principale con menu e sezioni.
         super().__init__()
         self.setWindowTitle("Volleyball Scout")
-        self.setGeometry(100, 100, 1600, 900)
+        self.setGeometry(100, 100, 1400, 780)
+        clamp_window_to_screen(self, fallback_width=1400, fallback_height=780)
 
         # Set window icon if available
         if callable(get_logo_icon):
@@ -868,6 +871,24 @@ class VolleyballScoutApp(QMainWindow):
         action_about.triggered.connect(self._show_about)
         help_menu.addAction(action_about)
 
+        help_menu.addSeparator()
+
+        action_code_legend = QAction("Legenda codici DataVolley", self)
+        action_code_legend.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        )
+        action_code_legend.triggered.connect(self._show_code_legend)
+        help_menu.addAction(action_code_legend)
+
+    def _show_code_legend(self):
+        from .dv_code_legend import DvSkillTable
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Legenda Codici DataVolley")
+        dialog.resize(800, 600)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(DvSkillTable(dialog))
+        dialog.exec()
+
     def _import_datavolley(self):
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
         from volleyball_scout.importers.datavolley_importer import DataVolleyImporter
@@ -1013,7 +1034,7 @@ class VolleyballScoutApp(QMainWindow):
         self.content_stack.addWidget(self.stats_view)
 
     def _show_section(self, section_id: str):
-        """Mostra una sezione"""
+        """Mostra una sezione specifica."""
         section_map = {
             "dashboard": 0,
             "teams": 1,
