@@ -563,11 +563,12 @@ class AdvancedMultiObjectTracker:
         Args:
             detection: Detection object
         """
+        cx = (detection.bbox[0] + detection.bbox[2]) / 2.0
+        cy = (detection.bbox[1] + detection.bbox[3]) / 2.0
+        w = detection.bbox[2] - detection.bbox[0]
+        h = detection.bbox[3] - detection.bbox[1]
         kalman_state = KalmanState(
-            x=detection.bbox[0],
-            y=detection.bbox[1],
-            w=detection.bbox[2] - detection.bbox[0],
-            h=detection.bbox[3] - detection.bbox[1],
+            x=cx, y=cy, w=w, h=h,
         )
 
         track = AdvancedTrackState(

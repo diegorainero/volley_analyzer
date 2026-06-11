@@ -24,4 +24,5 @@ class Track:
     jersey_number: str | None = None
     field_position: tuple[float, float] | None = None
     zone: int | None = None
+    velocity: tuple[float, float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

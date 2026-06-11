@@ -8,6 +8,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -618,8 +619,12 @@ class ServeTrajectoryOverlay(QWidget):
         self._trajectory: list[QPointF] = []
         self._trajectory_color = QColor("#EF4444")
 
-    def set_trajectory(self, start: QPointF, end: QPointF, color: str = "#EF4444"):
+    def set_trajectory(self, start: QPointF, end: QPointF, color: str = "#22C55E"):
         self._trajectory = [QPointF(start), QPointF(end)]
+        self._trajectory_color = QColor(color)
+        self.update()
+
+    def set_trajectory_color(self, color: str):
         self._trajectory_color = QColor(color)
         self.update()
 
@@ -641,18 +646,14 @@ class ServeTrajectoryOverlay(QWidget):
 
         end = self._trajectory[-1]
         start = self._trajectory[0]
-        angle = -(
-            -(
-                float(
-                    __import__("math").atan2(end.y() - start.y(), end.x() - start.x())
-                )
-            )
-        )
+        dx = end.x() - start.x()
+        dy = end.y() - start.y()
+        angle = math.atan2(dy, dx)
         arrow_len = 14.0
         arrow_angle = 0.45
-        ax1 = end.x() - arrow_len * __import__("math").cos(angle - arrow_angle)
-        ay1 = end.y() - arrow_len * __import__("math").sin(angle - arrow_angle)
-        ax2 = end.x() - arrow_len * __import__("math").cos(angle + arrow_angle)
-        ay2 = end.y() - arrow_len * __import__("math").sin(angle + arrow_angle)
+        ax1 = end.x() - arrow_len * math.cos(angle - arrow_angle)
+        ay1 = end.y() - arrow_len * math.sin(angle - arrow_angle)
+        ax2 = end.x() - arrow_len * math.cos(angle + arrow_angle)
+        ay2 = end.y() - arrow_len * math.sin(angle + arrow_angle)
         p.setBrush(color)
         p.drawPolygon(end, QPointF(ax1, ay1), QPointF(ax2, ay2))

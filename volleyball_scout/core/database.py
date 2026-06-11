@@ -88,6 +88,8 @@ class DatabaseManager:
             "ALTER TABLE scout_events ADD COLUMN rotation INTEGER DEFAULT 1",
             "ALTER TABLE match_sets ADD COLUMN home_lineup TEXT DEFAULT NULL",
             "ALTER TABLE match_sets ADD COLUMN away_lineup TEXT DEFAULT NULL",
+            "ALTER TABLE match_sets ADD COLUMN timeout_home INTEGER DEFAULT 0",
+            "ALTER TABLE match_sets ADD COLUMN timeout_away INTEGER DEFAULT 0",
         ]
         with self.engine.connect() as conn:
             for sql in migrations:

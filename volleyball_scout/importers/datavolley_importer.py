@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 SKILL_MAP = {
     "SQ": "S", "SH": "S", "SM": "S", "SF": "S",
-    "RQ": "R",
+    "RQ": "R", "RM": "R",
     "SE": "E", "EH": "E", "EU": "E", "EQ": "E", "EO": "E", "EM": "E", "EP": "E",
     "AH": "A", "AU": "A", "AM": "A", "AQ": "A", "AO": "A", "TT": "A",
     "FU": "F", "FH": "F",
     "BH": "B", "BM": "B", "BO": "B", "BD": "B",
-    "DH": "D",
+    "DH": "D", "BU": "D",
 }
 
 EVAL_MAP = {"#": "#", "+": "+", "!": "!", "-": "-", "=": "=", "/": "/"}
@@ -30,6 +30,7 @@ class DataVolleyImporter:
         self.current_rotation_home = 1
         self.current_rotation_away = 1
         self.ts_reference: float = 0.0
+        self.attack_combo_map: dict[str, dict] = {}
 
     def import_file(self, dvw_path: str | Path) -> dict:
         self._migrate_schema()
@@ -45,6 +46,7 @@ class DataVolleyImporter:
         set_scores = self._parse_sets(sections)
         video_path = self._parse_video(sections)
         scout_lines = self._parse_scout_lines(sections)
+        self._parse_attack_combos(sections)
         self._compute_ts_reference(scout_lines)
 
         home_team = self._get_or_create_team(teams_data["home"])
@@ -200,6 +202,19 @@ class DataVolleyImporter:
             if line.startswith("Camera0="):
                 return line.split("=", 1)[1].strip()
         return ""
+
+    def _parse_attack_combos(self, sections: dict):
+        for line in sections.get("3ATTACKCOMBINATION", []):
+            parts = line.split(";")
+            if len(parts) >= 3:
+                code = parts[0].strip().upper()
+                self.attack_combo_map[code] = {
+                    "code": code,
+                    "category": parts[1].strip(),
+                    "side": parts[2].strip(),
+                    "type": parts[3].strip() if len(parts) > 3 else "",
+                    "description": parts[4].strip() if len(parts) > 4 else "",
+                }
 
     def _migrate_schema(self):
         try:
@@ -468,6 +483,8 @@ class DataVolleyImporter:
                     player_str = f" #{player_num}" if player_num else ""
                     note = f"{skill_code}{eval_str}{zone_str}{player_str}"
 
+                    combo_code = parsed.get("attack_combo")
+                    combo_info = self.attack_combo_map.get(combo_code.upper()) if combo_code else None
                     event = ScoutEvent(
                         match_id=match.id,
                         set_id=self._set_id(match, current_set),
@@ -476,7 +493,8 @@ class DataVolleyImporter:
                         evaluation=parsed.get("evaluation"),
                         zone_start=parsed.get("zone_start"),
                         zone_end=parsed.get("zone_end"),
-                        attack_combo=parsed.get("attack_combo"),
+                        attack_combo=combo_code,
+                        combo_type=combo_info["type"] if combo_info else None,
                         score_home=score_home,
                         score_away=score_away,
                         video_timestamp=ts,
@@ -656,19 +674,36 @@ class DataVolleyImporter:
             result["evaluation"] = m_action.group(3) or None
 
             rest = code_part[m_action.end():]
-            combo_m = re.search(r"[~=]*([A-Z0-9]{1,4})", rest)
-            if combo_m:
-                combo_raw = combo_m.group(1)
-                if len(combo_raw) >= 2:
-                    result["attack_combo"] = combo_raw[:2]
-                zone_m = re.search(r"(\d)(\d)", combo_raw)
-                if zone_m:
-                    result["zone_start"] = zone_m.group(1)
-                    result["zone_end"] = zone_m.group(2)
+            tech_part = rest.split(";")[0] if ";" in rest else rest
+            segments = [s for s in tech_part.split("~") if s]
+            known_combos = {
+                "X1", "X2", "XM", "XG", "XC", "XD", "X7", "XS", "XO", "XF",
+                "XP", "XB", "XR", "X9", "XT", "X3", "X4", "XQ", "X5", "X0", "X6", "X8",
+                "CD", "CB", "CF", "C5", "C0", "C6", "C8",
+                "V5", "V0", "V6", "V8", "VB", "VP", "VR", "V3",
+                "P2", "PR", "PP", "P3",
+                "K1", "K2", "K7", "KC", "KM", "KP", "KE", "KF",
+            }
+            internal_skill = SKILL_MAP.get(result["skill"], "")
+            has_trajectory = internal_skill in ("A", "S")
+            for seg in segments:
+                potential = seg[:2].upper()
+                if potential in known_combos and not result.get("attack_combo"):
+                    result["attack_combo"] = potential
+                if has_trajectory:
+                    zone_m = re.search(r"(\d)(\d)", seg)
+                    if zone_m:
+                        result["zone_start"] = zone_m.group(1)
+                        result["zone_end"] = zone_m.group(2)
+                    elif not result.get("zone_end"):
+                        single_z = re.search(r"(\d)", seg)
+                        if single_z:
+                            result["zone_end"] = single_z.group(1)
                 else:
-                    single_z = re.search(r"(\d)", combo_raw)
-                    if single_z:
-                        result["zone_end"] = single_z.group(1)
+                    if not result.get("zone_end"):
+                        single_z = re.search(r"(\d)", seg)
+                        if single_z:
+                            result["zone_end"] = single_z.group(1)
 
             result["line_raw"] = code_part
             return result

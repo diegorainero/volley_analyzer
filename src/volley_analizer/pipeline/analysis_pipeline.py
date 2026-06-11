@@ -11,6 +11,7 @@ from ..core.analytics import AnalyticsEngine
 from ..core.config import AppConfig
 from ..core.detector import PlayerDetector
 from ..core.field_mapper import FieldMapper
+from ..core.smoothed_tracker import SmoothedTracker
 from ..core.video_processor import VideoProcessor
 
 
@@ -74,6 +75,7 @@ class VolleyballAnalysisPipeline:
         num_fields = config.num_fields or AppConfig().load_num_fields()
         self.mapper = FieldMapper(src_points=calibration_points, num_fields=num_fields)
         self.analytics = AnalyticsEngine()
+        self.smoother = SmoothedTracker(smoothing_window=5, distance_threshold=100.0)
         self.jersey_classifier = None
         if config.jersey_classifier_model:
             try:
@@ -145,6 +147,13 @@ class VolleyballAnalysisPipeline:
             for track in tracks:
                 self._classify_track_jersey(frame, track)
                 field_position = self.mapper.map_bbox_to_field(track.bbox)
+                smoothed_position = self.smoother.smooth_position(
+                    track.track_id, field_position
+                )
+                track.velocity = (
+                    smoothed_position[0] - field_position[0],
+                    smoothed_position[1] - field_position[1],
+                )
                 zone = self.mapper.get_zone(field_position)
                 track.field_position = field_position
                 track.zone = zone
@@ -255,6 +264,13 @@ class VolleyballAnalysisPipeline:
             for track in tracks:
                 self._classify_track_jersey(frame, track)
                 field_position = self.mapper.map_bbox_to_field(track.bbox)
+                smoothed_position = self.smoother.smooth_position(
+                    track.track_id, field_position
+                )
+                track.velocity = (
+                    smoothed_position[0] - field_position[0],
+                    smoothed_position[1] - field_position[1],
+                )
                 zone = self.mapper.get_zone(field_position)
                 track.field_position = field_position
                 track.zone = zone

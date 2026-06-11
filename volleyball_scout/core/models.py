@@ -184,6 +184,8 @@ class MatchSet(Base):
     set_number = Column(Integer, nullable=False)  # 1-5
     score_home = Column(Integer, default=0)
     score_away = Column(Integer, default=0)
+    timeout_home = Column(Integer, default=0)
+    timeout_away = Column(Integer, default=0)
     duration = Column(Integer)  # durata in secondi
     winner = Column(String(10))  # "home" | "away"
     home_lineup = Column(Text, default=None)  # JSON: {"P1":"8","P2":"20",...}
@@ -244,6 +246,7 @@ class ScoutEvent(Base):
     zone_start = Column(String(1))  # zona di partenza 1-9
     zone_end = Column(String(1))  # zona di arrivo 1-9
     attack_combo = Column(String(2))  # codice combinazione attacco
+    combo_type = Column(String(30))  # tipo combinazione (first_tempo, second_tempo, etc.)
     set_code = Column(String(2))  # codice alzata
     special_code = Column(String(2))  # codice speciale
 

@@ -107,7 +107,7 @@ class AnalyticsEngine:
     ) -> tuple[list[dict], dict]:
         df = pd.DataFrame(records)
         if df.empty:
-            return [], {"players": [], "rotations_hint": []}
+            return [], {"players": [], "rotations_hint": {"individual_changes": [], "team_rotations": []}}
 
         rows = []
         players = []
@@ -209,29 +209,51 @@ class AnalyticsEngine:
 
         rotation_events: list[dict[str, object]] = []
         per_track_previous_zone: dict[int, int] = {}
-        transitions: defaultdict[int, int] = defaultdict(int)
+        zone_change_windows: dict[float, set[int]] = {}
 
         for row in sorted(records, key=lambda item: item["timestamp"]):
             track_id = int(row["track_id"])
             zone = int(row["zone"])
+            ts = round(float(row["timestamp"]), 2)
             previous = per_track_previous_zone.get(track_id)
             if previous is not None and previous != zone:
-                transitions[track_id] += 1
-                if transitions[track_id] <= 5:
-                    rotation_events.append(
-                        {
-                            "track_id": track_id,
-                            "timestamp": round(float(row["timestamp"]), 2),
-                            "from_zone": previous,
-                            "to_zone": zone,
-                        }
-                    )
+                window_key = round(ts, 1)
+                if window_key not in zone_change_windows:
+                    zone_change_windows[window_key] = set()
+                zone_change_windows[window_key].add(track_id)
+                rotation_events.append(
+                    {
+                        "track_id": track_id,
+                        "timestamp": ts,
+                        "from_zone": previous,
+                        "to_zone": zone,
+                    }
+                )
             per_track_previous_zone[track_id] = zone
 
-        return rotation_events
+        team_rotation_events: list[dict[str, object]] = []
+        for ts, changed_tracks in zone_change_windows.items():
+            if len(changed_tracks) >= 3:
+                team_rotation_events.append(
+                    {
+                        "timestamp": ts,
+                        "type": "team_rotation",
+                        "n_players_changed": len(changed_tracks),
+                        "track_ids": sorted(changed_tracks),
+                    }
+                )
 
-    def get_zone_time_density(self) -> dict[int, float]:
-        """Calcola il tempo totale speso in ogni zona (in secondi)."""
+        return {
+            "individual_changes": rotation_events,
+            "team_rotations": team_rotation_events,
+        }
+
+    def get_zone_time_density(self) -> dict[str, float]:
+        """Calcola il tempo totale speso in ogni zona (in secondi).
+
+        Returns:
+            Dict con chiavi "zone_N" (N=1..6) e valore in secondi.
+        """
         from collections import defaultdict
 
         zone_times: defaultdict[int, float] = defaultdict(float)
@@ -243,4 +265,4 @@ class AnalyticsEngine:
                 time_diff = sample.timestamp - last.timestamp
                 zone_times[last.zone] += time_diff
             per_track_last[sample.track_id] = sample
-        return dict(zone_times)
+        return {f"zone_{k}": round(v, 2) for k, v in sorted(zone_times.items())}

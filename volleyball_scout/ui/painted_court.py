@@ -94,10 +94,13 @@ class PaintedCourt(QWidget):
         self._clickable = False
         self._reception_positions: dict[str, tuple[float, float]] | None = None
         self._active_player: str | None = None
+        self._timeout_used: int = 0
+        self._timeout_limit: int = 2
 
         self._drag_label: _DragLabel | None = None
         self._replaced_label: QLabel | None = None
         self._flash_pos: str | None = None
+        self._timeout_flash: bool = False
 
         self.setMinimumSize(140, 160)
         self.setSizePolicy(
@@ -115,12 +118,16 @@ class PaintedCourt(QWidget):
         replaced_player: str | None = None,
         serving=False,
         setter_number: str | None = None,
+        timeout_used: int = 0,
+        timeout_limit: int = 2,
     ):
         self._lineup = dict(positions or {})
         self._libero_number = self._clean(libero)
         self._serving = serving
         self._setter_number = self._clean(setter_number)
         self._active_player = self._clean(replaced_player)
+        self._timeout_used = int(timeout_used)
+        self._timeout_limit = max(1, int(timeout_limit))
         self._update_libero_label()
         self._update_replaced_label(replaced_player)
         self.update()
@@ -141,6 +148,16 @@ class PaintedCourt(QWidget):
 
     def _clear_flash(self):
         self._flash_pos = None
+        self.update()
+
+    def flash_timeout(self):
+        self._timeout_flash = True
+        self.update()
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(2500, self._clear_timeout_flash)
+
+    def _clear_timeout_flash(self):
+        self._timeout_flash = False
         self.update()
 
     def setClickable(self, clickable: bool):
@@ -321,6 +338,11 @@ class PaintedCourt(QWidget):
         if self._serving:
             self._draw_serve_indicator(p)
 
+        self._draw_timeout_indicator(p)
+
+        if self._timeout_flash:
+            self._draw_timeout_flash(p)
+
         p.end()
 
     def _draw_background(self, p: QPainter):
@@ -444,6 +466,47 @@ class PaintedCourt(QWidget):
             QRectF(p1_center.x() - 6, p1_center.y() - 32, 12, 12),
             Qt.AlignmentFlag.AlignCenter,
             "S",
+        )
+
+    def _draw_timeout_indicator(self, p: QPainter):
+        dr = self._draw_rect()
+        cx = dr.x() + dr.width() / 2
+        y = dr.y() + dr.height() - 20
+        p.setPen(QPen(QColor("#B0C4DE"), 1))
+        f = QFont("Segoe UI", 6, QFont.Weight.Bold)
+        p.setFont(f)
+        p.drawText(
+            QRectF(dr.x(), y - 8, dr.width(), 10),
+            Qt.AlignmentFlag.AlignCenter,
+            "TO",
+        )
+        dot_radius = 4
+        spacing = 14
+        total_w = self._timeout_limit * spacing
+        start_x = cx - total_w / 2 + spacing / 2
+        for i in range(self._timeout_limit):
+            used = i < self._timeout_used
+            dot_x = start_x + i * spacing
+            if used:
+                p.setBrush(QBrush(QColor("#EF4444")))
+                p.setPen(Qt.PenStyle.NoPen)
+            else:
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor("#6B7280"), 1))
+            p.drawEllipse(QPointF(dot_x, y + 6), dot_radius, dot_radius)
+
+    def _draw_timeout_flash(self, p: QPainter):
+        dr = self._draw_rect()
+        p.setBrush(QBrush(QColor(0, 0, 0, 140)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(dr, 10, 10)
+        f = QFont("Segoe UI", 14, QFont.Weight.Bold)
+        p.setFont(f)
+        p.setPen(QColor("#F97316"))
+        p.drawText(
+            dr,
+            Qt.AlignmentFlag.AlignCenter,
+            "TIME OUT",
         )
 
     def sizeHint(self):

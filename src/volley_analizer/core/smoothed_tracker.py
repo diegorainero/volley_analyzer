@@ -107,8 +107,20 @@ class SmoothedTracker:
 
         interpolated = [history[0]]
         for i in range(1, len(history)):
-            # Potrebbe aggiungere logica di interpolazione qui
-            interpolated.append(history[i])
+            prev = history[i - 1]
+            curr = history[i]
+            dx = curr[0] - prev[0]
+            dy = curr[1] - prev[1]
+            gap = 1
+            while gap <= max_gap_frames:
+                t = gap / (gap + 1)
+                interp = (
+                    prev[0] + dx * t,
+                    prev[1] + dy * t,
+                )
+                interpolated.append(interp)
+                gap += 1
+            interpolated.append(curr)
 
         return interpolated
 

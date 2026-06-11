@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 SKILL_MAP = {
     "SQ": "S", "SM": "S", "SF": "S", "SH": "S",
-    "RQ": "R",
+    "RQ": "R", "RM": "R",
     "SE": "E", "EH": "E", "EU": "E", "EQ": "E", "EO": "E", "EM": "E", "EP": "E",
     "AH": "A", "AU": "A", "AM": "A", "AQ": "A", "AO": "A", "TT": "A",
     "FU": "F", "FH": "F",
     "BH": "B", "BM": "B", "BO": "B", "BD": "B",
-    "DH": "D",
+    "DH": "D", "BU": "D",
 }
 
 EVAL_MAP = {"#": "#", "+": "+", "!": "!", "-": "-", "=": "=", "/": "/"}
@@ -598,8 +598,11 @@ class DvwImporter:
                     action.set_code = potential
             zone_match = re.match(r"(\d)(\d)", seg)
             if zone_match:
-                action.zone_start = zone_match.group(1)
-                action.zone_end = zone_match.group(2)
+                if action.skill in ("A", "S"):
+                    action.zone_start = zone_match.group(1)
+                    action.zone_end = zone_match.group(2)
+                elif action.zone_end is None:
+                    action.zone_end = zone_match.group(2)
 
     def _extract_lineup(self, parts: list[str]) -> dict | None:
         if len(parts) < 26:

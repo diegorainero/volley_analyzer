@@ -580,6 +580,9 @@ class ScoutPanel(QWidget):
         )
         layout.addWidget(self.video_resume_badge)
 
+        match_mode_row = QHBoxLayout()
+        match_mode_row.setSpacing(4)
+
         self.match_mode_badge = QLabel("")
         self.match_mode_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.match_mode_badge.setVisible(False)
@@ -588,7 +591,20 @@ class ScoutPanel(QWidget):
             "background-color: #065F46; border: 1px solid #047857;"
             "border-radius: 8px; padding: 3px 8px;"
         )
-        layout.addWidget(self.match_mode_badge)
+        match_mode_row.addWidget(self.match_mode_badge)
+
+        self.btn_edit_match = QPushButton("Modifica")
+        self.btn_edit_match.setVisible(False)
+        self.btn_edit_match.setStyleSheet(
+            "font-size: 10px; font-weight: bold; color: #FCD34D;"
+            "background-color: #1E3A5F; border: 1px solid #3B82F6;"
+            "border-radius: 8px; padding: 3px 8px;"
+        )
+        self.btn_edit_match.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_edit_match.clicked.connect(self._toggle_edit_match)
+        match_mode_row.addWidget(self.btn_edit_match)
+
+        layout.addLayout(match_mode_row)
 
         timer_layout = QHBoxLayout()
         timer_layout.setSpacing(8)
@@ -950,6 +966,23 @@ class ScoutPanel(QWidget):
             btn.clicked.connect(lambda checked, e=eval_code: self._on_attack_eval_clicked(e))
             reception_row.addWidget(btn)
             self._attack_eval_buttons.append(btn)
+
+        self._serve_zone_buttons = []
+        self._serve_zone_label = QLabel("  Zona battuta:")
+        self._serve_zone_label.setVisible(False)
+        self._serve_zone_label.setStyleSheet("font-weight: bold; color: #FCD34D;")
+        reception_row.addWidget(self._serve_zone_label)
+        for z in ("1", "5", "6"):
+            btn = QPushButton(f"Z{z}")
+            btn.setFixedSize(42, 34)
+            btn.setVisible(False)
+            btn.setStyleSheet(
+                "font-weight: bold; font-size: 13px; background-color: #1E3A5F;"
+                "color: #FCD34D; border: 1px solid #3B82F6; border-radius: 6px;"
+            )
+            btn.clicked.connect(lambda checked, zone=z: self._on_serve_zone_selected(zone))
+            reception_row.addWidget(btn)
+            self._serve_zone_buttons.append(btn)
 
         reception_row.addStretch()
         layout.addLayout(reception_row)
@@ -1672,19 +1705,29 @@ class ScoutPanel(QWidget):
         if not hasattr(self, "match_mode_badge"):
             return
 
+        has_btn = hasattr(self, "btn_edit_match")
+
         if editing_completed_match:
             self.match_mode_badge.setText("Modalità modifica match terminato")
             self.match_mode_badge.setVisible(True)
+            if has_btn:
+                self.btn_edit_match.setVisible(True)
+                self.btn_edit_match.setText("Fine modifica")
             return
 
         status = str(match_status or "").strip().lower()
         if status == "completed":
             self.match_mode_badge.setText("Match terminato")
             self.match_mode_badge.setVisible(True)
+            if has_btn:
+                self.btn_edit_match.setVisible(True)
+                self.btn_edit_match.setText("Modifica")
             return
 
         self.match_mode_badge.clear()
         self.match_mode_badge.setVisible(False)
+        if has_btn:
+            self.btn_edit_match.setVisible(False)
 
     def _load_keypad_size_mode(self) -> str:
         # Carica la modalità dimensione tastierino
@@ -3380,6 +3423,14 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return
 
+        if self._is_match_readonly():
+            QMessageBox.information(
+                self, "Match terminato",
+                "Impossibile aggiungere eventi: la partita è terminata.\n"
+                "Usa il pulsante 'Modifica' per renderla modificabile."
+            )
+            return
+
         if not self._require_initial_service_selected():
             return
 
@@ -3488,6 +3539,37 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return False
         return bool(self.current_context.get("editing_completed_match", False))
+
+    def _is_match_readonly(self) -> bool:
+        """Il match è completato e non in modalità modifica."""
+        if not self.current_context:
+            return True
+        if self._is_editing_completed_match():
+            return False
+        return self.current_context.get("match_status") == "completed"
+
+    def _toggle_edit_match(self):
+        """Attiva/Disattiva la modalità modifica per un match terminato."""
+        if not self.current_context:
+            return
+
+        is_editing = self._is_editing_completed_match()
+        if is_editing:
+            self.current_context["editing_completed_match"] = False
+            self._set_controls_enabled(False)
+            self.set_match_mode_badge(
+                editing_completed_match=False,
+                match_status="completed",
+            )
+            self.btn_edit_match.setText("Modifica")
+        else:
+            self.current_context["editing_completed_match"] = True
+            self._set_controls_enabled(True)
+            self.set_match_mode_badge(
+                editing_completed_match=True,
+                match_status="completed",
+            )
+            self.btn_edit_match.setText("Fine modifica")
 
     def _set_controls_enabled(self, enabled: bool):
         # Abilita o disabilita i controlli della UI
@@ -3834,21 +3916,13 @@ class ScoutPanel(QWidget):
 
         self._exit_attack_mode()
 
-        # P1 corrisponde sempre alla zona 1 (posizione di battuta)
-        zone_start = "1"
-
         self._serve_mode_active = True
-        self._serve_zone_start = zone_start
+        self._serve_zone_start = None
         self._serve_zone_start_side = side
         self._serve_zone_end = None
         self._serve_zone_end_side = None
 
-        # Memorizza la posizione del click sul badge
-        badge = self.home_battuta_btn if side == "home" else self.away_battuta_btn
-        global_pos = QCursor.pos()
-        overlay_pos = self.courts_container.mapFromGlobal(global_pos)
-        self._serve_start_overlay_pos = QPointF(overlay_pos.x(), overlay_pos.y())
-
+        self._serve_start_overlay_pos = None
         self._serve_receiver = None
         self._show_reception_eval_buttons(False)
 
@@ -3858,14 +3932,36 @@ class ScoutPanel(QWidget):
         serving_team = self.current_context.get(f"{side}_team", {}).get(
             "name", "Casa" if side == "home" else "Ospiti"
         )
+        self.subtitle.setText(
+            f"Battuta {serving_team}: seleziona la zona di partenza (Z1, Z5, Z6)"
+        )
+        self._clear_player_highlight()
+        self._refresh_setter_numbers()
+
+        for btn in self._serve_zone_buttons:
+            btn.setVisible(True)
+        self._serve_zone_label.setVisible(True)
+
+    def _on_serve_zone_selected(self, zone: str):
+        if not self._serve_mode_active:
+            return
+        side = self._serve_zone_start_side
+        self._serve_zone_start = zone
+
+        serving_team = self.current_context.get(f"{side}_team", {}).get(
+            "name", "Casa" if side == "home" else "Ospiti"
+        )
         lineup = self._team_context(side).get("lineup", {})
         server_number = normalize_lineup_number(lineup.get("P1")) or ""
         self.subtitle.setText(
-            f"Battuta {serving_team}: clicca sul campo per il punto di arrivo"
+            f"Battuta {serving_team} Z{zone}: clicca sul campo per il punto di arrivo"
         )
-        self._clear_player_highlight()
         self._highlight_player_on_courts(side, server_number)
-        self._refresh_setter_numbers()
+
+        for btn in self._serve_zone_buttons:
+            btn.setVisible(False)
+        self._serve_zone_label.setVisible(False)
+
         self.home_court.setClickable(True)
         self.away_court.setClickable(True)
         self._update_reception_formation_display()
@@ -3903,6 +3999,9 @@ class ScoutPanel(QWidget):
         self._clear_player_highlight()
         self._clear_trajectory_description()
         self.serve_overlay.clear_trajectory()
+        for btn in self._serve_zone_buttons:
+            btn.setVisible(False)
+        self._serve_zone_label.setVisible(False)
         if self.current_context:
             self.subtitle.setText(
                 "Seleziona la battuta iniziale per iniziare lo scouting."
@@ -3923,6 +4022,7 @@ class ScoutPanel(QWidget):
             self._attack_end_zone = None
             self._attack_end_side = None
             self.serve_overlay.clear_trajectory()
+            self.serve_overlay.setGeometry(self.courts_container.rect())
             self.subtitle.setText("Clicca sul giocatore che attacca")
             self.home_court.setClickable(True)
             self.away_court.setClickable(True)
@@ -3942,6 +4042,7 @@ class ScoutPanel(QWidget):
         self._attack_end_zone = None
         self._attack_end_side = None
         self.serve_overlay.clear_trajectory()
+        self.serve_overlay.setGeometry(self.courts_container.rect())
         self.subtitle.setText("Clicca sul giocatore che attacca")
         self.home_court.setClickable(True)
         self.away_court.setClickable(True)
@@ -3985,23 +4086,27 @@ class ScoutPanel(QWidget):
 
     def _on_attack_cell_clicked(self, side: str, pos_code: str, zone: str, click_x: float = 0, click_y: float = 0):
         # Gestisce il click su una cella in modalità attacco
-        lineup = self._team_context(side).get("lineup", {})
-        player = normalize_lineup_number(lineup.get(pos_code))
-        if player is None:
-            QMessageBox.warning(
-                self, "Nessun giocatore",
-                "Nessun giocatore in questa posizione.",
-            )
-            return
 
         # Fase 4: tutte le fasi complete → auto-submit con eval predefinito e riparti
         if self._attack_player is not None and self._attack_start_zone is not None and self._attack_end_zone is not None:
-            self._submit_attack_code(self.default_attack_eval)
-            self._reset_attack_state()
-            # continua con la Fase 1 usando questo click
+            if self._attack_end_side != self._attack_side:
+                self._submit_attack_code(self.default_attack_eval)
+                self._reset_attack_state()
+            else:
+                self._show_attack_eval_buttons(True)
+                self.subtitle.setText("Scegli la valutazione dell'attacco")
+                return
 
         if self._attack_player is None:
-            # Fase 1: seleziona attaccante
+            # Fase 1: seleziona attaccante — serve un giocatore nella cella cliccata
+            lineup = self._team_context(side).get("lineup", {})
+            player = normalize_lineup_number(lineup.get(pos_code))
+            if player is None:
+                QMessageBox.warning(
+                    self, "Nessun giocatore",
+                    "Nessun giocatore in questa posizione.",
+                )
+                return
             self._attack_side = side
             self._attack_player = player
             self._clear_player_highlight()
@@ -4013,7 +4118,7 @@ class ScoutPanel(QWidget):
                 f"Attacco {team_name} #{player}: clicca sul punto di partenza"
             )
         elif self._attack_start_zone is None:
-            # Fase 2: punto di partenza — deve essere nel campo dell'attaccante
+            # Fase 2: zona di partenza — deve essere nel campo dell'attaccante
             if side != self._attack_side:
                 QMessageBox.warning(
                     self, "Punto di partenza",
@@ -4021,7 +4126,6 @@ class ScoutPanel(QWidget):
                 )
                 return
             self._attack_start_zone = zone
-            self._attack_start_overlay_pos = self._get_click_overlay_pos(side, click_x, click_y)
             team_name = self.current_context.get(
                 f"{self._attack_side}_team", {}
             ).get("name", "Casa" if self._attack_side == "home" else "Ospiti")
@@ -4033,11 +4137,22 @@ class ScoutPanel(QWidget):
             self._attack_end_zone = zone
             self._attack_end_side = side
 
-            end_ov = self._get_click_overlay_pos(side, click_x, click_y)
-            if self._attack_start_overlay_pos is not None and end_ov is not None:
-                self.serve_overlay.set_trajectory(self._attack_start_overlay_pos, end_ov)
+            if side == self._attack_side:
+                QMessageBox.warning(
+                    self, "Traiettoria attacco",
+                    "Il punto di arrivo è nel campo dell'attaccante.\n"
+                    "Le traiettorie di attacco dovrebbero terminare nel campo avversario,\n"
+                    "a meno che non sia un errore (valutazione '=' o '/')."
+                )
 
-            traj_desc = describe_trajectory(self._attack_start_zone, self._attack_end_zone, "A")
+            start_ov = self._zone_to_overlay(self._attack_side, self._attack_start_zone)
+            end_ov = self._zone_to_overlay(side, zone)
+            if start_ov is not None and end_ov is not None:
+                self.serve_overlay.setGeometry(self.courts_container.rect())
+                self.serve_overlay.set_trajectory(start_ov, end_ov)
+
+            end_on_opponent = self._attack_end_side != self._attack_side
+            traj_desc = describe_trajectory(self._attack_start_zone, self._attack_end_zone, "A", end_on_opponent_court=end_on_opponent)
             self._show_trajectory_description(f"Attacco: {traj_desc}" if traj_desc else "")
 
             self.subtitle.setText("Scegli la valutazione dell'attacco")
@@ -4060,6 +4175,14 @@ class ScoutPanel(QWidget):
 
     def _submit_attack_code(self, evaluation: str):
         # Invia il codice DataVolley per l'attacco
+        if self._attack_end_side == self._attack_side and evaluation not in ("=", "/"):
+            QMessageBox.warning(
+                self, "Traiettoria non valida",
+                "L'attacco termina nel campo dell'attaccante ma la valutazione "
+                f"'{evaluation}' non indica un errore.\n"
+                "Seleziona '=' (Errore) o '/' (Murato)."
+            )
+            return
         lineup = self._team_context(self._attack_side).get("lineup", {})
         attacker = normalize_lineup_number(lineup.get(
             find_player_position_in_lineup(lineup, self._attack_player)
@@ -4086,17 +4209,19 @@ class ScoutPanel(QWidget):
 
             self._reset_serve_hint()
 
-            start_ov = self._get_start_overlay_pos()
-            end_ov = self._get_click_overlay_pos(side, click_x, click_y)
+            start_ov = self._zone_to_overlay(self._serve_zone_start_side, self._serve_zone_start)
+            end_ov = self._zone_to_overlay(side, zone)
             if start_ov is not None and end_ov is not None:
-                self.serve_overlay.set_trajectory(start_ov, end_ov)
+                self.serve_overlay.set_trajectory(start_ov, end_ov, "#22C55E")
 
             # Mostra descrizione traiettoria
-            traj_desc = describe_trajectory(self._serve_zone_start, self._serve_zone_end, "S")
+            end_on_opponent = side != self.serving_side
+            traj_desc = describe_trajectory(self._serve_zone_start, self._serve_zone_end, "S", end_on_opponent_court=end_on_opponent)
             self._show_trajectory_description(f"Battuta: {traj_desc}" if traj_desc else "")
 
             # Se la battuta cade nel campo del battitore → errore battuta, punto agli avversari
             if side == self.serving_side:
+                self.serve_overlay.set_trajectory_color("#EF4444")
                 self._submit_serve_error()
                 self._exit_serve_mode()
                 return
@@ -4144,13 +4269,17 @@ class ScoutPanel(QWidget):
             return
 
         if eval_code == "=":
+            serve_eval = "#"
+            self.serve_overlay.set_trajectory_color("#000000")
             self._submit_serve_and_reception(
-                self._serve_receiver, "=", "#"
+                self._serve_receiver, "=", serve_eval
             )
             self._exit_serve_mode()
             self._refresh_view()
         else:
             serve_eval = {"#": "-", "-": "+", "+": "-"}.get(eval_code, "-")
+            color = "#000000" if serve_eval == "#" else "#22C55E"
+            self.serve_overlay.set_trajectory_color(color)
             self._submit_serve_and_reception(
                 self._serve_receiver, eval_code, serve_eval
             )
@@ -4843,6 +4972,8 @@ class ScoutPanel(QWidget):
                 self.current_context.get("away_team", {}).get("lineup", {})
             ),
             "subtitle": self.subtitle.text(),
+            "timeout_home": self.timeouts_used.get("home", 0),
+            "timeout_away": self.timeouts_used.get("away", 0),
         }
 
     def _restore_state(self, snapshot: dict):
@@ -4857,8 +4988,13 @@ class ScoutPanel(QWidget):
             "away_lineup", {}
         )
 
+        self.timeouts_used["home"] = int(snapshot.get("timeout_home", 0))
+        self.timeouts_used["away"] = int(snapshot.get("timeout_away", 0))
+
         self._apply_serving_side(snapshot.get("serving_side", "home"))
         self.subtitle.setText(snapshot.get("subtitle", self.subtitle.text()))
+        self._persist_timeout_counts()
+        self._save_lineups_to_db()
         self._refresh_view()
 
     def _save_lineups_to_db(self):
@@ -4899,6 +5035,8 @@ class ScoutPanel(QWidget):
                 if set_record is not None:
                     set_record.score_home = int(self.current_context.get("score_home", 0))
                     set_record.score_away = int(self.current_context.get("score_away", 0))
+                    set_record.timeout_home = int(self.timeouts_used.get("home", 0))
+                    set_record.timeout_away = int(self.timeouts_used.get("away", 0))
         except Exception as e:
             print(f"⚠️ Errore salvataggio punteggio set: {e}")
 
@@ -5214,11 +5352,19 @@ class ScoutPanel(QWidget):
         if event_id is not None:
             self._restore_event_state(event_id)
             self._render_event_on_courts(event_id)
+            self._update_timeout_labels()
+            self._refresh_view()
+
+            # Show system event notes as subtitle
+            for record in self.history_records:
+                if record.get("event_id") == event_id and record.get("kind") == self.HISTORY_KIND_SYSTEM:
+                    self.subtitle.setText(record.get("text", ""))
+                    break
 
     def _restore_event_state(self, event_id: int):
         try:
             with self.db.session_scope() as session:
-                from volleyball_scout.core.models import ScoutEvent
+                from volleyball_scout.core.models import ScoutEvent, MatchSet
                 event = session.query(ScoutEvent).filter_by(id=int(event_id)).first()
                 if not event:
                     return
@@ -5232,6 +5378,52 @@ class ScoutPanel(QWidget):
                 self.current_context["score_away"] = sa
                 self.home_score.setText(str(sh))
                 self.away_score.setText(str(sa))
+
+                if event.kind != self.HISTORY_KIND_SYSTEM or not event.notes:
+                    return
+
+                notes = event.notes
+                ev_side = "home" if event.team_side == "a" else "away"
+
+                # ---- Reconstruct timeout counts ----
+                if notes.startswith("Timeout"):
+                    import re
+                    m = re.search(r'\((\d+)/(\d+)\)', notes)
+                    if m:
+                        self.timeouts_used[ev_side] = int(m.group(1))
+                        other = "away" if ev_side == "home" else "home"
+                        other_count = 0
+                        all_sys = (
+                            session.query(ScoutEvent)
+                            .filter(
+                                ScoutEvent.match_id == event.match_id,
+                                ScoutEvent.id <= event.id,
+                                ScoutEvent.kind == self.HISTORY_KIND_SYSTEM,
+                            )
+                            .order_by(ScoutEvent.id.asc())
+                            .all()
+                        )
+                        for ev in all_sys:
+                            ev_other_side = "home" if ev.team_side == "a" else "away"
+                            if ev.notes and ev.notes.startswith("Timeout") and ev_other_side == other:
+                                other_count += 1
+                        self.timeouts_used[other] = other_count
+
+                # ---- Reconstruct lineup for substitution events ----
+                if "Sostituzione" in notes and "→" in notes:
+                    parts = notes.split("→")
+                    if len(parts) == 2:
+                        out_raw = parts[0].rsplit(":", 1)[-1].strip()
+                        inn_raw = parts[1].strip()
+                        out_num = normalize_lineup_number(out_raw)
+                        inn_num = normalize_lineup_number(inn_raw)
+                        if out_num and inn_num:
+                            team_key = "home_team" if ev_side == "home" else "away_team"
+                            lineup = self.current_context.get(team_key, {}).get("lineup", {})
+                            for pc, pn in list(lineup.items()):
+                                if normalize_lineup_number(pn) == out_num:
+                                    lineup[pc] = inn_num
+                                    break
         except Exception as e:
             logger.exception("Errore restore evento")
 
@@ -5267,15 +5459,27 @@ class ScoutPanel(QWidget):
 
                 skill_letter = str(event.skill or "") if hasattr(event, "skill") else ""
                 traj_text = describe_trajectory(start_zone, end_zone, skill_letter)
+                if skill_letter and traj_text:
+                    skill_label = self.SKILL_NAMES.get(skill_letter, "")
+                    if skill_label:
+                        traj_text = f"{skill_label}: {traj_text}"
                 self._show_trajectory_description(traj_text)
 
-                if start_zone and start_zone.isdigit() and end_zone and end_zone.isdigit():
-                    self.serve_overlay.setGeometry(self.courts_container.rect())
-                    opposite = "away" if side == "home" else "home"
-                    start_pos = self._zone_to_overlay(side, start_zone)
-                    end_pos = self._zone_to_overlay(opposite, end_zone)
-                    if start_pos and end_pos:
-                        self.serve_overlay.set_trajectory(start_pos, end_pos, color=traj_color)
+                if skill_letter == "R":
+                    pass
+                elif start_zone and start_zone.isdigit() and end_zone and end_zone.isdigit():
+                    if start_zone == end_zone:
+                        self.serve_overlay.setGeometry(self.courts_container.rect())
+                        pos = self._zone_to_overlay(side, start_zone)
+                        if pos:
+                            self.serve_overlay.set_trajectory(pos, pos, color=traj_color)
+                    else:
+                        self.serve_overlay.setGeometry(self.courts_container.rect())
+                        opposite = "away" if side == "home" else "home"
+                        start_pos = self._zone_to_overlay(side, start_zone)
+                        end_pos = self._zone_to_overlay(opposite, end_zone)
+                        if start_pos and end_pos:
+                            self.serve_overlay.set_trajectory(start_pos, end_pos, color=traj_color)
                 elif start_zone and start_zone.isdigit():
                     self.serve_overlay.setGeometry(self.courts_container.rect())
                     start_pos = self._zone_to_overlay(side, start_zone)
@@ -5307,9 +5511,13 @@ class ScoutPanel(QWidget):
 
     def _eval_to_color(self, evaluation: str | None) -> str:
         return {
-            "#": "#22C55E", "+": "#86EFAC", "!": "#EAB308",
-            "-": "#F97316", "=": "#EF4444", "/": "#EF4444",
-        }.get(evaluation, "#EF4444")
+            "#": "#FCD34D",  # ace → giallo oro (visibile su sfondo scuro)
+            "+": "#86EFAC",  # buono → verde chiaro
+            "!": "#EAB308",  # impreciso → giallo
+            "-": "#F97316",  # negativo → arancione
+            "=": "#EF4444",  # errore → rosso
+            "/": "#A78BFA",  # muro → viola
+        }.get(evaluation, "#22C55E")  # default verde
 
     def _describe_event(self, event) -> str:
         skill_name = self.SKILL_NAMES.get(event.skill, "Evento")
@@ -5733,6 +5941,8 @@ class ScoutPanel(QWidget):
             replaced_player=self._libero_active_player.get("home"),
             serving=self.serving_side == "home",
             setter_number=self.setter_number_by_side.get("home"),
+            timeout_used=self.timeouts_used.get("home", 0),
+            timeout_limit=self._timeout_limit_per_set(),
         )
         self.away_court.update_lineup(
             away.get("name", "Trasferta"),
@@ -5741,6 +5951,8 @@ class ScoutPanel(QWidget):
             replaced_player=self._libero_active_player.get("away"),
             serving=self.serving_side == "away",
             setter_number=self.setter_number_by_side.get("away"),
+            timeout_used=self.timeouts_used.get("away", 0),
+            timeout_limit=self._timeout_limit_per_set(),
         )
 
         self._update_initial_service_controls()
@@ -5816,6 +6028,9 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return
 
+        if self._is_match_readonly():
+            return
+
         side = self.serving_side
         team_name = (
             self.current_context.get("home_team", {}).get("name", "Casa")
@@ -5843,6 +6058,14 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return
 
+        if self._is_match_readonly():
+            QMessageBox.information(
+                self, "Match terminato",
+                "Impossibile registrare un timeout: la partita è terminata.\n"
+                "Usa il pulsante 'Modifica' per renderla modificabile."
+            )
+            return
+
         limit = self._timeout_limit_per_set()
         used = int(self.timeouts_used.get(side, 0) or 0)
         if used >= limit:
@@ -5853,8 +6076,13 @@ class ScoutPanel(QWidget):
             )
             return
 
+        snapshot = self._snapshot_state()
         self.timeouts_used[side] = used + 1
         self._update_timeout_labels()
+        self._persist_timeout_counts()
+        self._refresh_view()
+        court = self.home_court if side == "home" else self.away_court
+        court.flash_timeout()
 
         team_name = (
             self.current_context.get("home_team", {}).get("name", "Casa")
@@ -5868,12 +6096,26 @@ class ScoutPanel(QWidget):
             kind=self.HISTORY_KIND_SYSTEM,
         )
 
+        self.rally_history.append({"snapshot": snapshot, "event_id": event_id})
         self.subtitle.setText(note)
         self._append_history(
             f"{self._format_elapsed()} | {note}",
             event_id=event_id,
             kind=self.HISTORY_KIND_SYSTEM,
         )
+
+    def _persist_timeout_counts(self):
+        if self.db is None or not self.current_context:
+            return
+        try:
+            with self.db.session_scope() as session:
+                from volleyball_scout.core.models import MatchSet
+                set_record = self._ensure_set_record(session)
+                if set_record is not None:
+                    set_record.timeout_home = int(self.timeouts_used.get("home", 0))
+                    set_record.timeout_away = int(self.timeouts_used.get("away", 0))
+        except Exception as e:
+            logger.exception("Errore salvataggio timeout")
 
     def _on_libero_dropped(self, side: str, pos_code: str, player_number: str, libero_number: str):
         """Swap a player with the libero via drag-and-drop."""
@@ -5967,11 +6209,19 @@ class ScoutPanel(QWidget):
         if not self.current_context:
             return
 
-        team_name = (
-            self.current_context.get("home_team", {}).get("name", "Casa")
-            if side == "home"
-            else self.current_context.get("away_team", {}).get("name", "Ospiti")
-        )
+        if self._is_match_readonly():
+            QMessageBox.information(
+                self, "Match terminato",
+                "Impossibile registrare una sostituzione: la partita è terminata.\n"
+                "Usa il pulsante 'Modifica' per renderla modificabile."
+            )
+            return
+
+        team_key = "home_team" if side == "home" else "away_team"
+        team_data = self.current_context.get(team_key, {})
+        team_name = team_data.get("name", "Casa" if side == "home" else "Ospiti")
+        lineup = team_data.get("lineup", {})
+        print(f"[SUB] side={side} team_key={team_key} lineup={lineup}")
 
         num_out, ok_out = QInputDialog.getText(
             self,
@@ -5979,6 +6229,25 @@ class ScoutPanel(QWidget):
             f"{team_name}: numero giocatore USCENTE",
         )
         if not ok_out:
+            return
+
+        num_out = normalize_lineup_number(num_out.strip())
+        if num_out is None:
+            QMessageBox.warning(self, "Sostituzione", "Numero giocatore uscente non valido.")
+            return
+
+        pos_code = None
+        for pc, pn in lineup.items():
+            if normalize_lineup_number(pn) == num_out:
+                pos_code = pc
+                break
+
+        if pos_code is None:
+            QMessageBox.warning(
+                self,
+                "Sostituzione",
+                f"Giocatore #{num_out} non trovato in campo.",
+            )
             return
 
         num_in, ok_in = QInputDialog.getText(
@@ -5989,8 +6258,17 @@ class ScoutPanel(QWidget):
         if not ok_in:
             return
 
-        num_out = num_out.strip() or "?"
-        num_in = num_in.strip() or "?"
+        num_in = normalize_lineup_number(num_in.strip())
+        if num_in is None:
+            QMessageBox.warning(self, "Sostituzione", "Numero giocatore entrante non valido.")
+            return
+
+        print(f"[SUB] pos_code={pos_code} num_out={num_out} num_in={num_in}")
+        print(f"[SUB] lineup id={id(lineup)} context lineup id={id(self.current_context.get(team_key, {}).get('lineup', {}))}")
+        snapshot = self._snapshot_state()
+        lineup[pos_code] = num_in
+        print(f"[SUB] lineup after: {lineup}")
+        self._save_lineups_to_db()
 
         note = f"Sostituzione {team_name}: {num_out} → {num_in}"
         event_id = self._persist_event(
@@ -5998,6 +6276,8 @@ class ScoutPanel(QWidget):
             notes=note,
             kind=self.HISTORY_KIND_SYSTEM,
         )
+
+        self.rally_history.append({"snapshot": snapshot, "event_id": event_id})
         self.subtitle.setText(note)
         self._append_history(
             f"{self._format_elapsed()} | {note}",
@@ -6005,9 +6285,22 @@ class ScoutPanel(QWidget):
             kind=self.HISTORY_KIND_SYSTEM,
         )
 
+        self._refresh_view()
+        court = self.home_court if side == "home" else self.away_court
+        if pos_code:
+            court.flash_position(pos_code)
+
     def _register_point(self, side: str):
         # Registra un punto per la squadra
         if not self.current_context:
+            return
+
+        if self._is_match_readonly():
+            QMessageBox.information(
+                self, "Match terminato",
+                "Impossibile aggiungere punti: la partita è terminata.\n"
+                "Usa il pulsante 'Modifica' per renderla modificabile."
+            )
             return
 
         if not self._require_initial_service_selected():
@@ -6426,6 +6719,8 @@ class ScoutPanel(QWidget):
                 if set_record is not None:
                     self.current_context["score_home"] = 0
                     self.current_context["score_away"] = 0
+                    self.timeouts_used["home"] = int(getattr(set_record, "timeout_home", 0) or 0)
+                    self.timeouts_used["away"] = int(getattr(set_record, "timeout_away", 0) or 0)
                     self.elapsed_seconds = int(set_record.duration or 0)
                     self.elapsed_seconds_exact = float(max(0, self.elapsed_seconds))
 
@@ -6672,7 +6967,14 @@ class ScoutPanel(QWidget):
             self._add_group_separator(f"Inizio Set {set_num}")
 
         self._refresh_view()
-        self._set_controls_enabled(True)
+
+        editing = self._is_editing_completed_match()
+        match_status = self.current_context.get("match_status")
+        if match_status == "completed" and not editing:
+            self._set_controls_enabled(False)
+        else:
+            self._set_controls_enabled(True)
+
         self._update_video_pause_controls()
 
         self._highlight_history_by_current_time(scroll_to_active=False)
@@ -6698,6 +7000,20 @@ class ScoutPanel(QWidget):
                 from sqlalchemy import text as sa_text
                 with self.db.session_scope() as session:
                     session.execute(sa_text("ALTER TABLE match_sets ADD COLUMN away_lineup TEXT DEFAULT NULL"))
+        except Exception:
+            pass
+        try:
+            if self.db:
+                from sqlalchemy import text as sa_text
+                with self.db.session_scope() as session:
+                    session.execute(sa_text("ALTER TABLE match_sets ADD COLUMN timeout_home INTEGER DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            if self.db:
+                from sqlalchemy import text as sa_text
+                with self.db.session_scope() as session:
+                    session.execute(sa_text("ALTER TABLE match_sets ADD COLUMN timeout_away INTEGER DEFAULT 0"))
         except Exception:
             pass
 

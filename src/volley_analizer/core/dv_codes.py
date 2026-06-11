@@ -208,8 +208,10 @@ def find_attack_combo(code: str) -> AttackCombo | None:
     return None
 
 
-def describe_trajectory(start_zone: str | None, end_zone: str | None, skill: str | None = None) -> str:
+def describe_trajectory(start_zone: str | None, end_zone: str | None, skill: str | None = None, end_on_opponent_court: bool | None = None) -> str:
     parts = []
+    if skill == "R":
+        return ""
     if start_zone:
         if skill == "S":
             desc = SERVE_ZONE_MAP.get(start_zone, f"Zona {start_zone}")
@@ -218,6 +220,10 @@ def describe_trajectory(start_zone: str | None, end_zone: str | None, skill: str
         parts.append(f"Da {desc}")
     if end_zone:
         desc = ATTACK_ZONE_MAP.get(end_zone, f"Zona {end_zone}")
+        if end_on_opponent_court is True:
+            desc += " (campo avversario)"
+        elif end_on_opponent_court is False:
+            desc += " (errore)"
         parts.append(f"→ {desc}")
     return " ".join(parts) if parts else ""
 
